@@ -1,0 +1,574 @@
+\documentclass[aspectratio=169]{beamer}
+
+\usetheme{metropolis}
+\usepackage{amsmath, amssymb, bm}
+\usepackage{booktabs}
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta, positioning, matrix, shapes.geometric}
+\usepackage{xcolor}
+\usepackage{listings}
+\usepackage{algorithm}
+\usepackage{algpseudocode}
+
+% Color palette
+\definecolor{mambagreen}{RGB}{34, 139, 34}
+\definecolor{mambablue}{RGB}{30, 100, 200}
+\definecolor{mambared}{RGB}{180, 40, 40}
+\definecolor{mambagray}{RGB}{90, 90, 90}
+
+\setbeamercolor{frametitle}{bg=mambablue, fg=white}
+\setbeamercolor{progress bar}{fg=mambagreen}
+\setbeamercolor{alerted text}{fg=mambered}
+
+\lstset{
+  language=Python,
+  basicstyle=\tiny\ttfamily,
+  keywordstyle=\color{mambablue}\bfseries,
+  commentstyle=\color{mambagray},
+  stringstyle=\color{mambagreen},
+  showstringspaces=false,
+  frame=single,
+  rulecolor=\color{mambagray!40},
+  xleftmargin=0.5em,
+  xrightmargin=0.5em,
+}
+
+\title{Mamba-2: State Space Duality}
+\subtitle{Transformers are SSMs: Generalized Models and Efficient Algorithms\\Through Structured State Space Duality}
+\author{Albert Gu (CMU) \& Tri Dao (Princeton)}
+\date{NeurIPS 2024 \\ \small Presentation based on Tri Dao's blog series}
+\institute{}
+
+% -----------------------------------------------------------------------
+\begin{document}
+
+\maketitle
+
+% -----------------------------------------------------------------------
+\begin{frame}{Outline}
+  \tableofcontents
+\end{frame}
+
+% -----------------------------------------------------------------------
+\section{Motivation}
+
+\begin{frame}{Two Problems with Mamba-1}
+
+  \begin{columns}
+    \begin{column}{0.48\textwidth}
+      \textbf{Problem 1: Understanding}
+      \begin{itemize}
+        \item State space models and attention mechanisms look very different
+        \item Are they fundamentally different, or related?
+        \item Can we unify them in a single framework?
+      \end{itemize}
+    \end{column}
+    \begin{column}{0.48\textwidth}
+      \textbf{Problem 2: Efficiency}
+      \begin{itemize}
+        \item Despite optimization efforts, Mamba-1 training remains \alert{less hardware-efficient} than attention
+        \item SSMs lack native support for matrix multiplications
+        \item GPUs/TPUs are built to do matmuls fast
+      \end{itemize}
+    \end{column}
+  \end{columns}
+
+  \vspace{1em}
+  \begin{alertblock}{The SSD Framework}
+    Both problems are solved together: by revealing that a scalar-structured SSM \emph{is} a form of attention, we unlock matmul-based hardware-efficient training.
+  \end{alertblock}
+\end{frame}
+
+% -----------------------------------------------------------------------
+\section{The SSD Model}
+
+\begin{frame}{State Space Models: Recap}
+
+  The core SSM recurrence maps an input sequence $x$ to outputs $y$ via a hidden state $h$:
+
+  \[
+    h_t = A_t\, h_{t-1} + B_t\, x_t, \qquad y_t = C_t^\top h_t
+  \]
+
+  \begin{itemize}
+    \item $x_t, y_t \in \mathbb{R}$ \quad (scalars for a single channel)
+    \item $h_t \in \mathbb{R}^{\mathtt{N}}$ \quad (hidden state, dimension $\mathtt{N}$)
+    \item $(A_t, B_t, C_t)$ are \emph{time-varying} (input-dependent) --- this is what makes Mamba \emph{selective}
+  \end{itemize}
+
+  \vspace{0.5em}
+  \textbf{Shape summary:}
+  \[
+    A \in \mathbb{R}^{(T,N,N)}, \quad B \in \mathbb{R}^{(T,N)}, \quad C \in \mathbb{R}^{(T,N)}
+  \]
+\end{frame}
+
+\begin{frame}{Restricting $A$: Scalar-Times-Identity}
+
+  \textbf{The one structural change in Mamba-2:}
+
+  \begin{center}
+    \begin{tabular}{lcl}
+      \toprule
+      Structure & Shape of $A$ & Description \\
+      \midrule
+      General   & $(T, N, N)$   & Unrestricted matrix \\
+      Diagonal  & $(T, N)$      & Mamba-1 \\
+      \textbf{Scalar $\times$ Identity} & $(T)$ & \textbf{Mamba-2 / SSD} \\
+      \bottomrule
+    \end{tabular}
+  \end{center}
+
+  \vspace{0.5em}
+  By forcing all diagonal elements of $A_t$ to be the \emph{same} scalar $a_t$:
+  \[
+    A_t = a_t \cdot I_N, \qquad a_t \in \mathbb{R}
+  \]
+
+  \begin{itemize}
+    \item Fewer parameters per step --- but enables a fundamentally new algorithm
+    \item Opens the door to the \textbf{quadratic (attention) mode}
+  \end{itemize}
+\end{frame}
+
+\begin{frame}{Multihead SSMs}
+
+  For real language models, inputs have $\mathtt{P}$ channels: $X \in \mathbb{R}^{(T, P)}$
+
+  \[
+    Y^{(T,P)} = \mathsf{SSM}\!\left(A^{(T)},\, B^{(T,N)},\, C^{(T,N)}\right)\!\left(X^{(T,P)}\right)
+  \]
+
+  \vspace{0.4em}
+  \textbf{Multihead structure} (like Transformers):
+  \begin{itemize}
+    \item Heads of dimension $\mathtt{P} \in \{64, 128\}$ (vs.\ $\mathtt{P}=1$ in Mamba-1)
+    \item Within a head, the \emph{same} $(a_t, B_t, C_t)$ are applied to all $\mathtt{P}$ channels
+    \item Across heads, $(a, B, C)$ are independent
+  \end{itemize}
+
+  \vspace{0.5em}
+  \begin{block}{Key advantage over Mamba-1}
+    Larger state dimensions become tractable: $\mathtt{N} = 16$ (Mamba-1) $\to$ $\mathtt{N} \in [64, 256]$ (Mamba-2), while \emph{simultaneously} training faster.
+  \end{block}
+
+\end{frame}
+
+% -----------------------------------------------------------------------
+\section{State Space Duality}
+
+\begin{frame}{Unrolling the SSM: The Attention Mode}
+
+  With scalar $A_t = a_t$, unroll the recurrence over the full sequence. Define:
+  \[
+    a_{i:j}^\times \;=\; a_i \cdot a_{i-1} \cdots a_{j+1}
+    \qquad \text{(cumulative product of decays)}
+  \]
+
+  The output at time $i$ becomes:
+  \[
+    y_i = \sum_{j \le i} C_i^\top \left(a_{i:j}^\times\right) B_j\, x_j
+  \]
+
+  Stacking all $y_i$ gives a matrix equation $Y = M X$ where:
+  \[
+    M = L \circ C B^\top \in \mathbb{R}^{(T,T)}
+  \]
+
+  $L$ is the lower-triangular \textbf{decay matrix}:
+  \[
+    L_{ij} = \begin{cases} a_{i:j}^\times & i \ge j \\ 0 & i < j \end{cases}
+  \]
+\end{frame}
+
+\begin{frame}{The Decay Matrix $L$}
+
+  \[
+    L = \begin{bmatrix}
+      1 & & & & \\
+      a_1 & 1 & & & \\
+      a_2 a_1 & a_2 & 1 & & \\
+      \vdots & \vdots & \ddots & \ddots & \\
+      a_{T-1}\!\cdots\!a_1 & a_{T-1}\!\cdots\!a_2 & \cdots & a_{T-1} & 1
+    \end{bmatrix}
+  \]
+
+  \vspace{0.5em}
+  \begin{columns}
+    \begin{column}{0.55\textwidth}
+      \textbf{Special case:} $a_t = 1$ for all $t$:
+      \[
+        L = \text{lower-triangular causal mask}
+      \]
+      and the model becomes \emph{causal linear attention}:
+      \[
+        Y = (L \circ QK^\top)\, V
+      \]
+      where $(C, B, X) \leftrightarrow (Q, K, V)$.
+    \end{column}
+    \begin{column}{0.42\textwidth}
+      \begin{alertblock}{Interpretation of $a_t$}
+        The scalar decays $a_t \in (0,1)$ act as \textbf{input-dependent relative positional encodings} --- they control how much past information is retained at each step.
+      \end{alertblock}
+    \end{column}
+  \end{columns}
+\end{frame}
+
+\begin{frame}{State Space Duality: Same Model, Two Views}
+
+  \begin{center}
+    \large
+    $(A^{(T)},\; B^{(T,N)},\; C^{(T,N)},\; X^{(T,P)}) \;\mapsto\; Y^{(T,P)}$
+  \end{center}
+
+  \vspace{0.5em}
+  \begin{columns}
+    \begin{column}{0.48\textwidth}
+      \textbf{SSM (Linear) Mode}
+      \[h_t = a_t h_{t-1} + B_t x_t,\quad y_t = C_t^\top h_t\]
+      \begin{itemize}
+        \item Constant-size state $\mathtt{N}$
+        \item $O(T)$ computation
+        \item No matmuls $\to$ slow on hardware
+        \item Efficient at \emph{inference}
+      \end{itemize}
+    \end{column}
+    \begin{column}{0.48\textwidth}
+      \textbf{Attention (Quadratic) Mode}
+      \[Y = (L \circ CB^\top)\, X\]
+      \begin{itemize}
+        \item Materializes $T \times T$ matrix
+        \item $O(T^2 N)$ computation
+        \item Pure matmuls $\to$ fast on hardware
+        \item Efficient at \emph{training} (small $T$)
+      \end{itemize}
+    \end{column}
+  \end{columns}
+
+  \vspace{0.5em}
+  \begin{block}{The duality}
+    These are \textbf{mathematically identical}. The same model can be computed either way.
+  \end{block}
+\end{frame}
+
+\begin{frame}{SSD vs.\ Standard Attention: Two Differences}
+
+  \begin{center}
+  \begin{tabular}{lcc}
+    \toprule
+    & \textbf{Standard Attention} & \textbf{SSD} \\
+    \midrule
+    Sequence mixing matrix & $(L_{\text{causal}} \circ \text{softmax}(QK^\top))\,V$ & $(L \circ CB^\top)\,X$ \\
+    Softmax & \checkmark & \texttimes \\
+    Multiplicative mask $L$ & causal only ($a_t=1$) & \checkmark (input-dependent $a_t$) \\
+    \midrule
+    State size at inference & $O(T)$ (KV cache) & $O(N)$ \textbf{(constant!)} \\
+    Training complexity & $O(T^2 N)$ & $O(T N^2)$ \\
+    \bottomrule
+  \end{tabular}
+  \end{center}
+
+  \vspace{0.5em}
+  \begin{itemize}
+    \item Removing softmax: state stays \emph{constant} size, inference is $O(1)$ per step
+    \item The decay mask $L$ is what distinguishes SSD from linear attention and encodes \emph{selectivity}
+  \end{itemize}
+\end{frame}
+
+% -----------------------------------------------------------------------
+\section{The Efficient SSD Algorithm}
+
+\begin{frame}{Efficiency Comparison}
+
+  \begin{center}
+  \begin{tabular}{lcccc}
+    \toprule
+    & \textbf{Attention} & \textbf{SSM} & \textbf{SSD} \\
+    \midrule
+    State size      & $T$           & $N$         & $\bm{N}$    \\
+    Training FLOPs  & $T^2 N$       & $TN^2$      & $\bm{TN^2}$ \\
+    Inference FLOPs & $TN$          & $N^2$       & $\bm{N^2}$  \\
+    Naive memory    & $T^2$         & $TN^2$      & $\bm{TN}$   \\
+    Matrix multiplications & \checkmark & \texttimes & \checkmark \\
+    \bottomrule
+  \end{tabular}
+  \end{center}
+
+  \vspace{0.5em}
+  \begin{alertblock}{The best of both worlds}
+    SSD achieves \textbf{constant inference state} (like SSMs) and \textbf{matrix multiply-based training} (like attention) simultaneously.
+  \end{alertblock}
+\end{frame}
+
+\begin{frame}{The Chunked SSD Algorithm}
+
+  Neither pure mode is ideal for training on long sequences. The solution: \textbf{chunk the sequence}.
+
+  \vspace{0.5em}
+  Split $T$ tokens into $Q = T / C$ chunks of size $C$:
+
+  \begin{enumerate}
+    \item \textbf{Intra-chunk} (quadratic/attention mode):
+      \begin{itemize}
+        \item Within each chunk, compute $Y_{\text{intra}} = (L \circ CB^\top) X$ via matmul
+        \item Cost: $O(C^2 \cdot P)$ per chunk --- parallelizable across batch \& heads
+      \end{itemize}
+    \item \textbf{Inter-chunk} (SSM/linear mode):
+      \begin{itemize}
+        \item Compute a \emph{summary state} $h$ at the end of each chunk
+        \item Pass states across chunk boundaries sequentially ($Q$ steps, not $T$)
+        \item For each chunk, add the contribution of all past states: $Y_{\text{inter}}$
+      \end{itemize}
+    \item \textbf{Combine:} $Y = Y_{\text{intra}} + Y_{\text{inter}} + D \odot X$
+  \end{enumerate}
+
+  \vspace{0.3em}
+  Overall cost: $O\!\left(\frac{T}{C} \cdot C^2 N\right) = O(TCN)$ --- optimal for $C = \sqrt{T}$.
+\end{frame}
+
+\begin{frame}{Chunked Algorithm: Diagram}
+
+  \begin{center}
+  \begin{tikzpicture}[
+    chunk/.style={draw=mambablue, fill=mambablue!15, rounded corners, minimum width=2.5cm, minimum height=1cm, font=\small},
+    state/.style={draw=mambagreen, fill=mambagreen!15, circle, minimum size=0.7cm, font=\scriptsize},
+    arrow/.style={-Stealth, thick},
+  ]
+    % Chunks
+    \node[chunk] (c1) at (0,0) {Chunk 1\\{\tiny intra-matmul}};
+    \node[chunk] (c2) at (3.2,0) {Chunk 2\\{\tiny intra-matmul}};
+    \node[chunk] (c3) at (6.4,0) {Chunk 3\\{\tiny intra-matmul}};
+    \node[chunk] (c4) at (9.6,0) {Chunk 4\\{\tiny intra-matmul}};
+
+    % States
+    \node[state] (s0) at (-1.6,-1.8) {$h_0$};
+    \node[state] (s1) at (1.6,-1.8) {$h_1$};
+    \node[state] (s2) at (4.8,-1.8) {$h_2$};
+    \node[state] (s3) at (8.0,-1.8) {$h_3$};
+    \node[state] (s4) at (11.2,-1.8) {$h_4$};
+
+    % State arrows
+    \draw[arrow, mambagreen] (s0) -- (s1);
+    \draw[arrow, mambagreen] (s1) -- (s2);
+    \draw[arrow, mambagreen] (s2) -- (s3);
+    \draw[arrow, mambagreen] (s3) -- (s4);
+
+    % Chunk to state
+    \draw[arrow, dashed, mambagray] (c1) -- (s1) node[midway, right, font=\tiny] {summarize};
+    \draw[arrow, dashed, mambagray] (c2) -- (s2);
+    \draw[arrow, dashed, mambagray] (c3) -- (s3);
+    \draw[arrow, dashed, mambagray] (c4) -- (s4);
+
+    % State to chunk (inter contribution)
+    \draw[arrow, dashed, mambared] (s0) -- (c1) node[midway, left, font=\tiny] {};
+    \draw[arrow, dashed, mambared] (s1) -- (c2);
+    \draw[arrow, dashed, mambared] (s2) -- (c3);
+    \draw[arrow, dashed, mambared] (s3) -- (c4);
+
+    % Labels
+    \node[mambablue, font=\scriptsize] at (4.8, 0.9) {Intra: matmul (parallel)};
+    \node[mambagreen, font=\scriptsize] at (4.8,-2.5) {Inter: sequential scan over $Q \ll T$ chunks};
+  \end{tikzpicture}
+  \end{center}
+\end{frame}
+
+\begin{frame}[fragile]{Minimal PyTorch Implementation ($\sim$30 lines)}
+\begin{lstlisting}[language=Python]
+def ssd_chunked(x, A, B, C, chunk_size, D):
+    # x: (B, T, H, P)  A: (B, T, H)  B,C: (B, T, H, N)
+    B_, T, H, P = x.shape
+    n_chunks = (T + chunk_size - 1) // chunk_size
+
+    # --- pad to chunk boundary ---
+    x, A, B, C = [pad_to_chunks(t, chunk_size) for t in (x, A, B, C)]
+    x_c  = x.view(B_, n_chunks, chunk_size, H, P)
+    A_c  = A.view(B_, n_chunks, chunk_size, H)
+    B_c  = B.view(B_, n_chunks, chunk_size, H, N)
+    C_c  = C.view(B_, n_chunks, chunk_size, H, N)
+
+    # --- intra-chunk (quadratic / attention mode) ---
+    log_dA_cum = A_c.cumsum(dim=2)                              # (B, Q, C, H)
+    L = torch.exp(log_dA_cum[:,:,:,None,:] - log_dA_cum[:,:,None,:,:])
+    L = L * causal_mask[None, None, :, :, None]                 # lower-triangular
+    CB = torch.einsum('bqihd,bqjhd->bqijh', C_c, B_c)          # (B, Q, C, C, H)
+    y_intra = torch.einsum('bqijh,bqjhd->bqihd', L * CB, x_c)  # intra-chunk output
+
+    # --- inter-chunk (linear / SSM mode) ---
+    decay_to_end  = torch.exp(log_dA_cum[:,:,-1:,:] - log_dA_cum)
+    chunk_states  = torch.einsum('bqth,bqthd,bqthn->bqhdn', decay_to_end, x_c, B_c)
+    chunk_decay   = torch.exp(log_dA_cum[:,:,-1,:])             # (B, Q, H)
+    # sequential scan over Q << T chunks
+    h = torch.zeros(B_, H, P, N, device=x.device)
+    y_inter = []
+    for q in range(n_chunks):
+        y_inter.append(torch.einsum('bhdn,bqthn->bqthd', h, C_c[:,q:q+1]))
+        h = chunk_decay[:,q,:,None,None] * h + chunk_states[:,q]
+    y_inter = torch.cat(y_inter, dim=1)
+
+    return (y_intra + y_inter + D * x_c).reshape(B_, T, H, P)[:, :T]
+\end{lstlisting}
+\end{frame}
+
+% -----------------------------------------------------------------------
+\section{The Mamba-2 Architecture}
+
+\begin{frame}{Mamba-2 Architecture Overview}
+
+  \begin{columns}
+    \begin{column}{0.55\textwidth}
+      \textbf{Key architectural change from Mamba-1:}
+      \vspace{0.3em}
+
+      $(A, B, C)$ are produced \emph{in parallel} with input $X$, not sequentially.
+
+      \vspace{0.8em}
+      \textbf{Per-layer computation:}
+      \begin{enumerate}
+        \item Linear projection: $[Z, X, B, C, \Delta] = \text{Linear}(u)$
+        \item Conv1d (causal, depthwise) on $X$
+        \item $A \leftarrow -\exp(\texttt{A\_log})$, $\Delta \leftarrow \text{softplus}(\Delta + \texttt{dt\_bias})$
+        \item SSD block: $Y = \text{SSD}(A \cdot \Delta,\; B,\; C,\; X \cdot \Delta)$
+        \item Output: $\text{out\_proj}(\text{RMSNorm}(Y) \cdot \text{SiLU}(Z))$
+      \end{enumerate}
+    \end{column}
+    \begin{column}{0.42\textwidth}
+      \begin{tikzpicture}[
+        box/.style={draw, rounded corners, fill=mambablue!10, text width=3.2cm,
+                    align=center, font=\small, minimum height=0.65cm},
+        arr/.style={-Stealth, thick},
+      ]
+        \node[box] (inp) at (0,5.5) {Input $u \in \mathbb{R}^{d_\text{model}}$};
+        \node[box] (proj) at (0,4.4) {Linear Projection};
+        \node[box, text width=1.4cm] (z)   at (-1.9,3.3) {$Z$};
+        \node[box, text width=1.4cm] (x)   at (0,3.3) {$X, \Delta$};
+        \node[box, text width=1.4cm] (bc)  at (1.9,3.3) {$B, C$};
+        \node[box] (conv) at (0,2.2) {Conv1d + SiLU};
+        \node[box, fill=mambagreen!15] (ssd) at (0,1.1) {SSD Block};
+        \node[box] (norm) at (0,0) {RMSNorm $\cdot$ SiLU$(Z)$};
+        \node[box] (out)  at (0,-1.1) {out\_proj};
+
+        \draw[arr] (inp) -- (proj);
+        \draw[arr] (proj) -- (z);
+        \draw[arr] (proj) -- (x);
+        \draw[arr] (proj) -- (bc);
+        \draw[arr] (x) -- (conv);
+        \draw[arr] (conv) -- (ssd);
+        \draw[arr] (bc) -- (ssd);
+        \draw[arr] (ssd) -- (norm);
+        \draw[arr] (z) .. controls (-1.9,0.55) and (-1.9,0) .. (norm);
+        \draw[arr] (norm) -- (out);
+      \end{tikzpicture}
+    \end{column}
+  \end{columns}
+\end{frame}
+
+\begin{frame}{Mamba-2 vs.\ Mamba-1: Key Differences}
+
+  \begin{center}
+  \begin{tabular}{lll}
+    \toprule
+    & \textbf{Mamba-1} & \textbf{Mamba-2} \\
+    \midrule
+    Structure on $A$    & Diagonal         & Scalar-times-identity \\
+    Head dimension $P$  & 1 (per channel)  & 64--128 \\
+    State dimension $N$ & 16               & 64--256+ \\
+    $(A,B,C)$ generation & Sequential       & Parallel with $X$ \\
+    Training algorithm  & Selective scan   & Chunked SSD (matmuls) \\
+    Tensor parallelism  & Harder           & Native support \\
+    Training speed      & Slower           & \textbf{2--8$\times$ faster} \\
+    Inference           & Faster (smaller $N$) & Slightly slower \\
+    \bottomrule
+  \end{tabular}
+  \end{center}
+
+  \vspace{0.4em}
+  \begin{block}{Note on inference}
+    Mamba-1 may still be preferable for pure inference workloads due to its smaller state dimension. The larger $N$ in Mamba-2 costs more per recurrence step.
+  \end{block}
+\end{frame}
+
+% -----------------------------------------------------------------------
+\section{Results}
+
+\begin{frame}{Language Modeling: Scaling Results}
+
+  \begin{columns}
+    \begin{column}{0.55\textwidth}
+      \textbf{Pile dataset (Chinchilla scaling laws):}
+      \begin{itemize}
+        \item Mamba-2 matches or slightly exceeds Mamba-1 at all scales
+        \item Competitive with Transformer++ baseline
+        \item Trained at 2--8$\times$ higher throughput
+      \end{itemize}
+
+      \vspace{0.5em}
+      \textbf{Multi-Query Associative Recall (MQAR):}
+      \begin{itemize}
+        \item Synthetic task requiring long-range memory
+        \item Mamba-2 substantially outperforms Mamba-1
+        \item Advantage holds even at \emph{equal} state size $N$
+        \item Larger $N$ (up to 16$\times$) amplifies the gap
+      \end{itemize}
+    \end{column}
+    \begin{column}{0.42\textwidth}
+      \begin{block}{Why MQAR matters}
+        MQAR tests whether a model can store and retrieve key-value pairs from context. Larger state $N$ directly increases capacity. Mamba-2's jump from $N=16 \to N=256$ is crucial here.
+      \end{block}
+    \end{column}
+  \end{columns}
+\end{frame}
+
+% -----------------------------------------------------------------------
+\section{Relation to Our nanoGPT Implementation}
+
+\begin{frame}[fragile]{Our \texttt{model\_mamba2.py}: What We Implemented}
+
+  The \texttt{Mamba2Block.forward()} in our repo implements the chunked SSD algorithm:
+
+  \vspace{0.3em}
+  \begin{enumerate}
+    \item \textbf{Projection}: \texttt{in\_proj} produces $Z, X, B, C, \Delta$ in one shot
+    \item \textbf{Conv1d}: depthwise causal conv + SiLU on $X$
+    \item \textbf{Discretize}: $\Delta \leftarrow \text{softplus}(\Delta + \texttt{dt\_bias})$; $A = -\exp(\texttt{A\_log})$
+    \item \textbf{Intra-chunk}: \texttt{torch.einsum} over $(L \circ CB) \cdot X_{\Delta}$
+    \item \textbf{Inter-chunk}: Python loop over $n_{\text{chunks}} = T/C$ steps
+    \item \textbf{Output}: \texttt{out\_proj(RMSNorm(y) * silu(z))}
+  \end{enumerate}
+
+  \vspace{0.4em}
+  \textbf{Current limitations vs.\ reference implementation:}
+  \begin{itemize}
+    \item Inter-chunk scan is a \alert{Python loop} (should be a parallel prefix scan)
+    \item No fused Triton/CUDA kernels (would need \texttt{mamba-ssm} library)
+    \item Still correct: tests verify equivalence to the exact sequential recurrence
+  \end{itemize}
+\end{frame}
+
+% -----------------------------------------------------------------------
+\begin{frame}{Summary}
+
+  \begin{enumerate}
+    \item \textbf{State Space Duality}: scalar-structured SSMs and causal linear attention are the \emph{same} model viewed differently
+    \item \textbf{Two modes}: SSM mode $\to$ efficient inference; attention mode $\to$ efficient training
+    \item \textbf{Chunked algorithm}: best of both --- $O(TCN)$ compute, constant inference state, full matmul utilization
+    \item \textbf{Architecture}: simple, tensor-parallel-friendly; larger state dimensions ($N$ up to 256+)
+    \item \textbf{Results}: matches/exceeds Mamba-1 at language modeling, substantially better at memory-intensive tasks (MQAR), much faster training
+  \end{enumerate}
+
+  \vspace{1em}
+  \begin{center}
+    \textit{``Mamba-2 allows much larger state dimensions while simultaneously being much faster during training.''} \\
+    \small --- Dao \& Gu, 2024
+  \end{center}
+\end{frame}
+
+\begin{frame}{References}
+  \begin{itemize}
+    \item Dao, T.\ \& Gu, A.\ (2024). \textit{Transformers are SSMs: Generalized Models and Efficient Algorithms Through Structured State Space Duality}. NeurIPS 2024.
+    \item Gu, A.\ \& Dao, T.\ (2023). \textit{Mamba: Linear-Time Sequence Modeling with Selective State Spaces}. ICLR 2024.
+    \item Dao, T.\ (2024). \textit{State Space Duality (Mamba-2) Part I --- The Model}. \texttt{tridao.me/blog/2024/mamba2-part1-model/}
+    \item Karpathy, A.\ (2023). \textit{nanoGPT}. \texttt{github.com/karpathy/nanoGPT}
+  \end{itemize}
+\end{frame}
+
+\end{document}
