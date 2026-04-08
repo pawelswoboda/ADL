@@ -16,6 +16,8 @@
 
 \section{Attention \& Transformers}
 
+\subsection{Self-Attention}
+
 % -----------------------------------------------------------------------
 \begin{frame}{Motivation: Why Attention?}
   Consider the sentence:
@@ -65,7 +67,7 @@
     \def\nd{4}      % number of embedding dims shown
 
     % ---- Embedding matrix E on the left ----
-    \node[font=\small\bfseries, text=green!60!black] at (-1.30, 3.35) {$E$};
+    \node[font=\small\bfseries, text=green!60!black] at (-1.18, 3.55) {$E$};
     \foreach \ri in {0,...,6} {
       \foreach \ci in {0,...,3} {
         \pgfmathsetmacro{\cy}{2.90 - \ri*0.26 + 0.13}
@@ -81,8 +83,14 @@
     \node[font=\small, gray] at (-1.30, 1.01) {\vdots};
     \node[font=\tiny, text=green!60!black, anchor=east] at (-1.75, 2.90-2*0.26+0.13) {$i_1$};
     \node[font=\tiny, text=green!60!black, anchor=east] at (-1.75, 2.90-5*0.26+0.13) {$i_2$};
-    \node[font=\tiny, gray] at (-1.30, 3.10) {\scriptsize$d$};
-    \node[font=\tiny, gray, rotate=90, anchor=south] at (-1.80, 2.20) {\scriptsize$V$};
+    % Top brace for d (columns)
+    \draw[decorate, decoration={brace, amplitude=3pt}, gray, thin]
+      (-1.70, 3.20) -- (-0.66, 3.20)
+      node[midway, above=3pt, font=\scriptsize, gray] {$d$};
+    % Left brace for V (rows)
+    \draw[decorate, decoration={brace, amplitude=3pt, mirror}, gray, thin]
+      (-1.78, 3.16) -- (-1.78, 1.34)
+      node[midway, left=5pt, font=\scriptsize, gray] {$V$};
 
     % ---- Token labels ----
     \node[tok, font=\small\bfseries, text=green!60!black] (tokA) at (\tA, 3.15) {Thinking};
@@ -462,14 +470,14 @@
     \node[font=\large, gray] at (2.55, 0) {$+$};
 
     % --- term 2: 0.10 × v2 ---
-    \node[font=\small, text=green!60!black, anchor=east] at (3.50, 0) {$0.10\;\times$};
+    \node[font=\small, text=green!60!black, anchor=east] at (3.85, 0) {$0.10\;\times$};
     \foreach \ci in {0,...,2} {
-      \pgfmathsetmacro{\cx}{3.55 + \ci*0.36 + 0.18}
+      \pgfmathsetmacro{\cx}{3.90 + \ci*0.36 + 0.18}
       \node[acell, minimum width=0.36cm, minimum height=0.36cm,
             fill=vcol!25, draw=cyan!25] at (\cx, 0) {};
     }
-    \node[font=\small, text=cyan!40!black] at (4.09, -0.38) {$v_2$};
-    \node[font=\tiny, text=green!50!black, anchor=east] at (3.50, -0.38) {$\alpha_{22}$};
+    \node[font=\small, text=cyan!40!black] at (4.44, -0.38) {$v_2$};
+    \node[font=\tiny, text=green!50!black, anchor=east] at (3.85, -0.38) {$\alpha_{22}$};
 
     % --- = ---
     \node[font=\large, gray] at (5.20, 0) {$=$};
@@ -655,6 +663,8 @@
   \end{tikzpicture}
   \end{center}
 \end{frame}
+
+\subsection{Multi-Head \& Attention Variants}
 
 % -----------------------------------------------------------------------
 \begin{frame}{Multi-Head Attention}
@@ -1214,12 +1224,75 @@
   \end{center}
 \end{frame}
 
+\subsection{Transformer Architecture}
+
 % -----------------------------------------------------------------------
 \begin{frame}{Transformer Architecture: Encoder \& Decoder}
   A transformer consists of an \textbf{encoder} and a \textbf{decoder}, each built from a stack of identical blocks.
 
   \begin{center}
-    \includegraphics[width=0.55\textwidth]{DL_WS202425/The_transformer_encoder_decoder_stack.png}
+  \begin{tikzpicture}[scale=0.88,
+      encblock/.style={draw=green!60!black, fill=green!15, rounded corners=3pt,
+                       minimum width=2.8cm, minimum height=0.52cm, font=\small,
+                       text=green!50!black},
+      decblock/.style={draw=magenta!50!black, fill=magenta!12, rounded corners=3pt,
+                       minimum width=2.8cm, minimum height=0.52cm, font=\small,
+                       text=magenta!50!black},
+      tok/.style={draw=gray!50, rounded corners=2pt, minimum height=0.38cm,
+                  inner sep=3pt, font=\small\strut},
+      arr/.style={-{Stealth[length=3pt]}, gray!50, thin},
+      xarr/.style={-{Stealth[length=3pt]}, green!50!black, thin},
+    ]
+    \def\encX{-2.4}
+    \def\decX{2.4}
+    \def\gap{0.78}
+
+    % ---- Encoder stack ----
+    \foreach \i in {0,...,5} {
+      \pgfmathsetmacro{\y}{\i*\gap}
+      \node[encblock] (enc\i) at (\encX, \y) {ENCODER};
+    }
+    % ---- Decoder stack ----
+    \foreach \i in {0,...,5} {
+      \pgfmathsetmacro{\y}{\i*\gap}
+      \node[decblock] (dec\i) at (\decX, \y) {DECODER};
+    }
+    % ---- Arrows within encoder stack ----
+    \foreach \i in {0,...,4} {
+      \pgfmathtruncatemacro{\j}{\i+1}
+      \draw[arr] (enc\i.north) -- (enc\j.south);
+    }
+    % ---- Arrows within decoder stack ----
+    \foreach \i in {0,...,4} {
+      \pgfmathtruncatemacro{\j}{\i+1}
+      \draw[arr] (dec\i.north) -- (dec\j.south);
+    }
+    % ---- Cross-attention arrows: top encoder -> each decoder ----
+    \foreach \i in {0,...,5} {
+      \draw[xarr] (enc5.east) -- (dec\i.west);
+    }
+    % ---- Input tokens ----
+    \node[tok, fill=green!12] (in1) at (\encX-1.1, -1.0) {\textit{je}};
+    \node[tok, fill=green!12] (in2) at (\encX,     -1.0) {\textit{suis}};
+    \node[tok, fill=green!12] (in3) at (\encX+1.1, -1.0) {\textit{\'{e}tudiant}};
+    \node[font=\small\bfseries, gray, anchor=east] at ([xshift=-0.2cm]in1.south west) {INPUT:};
+    \draw[arr] (in2.north) -- (enc0.south);
+    % ---- Output tokens ----
+    \pgfmathsetmacro{\topY}{5*\gap + 0.95}
+    \node[tok, fill=magenta!10] (out1) at (\decX-1.35, \topY) {\textit{I}};
+    \node[tok, fill=magenta!10] (out2) at (\decX-0.45, \topY) {\textit{am}};
+    \node[tok, fill=magenta!10] (out3) at (\decX+0.45, \topY) {\textit{a}};
+    \node[tok, fill=magenta!10] (out4) at (\decX+1.50, \topY) {\textit{student}};
+    \node[font=\small\bfseries, gray, anchor=east] at ([xshift=-0.2cm]out1.north west) {OUTPUT:};
+    \draw[arr] (dec5.north) -- (out2.south -| dec5.north);
+    % ---- Surrounding boxes ----
+    \begin{scope}[on background layer]
+      \node[draw=green!40, fill=green!4, rounded corners=6pt,
+            fit=(enc0)(enc5), inner xsep=10pt, inner ysep=8pt] {};
+      \node[draw=magenta!35, fill=magenta!3, rounded corners=6pt,
+            fit=(dec0)(dec5), inner xsep=10pt, inner ysep=8pt] {};
+    \end{scope}
+  \end{tikzpicture}
   \end{center}
 
   \begin{itemize}
@@ -1534,6 +1607,8 @@
   \end{columns}
 \end{frame}
 
+\subsection{Positional Encoding}
+
 % -----------------------------------------------------------------------
 \begin{frame}{Positional Encoding}
   Self-attention is \textbf{permutation equivariant} --- no notion of token order.
@@ -1665,6 +1740,8 @@
   \vspace{-0.3em}
   Modern models use \textbf{learned} positional embeddings or \textbf{RoPE} instead.
 \end{frame}
+
+\subsection{Training \& Inference}
 
 % -----------------------------------------------------------------------
 \begin{frame}{Training vs.\ Inference}
@@ -1912,9 +1989,491 @@
   \textbf{Memory:} cache grows as $O(L \cdot h \cdot T \cdot d_k)$
   {\footnotesize ($L$ layers, $h$ heads, $T$ seq.\ length, $d_k$ head dim).}
 
-  \begin{alertblock}{\small Optimizations (later)}
+  \begin{alertblock}{\small Optimizations}
     KV-cache memory can become very large.
-    Techniques: GQA, paged attention, quantized caches, sliding-window attention.
+    Techniques for reduction: see next slides.
   \end{alertblock}
+
+\end{frame}
+
+% =======================================================================
+\subsection{KV-Cache Reduction}
+% =======================================================================
+
+% -----------------------------------------------------------------------
+\begin{frame}{KV-Cache: The Memory Problem}
+
+  \textbf{Recall:} KV-cache stores $K$ and $V$ for all past tokens, across all layers and heads.
+
+  \vspace{0.3em}
+  \textbf{Total KV-cache size:}
+  \[
+    \text{KV-cache} = 2 \cdot L \cdot h \cdot T \cdot d_k \cdot b
+    \quad \text{bytes}
+  \]
+  {\footnotesize $L$ = layers, $h$ = heads, $T$ = sequence length, $d_k$ = head dim, $b$ = bytes per element.}
+
+  \vspace{0.3em}
+  \textbf{Example} (LLaMA-2 70B, BF16, $T = 4096$):
+  \begin{itemize}
+    \item $L = 80$, $h = 64$, $d_k = 128$, $b = 2$
+    \item KV-cache $= 2 \times 80 \times 64 \times 4096 \times 128 \times 2 \approx 10.7$\,GB \textbf{per sequence}
+    \item At $T = 128$k: $\approx 335$\,GB -- larger than the model itself!
+  \end{itemize}
+
+  \vspace{0.3em}
+  \begin{alertblock}{\small Approaches to Reduce KV-Cache}
+    \begin{description}[labelwidth=3cm, leftmargin=3.2cm, font=\small]
+      \item[Fewer KV heads] MQA, GQA -- share K,V across query heads
+      \item[Compress KV] MLA -- low-rank latent compression
+      \item[Fewer tokens] Sliding window -- bound the context
+      \item[Share across layers] Cross-layer attention
+      \item[Lower precision] KV-cache quantization (FP8, INT4)
+    \end{description}
+  \end{alertblock}
+
+\end{frame}
+
+% -----------------------------------------------------------------------
+\begin{frame}{Multi-Query Attention (MQA)}
+
+  \textbf{Idea}~\cite{shazeer2019mqattention}: Keep $h$ separate query heads, but use a
+  \emph{single shared} key head and value head.
+
+  \vspace{0.3em}
+  \begin{columns}[T]
+    \begin{column}{0.52\textwidth}
+      \textbf{Standard MHA} (per head $i$):
+      \[
+        Q_i = X W_i^Q,\; K_i = X W_i^K,\; V_i = X W_i^V
+      \]
+      Each head has its own $W_i^K, W_i^V$.
+
+      \vspace{0.3em}
+      \textbf{MQA}:
+      \[
+        Q_i = X W_i^Q,\; K = X W^K,\; V = X W^V
+      \]
+      \emph{All} heads share a single $W^K, W^V$ (no subscript $i$).
+
+      \vspace{0.3em}
+      \textbf{KV-cache reduction:} $h \times$
+      \begin{itemize}
+        \item MHA: $2 \cdot h \cdot T \cdot d_k$ per layer
+        \item MQA: $2 \cdot 1 \cdot T \cdot d_k$ per layer
+      \end{itemize}
+
+      \vspace{0.3em}
+      \textbf{Trade-off:} Significant memory savings, but some quality degradation since K,V have reduced capacity.
+    \end{column}
+    \begin{column}{0.46\textwidth}
+      \centering
+      \begin{tikzpicture}[scale=0.75,
+          headbox/.style={draw, rounded corners=2pt, minimum width=0.7cm,
+                          minimum height=0.5cm, font=\tiny, inner sep=1pt},
+          kvbox/.style={draw, rounded corners=2pt, minimum width=0.7cm,
+                        minimum height=0.5cm, font=\tiny, inner sep=1pt},
+          arr/.style={-{Stealth[length=2pt]}, gray!70, thin},
+        ]
+
+        % --- MHA ---
+        \node[font=\scriptsize\bfseries] at (1.4, 4.2) {MHA};
+        \foreach \i in {0,...,3} {
+          \pgfmathsetmacro{\xp}{\i * 0.9 + 0.1}
+          \node[headbox, fill=qcol] (q\i) at (\xp, 3.5) {$Q_{\the\numexpr\i+1}$};
+          \node[kvbox, fill=kcol] (k\i) at (\xp, 2.5) {$K_{\the\numexpr\i+1}$};
+          \node[kvbox, fill=vcol] (v\i) at (\xp, 1.7) {$V_{\the\numexpr\i+1}$};
+          \draw[arr] (q\i) -- (k\i);
+          \draw[arr] (k\i) -- (v\i);
+        }
+
+        % --- MQA ---
+        \node[font=\scriptsize\bfseries] at (1.4, 0.7) {MQA};
+        \foreach \i in {0,...,3} {
+          \pgfmathsetmacro{\xp}{\i * 0.9 + 0.1}
+          \node[headbox, fill=qcol] (mq\i) at (\xp, 0.0) {$Q_{\the\numexpr\i+1}$};
+        }
+        \node[kvbox, fill=kcol] (mk) at (1.4, -1.0) {$K$};
+        \node[kvbox, fill=vcol] (mv) at (1.4, -1.8) {$V$};
+        \foreach \i in {0,...,3} {
+          \draw[arr] (mq\i) -- (mk);
+        }
+        \draw[arr] (mk) -- (mv);
+      \end{tikzpicture}
+    \end{column}
+  \end{columns}
+
+\end{frame}
+
+% -----------------------------------------------------------------------
+\begin{frame}{Grouped Query Attention (GQA)}
+
+  \textbf{Idea}~\cite{ainslie2023gqa}: Interpolate between MHA and MQA.
+  Divide $h$ query heads into $g$ groups; each group shares one K,V head.
+
+  \vspace{0.3em}
+  \begin{columns}[T]
+    \begin{column}{0.50\textwidth}
+      For group $j$ and query head $i \in \text{group } j$:
+      \[
+        Q_i = X W_i^Q, \quad K_j = X W_j^K, \quad V_j = X W_j^V
+      \]
+      \[
+        \text{head}_i = \mathrm{softmax}\!\Bigl(\frac{Q_i K_j^\top}{\sqrt{d_k}}\Bigr) V_j
+      \]
+
+      \vspace{0.2em}
+      \begin{description}[labelwidth=1.4cm, leftmargin=1.6cm, font=\small]
+        \item[$g = h$] $\Rightarrow$ MHA (each head has own K,V)
+        \item[$g = 1$] $\Rightarrow$ MQA (all heads share K,V)
+        \item[$1 < g < h$] $\Rightarrow$ GQA (intermediate)
+      \end{description}
+
+      \vspace{0.3em}
+      \textbf{KV-cache per layer:} $2 \cdot g \cdot T \cdot d_k$
+
+      \textbf{Reduction vs.\ MHA:} $h / g$
+    \end{column}
+    \begin{column}{0.48\textwidth}
+      \centering
+      \begin{tikzpicture}[scale=0.75,
+          headbox/.style={draw, rounded corners=2pt, minimum width=0.55cm,
+                          minimum height=0.45cm, font=\tiny, inner sep=1pt},
+          arr/.style={-{Stealth[length=2pt]}, gray!70, thin},
+          grp/.style={draw=gray!40, dashed, rounded corners=3pt, inner sep=3pt},
+        ]
+
+        % --- GQA: g=2, h=4 ---
+        \node[font=\scriptsize\bfseries] at (1.6, 3.5) {GQA ($h{=}4$, $g{=}2$)};
+
+        % Group 1
+        \node[headbox, fill=qcol] (gq1) at (0.0, 2.6) {$Q_1$};
+        \node[headbox, fill=qcol] (gq2) at (0.8, 2.6) {$Q_2$};
+        \node[headbox, fill=kcol] (gk1) at (0.4, 1.5) {$K_1$};
+        \node[headbox, fill=vcol] (gv1) at (0.4, 0.7) {$V_1$};
+        \draw[arr] (gq1) -- (gk1);
+        \draw[arr] (gq2) -- (gk1);
+        \draw[arr] (gk1) -- (gv1);
+        \node[grp, fit=(gq1)(gq2)(gv1), label={[font=\tiny, gray]below:group 1}] {};
+
+        % Group 2
+        \node[headbox, fill=qcol] (gq3) at (2.4, 2.6) {$Q_3$};
+        \node[headbox, fill=qcol] (gq4) at (3.2, 2.6) {$Q_4$};
+        \node[headbox, fill=kcol] (gk2) at (2.8, 1.5) {$K_2$};
+        \node[headbox, fill=vcol] (gv2) at (2.8, 0.7) {$V_2$};
+        \draw[arr] (gq3) -- (gk2);
+        \draw[arr] (gq4) -- (gk2);
+        \draw[arr] (gk2) -- (gv2);
+        \node[grp, fit=(gq3)(gq4)(gv2), label={[font=\tiny, gray]below:group 2}] {};
+      \end{tikzpicture}
+
+      \vspace{0.3em}
+      {\footnotesize
+      \begin{tabular}{lcc}
+        \toprule
+        \textbf{Model} & $h$ & $g$ \\
+        \midrule
+        LLaMA-2 70B & 64 & 8 \\
+        LLaMA-3 8B & 32 & 8 \\
+        Mistral 7B & 32 & 8 \\
+        \bottomrule
+      \end{tabular}}
+    \end{column}
+  \end{columns}
+
+\end{frame}
+
+% -----------------------------------------------------------------------
+\begin{frame}{GQA: Uptraining from MHA Checkpoints}
+
+  A pretrained MHA model can be converted to GQA without training from scratch~\cite{ainslie2023gqa}.
+
+  \vspace{0.3em}
+  \textbf{Recipe:}
+  \begin{enumerate}
+    \item \textbf{Assign} the $h$ KV heads to $g$ groups (each group has $h/g$ heads).
+    \item \textbf{Mean-pool} the KV projection weights within each group:
+    \[
+      W_j^K = \frac{1}{h/g} \sum_{i \in \text{group } j} W_i^K
+      \qquad
+      W_j^V = \frac{1}{h/g} \sum_{i \in \text{group } j} W_i^V
+    \]
+    \item \textbf{Uptrain} with original data for $\sim$5\% of original pretraining compute.
+  \end{enumerate}
+
+  \vspace{0.3em}
+  \begin{alertblock}{\small Key Results}
+    \begin{itemize}
+      \item Mean-pool initialization significantly outperforms random initialization.
+      \item GQA with $g = 8$ achieves quality close to MHA while approaching MQA inference speed.
+      \item LLaMA-2 70B was released with GQA ($g=8$), reducing KV-cache by $8\times$ vs.\ MHA.
+    \end{itemize}
+  \end{alertblock}
+
+\end{frame}
+
+% -----------------------------------------------------------------------
+\begin{frame}{Multi-head Latent Attention (MLA)}
+
+  \textbf{Idea}~\cite{deepseekv2_2024}: Compress the joint KV representation
+  into a \emph{low-rank latent vector}
+  $\vc^{KV}_t \in \mathbb{R}^{d_c}$ with $d_c \ll n_h \cdot d_h$.
+  Only $\vc^{KV}_t$ is cached during inference.
+
+  \vspace{0.3em}
+  \begin{columns}[T]
+    \begin{column}{0.52\textwidth}
+      \textbf{Down-project} (KV compression):
+      \[
+        \vc^{KV}_t = W^{DKV} \vh_t \quad \in \mathbb{R}^{d_c}
+      \]
+
+      \textbf{Up-project} to reconstruct K,V:
+      \[
+        \vk^C_t = W^{UK}\, \vc^{KV}_t, \quad
+        \vv_t = W^{UV}\, \vc^{KV}_t
+      \]
+
+      \textbf{Queries} (also compressed for training):
+      \[
+        \vc^{Q}_t = W^{DQ} \vh_t, \quad
+        \vq^C_t = W^{UQ}\, \vc^{Q}_t
+      \]
+
+      \vspace{0.3em}
+      \textbf{Key insight:} The KV information across all heads lies in a low-dimensional subspace.
+      We cache the compressed representation and reconstruct on the fly.
+    \end{column}
+    \begin{column}{0.46\textwidth}
+      \centering
+      \begin{tikzpicture}[scale=0.80,
+          box/.style={draw, rounded corners=2pt, minimum height=0.45cm,
+                      font=\tiny, inner sep=2pt, minimum width=1.4cm},
+          smallbox/.style={draw, rounded corners=2pt, minimum height=0.40cm,
+                      font=\tiny, inner sep=2pt, minimum width=1.0cm},
+          arr/.style={-{Stealth[length=2.5pt]}, thick},
+        ]
+
+        % h_t
+        \node[box, fill=gray!15] (ht) at (0, 4.5) {$\vh_t$};
+
+        % Down-project
+        \node[smallbox, fill=green!20] (ckv) at (-0.8, 3.2) {$\vc^{KV}_t$};
+        \draw[arr, green!60!black] (ht) -- (ckv) node[midway, left, font=\tiny] {$W^{DKV}$};
+
+        % Up-project K, V
+        \node[smallbox, fill=kcol] (kc) at (-1.6, 1.8) {$\vk^C_t$};
+        \node[smallbox, fill=vcol] (vt) at (0.0, 1.8) {$\vv_t$};
+        \draw[arr, orange!70!black] (ckv) -- (kc) node[midway, left, font=\tiny] {$W^{UK}$};
+        \draw[arr, cyan!60!black] (ckv) -- (vt) node[midway, right, font=\tiny] {$W^{UV}$};
+
+        % Cache marker
+        \draw[dashed, red!60, thick, rounded corners=3pt]
+          ([xshift=-3pt, yshift=-5pt]ckv.south west) rectangle ([xshift=3pt, yshift=5pt]ckv.north east);
+        \node[font=\tiny, red!60!black, anchor=west] at (0.0, 3.2) {cached};
+
+        % Dimensions
+        \node[font=\tiny, gray, anchor=west] at (0.0, 3.55) {$d_c \ll n_h d_h$};
+      \end{tikzpicture}
+    \end{column}
+  \end{columns}
+
+\end{frame}
+
+% -----------------------------------------------------------------------
+\begin{frame}{MLA: Decoupled RoPE}
+
+  \textbf{Problem:} RoPE applies position-dependent rotations $R_t$ to queries and keys.
+  \[
+    \text{score}_{t,s} = (\underbrace{R_t \vq^C_t}_{\text{pos-dependent}})^\top (\underbrace{R_s \vk^C_s}_{\text{pos-dependent}})
+  \]
+  Without RoPE, we could absorb the up-projections:
+  $(\vq^C_t)^\top \vk^C_s = (\vc^Q_t)^\top \underbrace{(W^{UQ})^\top W^{UK}}_{\text{precomputable}}\, \vc^{KV}_s$,
+  and \textbf{never materialize full keys}.
+  But $R_s$ between $W^{UK}$ and $\vc^{KV}_s$ breaks this.
+
+  \vspace{0.3em}
+  \textbf{Solution: Decoupled RoPE keys.}
+  Add a small separate key carrying positional information:
+  \[
+    \vk^R_t = R_t\, W^{KR}\, \vh_t \in \mathbb{R}^{d_R}, \qquad
+    \vq^R_t = R_t\, W^{QR}\, \vc^Q_t \in \mathbb{R}^{d_R}
+  \]
+  Concatenate content and RoPE parts:
+  \[
+    a_{t,s} = \frac{(\vq^C_t)^\top \vk^C_s + (\vq^R_t)^\top \vk^R_s}{\sqrt{d_h + d_R}}
+  \]
+
+  \vspace{0.3em}
+  \textbf{Cache per token per layer:} $\vc^{KV}_t \in \mathbb{R}^{d_c}$ and $\vk^R_t \in \mathbb{R}^{d_R}$
+  $\Rightarrow$ total $d_c + d_R$ elements.
+
+  \vspace{0.3em}
+  \begin{exampleblock}{\small DeepSeek-V2 Numbers}
+    $n_h{=}128$, $d_h{=}128$, $d_c{=}512$, $d_R{=}64$.
+    MHA cache: $2 \times 128 \times 128 = 32{,}768$.
+    MLA cache: $512 + 64 = 576$.
+    \textbf{Compression: $\mathbf{\sim 57\times}$}.
+  \end{exampleblock}
+
+\end{frame}
+
+% -----------------------------------------------------------------------
+\begin{frame}{Sliding Window Attention}
+
+  \textbf{Idea}~\cite{jiang2023mistral}: Each token attends only to the $w$ most recent tokens
+  instead of the full history.
+
+  \vspace{0.3em}
+  \begin{columns}[T]
+    \begin{column}{0.52\textwidth}
+      Token at position $t$ attends to $\{t{-}w{+}1, \ldots, t\}$:
+      \[
+        a_{t,s} = \begin{cases}
+          \frac{\exp(q_t^\top k_s / \sqrt{d_k})}{\sum_{s'} \exp(\cdot)} & \text{if } s \geq t{-}w{+}1 \\
+          0 & \text{otherwise}
+        \end{cases}
+      \]
+
+      \textbf{Rolling buffer:} cache positions indexed as $t \bmod w$.
+      Old entries are overwritten $\Rightarrow$ \textbf{constant memory}.
+
+      \vspace{0.3em}
+      \textbf{KV-cache bound per layer:} $2 \cdot h \cdot w \cdot d_k$
+
+      {\footnotesize (independent of total sequence length $T$)}
+
+      \vspace{0.3em}
+      \textbf{Effective receptive field:}
+      With $L$ layers, information propagates up to $L \times w$ tokens back.
+    \end{column}
+    \begin{column}{0.46\textwidth}
+      \centering
+      \begin{tikzpicture}[scale=0.72,
+          cell/.style={minimum width=0.55cm, minimum height=0.55cm,
+                       draw=gray!40, font=\tiny, inner sep=0pt},
+        ]
+        % Attention matrix
+        \def\N{7}
+        \def\W{3}
+        \foreach \r in {0,...,6} {
+          \foreach \c in {0,...,6} {
+            \pgfmathtruncatemacro{\causal}{\c <= \r ? 1 : 0}
+            \pgfmathtruncatemacro{\inwindow}{\r - \c < \W ? 1 : 0}
+            \pgfmathtruncatemacro{\active}{\causal * \inwindow}
+            \ifnum\active=1
+              \node[cell, fill=orange!25] at (\c*0.55, -\r*0.55) {};
+            \else
+              \node[cell, fill=white] at (\c*0.55, -\r*0.55) {};
+            \fi
+          }
+        }
+        % Labels
+        \foreach \i in {0,...,6} {
+          \node[font=\tiny, gray] at (\i*0.55, 0.5) {$\i$};
+          \node[font=\tiny, gray] at (-0.5, -\i*0.55) {$\i$};
+        }
+        \node[font=\tiny, gray] at (1.65, 1.0) {key position};
+        \node[font=\tiny, gray, rotate=90] at (-1.1, -1.65) {query position};
+
+        % Window annotation
+        \draw[decorate, decoration={brace, amplitude=3pt}, red!60, thick]
+          (3.5*0.55, -6.4*0.55) -- (3.5*0.55, -4.6*0.55)
+          node[midway, right=4pt, font=\tiny, red!60!black] {$w{=}3$};
+      \end{tikzpicture}
+
+      \vspace{0.3em}
+      {\footnotesize Attention mask for sliding window ($w{=}3$).
+      Orange = attended positions.}
+    \end{column}
+  \end{columns}
+
+  \vspace{0.3em}
+  {\footnotesize \textbf{Hybrid:} Some models (Gemma 2, Jamba) alternate sliding window layers
+  with full attention layers for bounded cache with some global context.}
+
+\end{frame}
+
+% -----------------------------------------------------------------------
+\begin{frame}{Cross-Layer Attention \& KV-Cache Quantization}
+
+  \begin{columns}[T]
+    \begin{column}{0.48\textwidth}
+      \textbf{Cross-Layer Attention (CLA)}~\cite{brandon2024cla}
+
+      \vspace{0.2em}
+      Adjacent layers \emph{share} the same KV-cache.
+      Only every $c$-th layer computes K,V; others reuse.
+
+      \vspace{0.2em}
+      For layer $\ell$, anchor layer $a(\ell) = c \cdot \lfloor \ell/c \rfloor$:
+      \[
+        K^{(\ell)} = K^{(a(\ell))}, \quad V^{(\ell)} = V^{(a(\ell))}
+      \]
+      Each layer keeps its own $W^Q$.
+
+      \vspace{0.2em}
+      \textbf{Reduction:} $c\times$ less KV-cache (across layers).
+
+      \vspace{0.2em}
+      {\footnotesize CLA is \emph{orthogonal} to GQA/MQA -- combine for multiplicative savings.}
+    \end{column}
+    \begin{column}{0.48\textwidth}
+      \textbf{KV-Cache Quantization}~\cite{hooper2024kvquant}
+
+      \vspace{0.2em}
+      Store cached K,V in lower precision (FP8, INT4, INT2)
+      instead of BF16.
+
+      \vspace{0.2em}
+      \textbf{Reduction:} $b_{\text{orig}} / b_q$ (e.g.\ BF16 $\to$ INT4 = $4\times$).
+
+      \vspace{0.2em}
+      \textbf{Techniques:}
+      \begin{itemize}
+        \item Per-channel quantization for keys (large channel outliers)
+        \item Per-token quantization for values
+        \item Non-uniform quantization via $k$-means centroids
+        \item Dense-and-sparse: outliers stored separately in full precision
+      \end{itemize}
+
+      \vspace{0.2em}
+      {\footnotesize Post-training, no retraining needed.
+      FP8 KV-cache is standard in vLLM / TensorRT-LLM.}
+    \end{column}
+  \end{columns}
+
+\end{frame}
+
+% -----------------------------------------------------------------------
+\begin{frame}{KV-Cache Reduction: Summary}
+
+  \begin{center}
+  {\small
+  \begin{tabular}{llcc}
+    \toprule
+    \textbf{Method} & \textbf{Core idea} & \textbf{Cache per layer per token} & \textbf{vs.\ MHA} \\
+    \midrule
+    MHA & Separate K,V per head & $2\, h\, d_k$ & $1\times$ \\
+    MQA & Single shared K,V & $2\, d_k$ & $1/h$ \\
+    GQA-$g$ & $g$ groups share K,V & $2\, g\, d_k$ & $g/h$ \\
+    MLA & Low-rank KV compression & $d_c + d_R$ & $\sim 1/57\times$ \\
+    Sliding window & Attend to last $w$ tokens & $2\, h\, d_k$ (capped at $w$) & $w / T$ \\
+    CLA (factor $c$) & Share KV across $c$ layers & $2\, h\, d_k / c$ (amortized) & $1/c$ \\
+    KV quantization & Lower precision storage & $2\, h\, d_k \cdot b_q/b$ & $b_q/b$ \\
+    \bottomrule
+  \end{tabular}
+  }
+  \end{center}
+
+  \vspace{0.3em}
+  \textbf{Key points:}
+  \begin{itemize}
+    \item These techniques are largely \textbf{orthogonal and composable}.
+    \item GQA is the current standard (LLaMA-2/3, Mistral, Gemma).
+    \item MLA (DeepSeek-V2/V3) achieves the strongest compression while retaining multi-head expressiveness.
+    \item In practice, models combine multiple techniques:
+      e.g.\ Mistral = GQA + sliding window; DeepSeek-V3 = MLA + other efficiencies.
+  \end{itemize}
 
 \end{frame}

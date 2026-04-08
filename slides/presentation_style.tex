@@ -68,7 +68,7 @@
     \begin{frame}
       \begin{multicols}{2}
         \frametitle{Table of Contents}
-        \tableofcontents[currentsection]
+        \tableofcontents[currentsection,hideothersubsections]
       \end{multicols}
     \end{frame}
 }
@@ -79,9 +79,28 @@
     \begin{frame}
       \begin{multicols}{2}
         \frametitle{Table of Contents}
-        \tableofcontents[currentsubsection]
+        \tableofcontents[currentsection, subsectionstyle=show/shaded/hide]
       \end{multicols}
     \end{frame}
 }
+
+% Make block and alertblock more visible with rounded corners and shadow
+\setbeamertemplate{blocks}[rounded][shadow=true]
+\addtobeamertemplate{block begin}{%
+  \setlength{\textwidth}{0.95\textwidth}%
+  \centering\begin{minipage}{\textwidth}%
+}{}
+\addtobeamertemplate{block end}{}{\end{minipage}}
+\addtobeamertemplate{block alerted begin}{%
+  \setlength{\textwidth}{0.95\textwidth}%
+  \centering\begin{minipage}{\textwidth}%
+}{}
+\addtobeamertemplate{block alerted end}{}{\end{minipage}}
+
+% Block colors
+\setbeamercolor{block title}{fg=white, bg=slide_violet!80}
+\setbeamercolor{block body}{fg=black, bg=slide_blue!25}
+\setbeamercolor{block title alerted}{fg=white, bg=red!75!black}
+\setbeamercolor{block body alerted}{fg=black, bg=red!10}
 
 \def\labelenumi{\theenumi} % for for enumerate with beamer

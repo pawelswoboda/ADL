@@ -140,6 +140,58 @@
 }
 
 % ============================================================
+% KV-Cache Reduction / Efficient Attention Variants
+% ============================================================
+
+@article{shazeer2019mqattention,
+  title   = {Fast Transformer Decoding: One Write-Head is All You Need},
+  author  = {Shazeer, Noam},
+  journal = {arXiv preprint arXiv:1911.02150},
+  year    = {2019},
+  url     = {https://arxiv.org/abs/1911.02150},
+}
+
+@inproceedings{ainslie2023gqa,
+  title     = {{GQA}: Training Generalized Multi-Query Transformer Models from Multi-Head Checkpoints},
+  author    = {Ainslie, Joshua and Lee-Thorp, James and de Jong, Michiel and Yang, Yinfei and Kumar, Sanjiv and Shazeer, Noam},
+  booktitle = {Proceedings of the 2023 Conference on Empirical Methods in Natural Language Processing (EMNLP)},
+  year      = {2023},
+  url       = {https://arxiv.org/abs/2305.13245},
+}
+
+@article{deepseekv2_2024,
+  title   = {{DeepSeek-V2}: A Strong, Economical, and Efficient Mixture-of-Experts Language Model},
+  author  = {{DeepSeek-AI}},
+  journal = {arXiv preprint arXiv:2405.04434},
+  year    = {2024},
+  url     = {https://arxiv.org/abs/2405.04434},
+}
+
+@article{jiang2023mistral,
+  title   = {Mistral {7B}},
+  author  = {Jiang, Albert Q. and Sablayrolles, Alexandre and Mensch, Arthur and Bamford, Chris and Chaplot, Devendra Singh and de las Casas, Diego and Bressand, Florian and Lengyel, Gianna and Lample, Guillaume and Saulnier, Lucile and Lavaud, L{\'e}lio Renard and Lachaux, Marie-Anne and Stock, Pierre and Le Scao, Teven and Lavril, Timoth{\'e}e and Wang, Thomas and Lacroix, Timoth{\'e}e and El Sayed, William},
+  journal = {arXiv preprint arXiv:2310.06825},
+  year    = {2023},
+  url     = {https://arxiv.org/abs/2310.06825},
+}
+
+@article{brandon2024cla,
+  title   = {Reducing Transformer Key-Value Cache Size with Cross-Layer Attention},
+  author  = {Brandon, William and Mishra, Mayank and Nrusimha, Aniruddha and Panda, Rameswar and Ragan-Kelley, Jonathan},
+  journal = {arXiv preprint arXiv:2405.12981},
+  year    = {2024},
+  url     = {https://arxiv.org/abs/2405.12981},
+}
+
+@article{hooper2024kvquant,
+  title   = {{KVQuant}: Towards 10 Million Context Length {LLM} Inference with {KV} Cache Quantization},
+  author  = {Hooper, Coleman and Kim, Sehoon and Genc, Hector and Mahoney, Michael W. and Shao, Yakun Sophia and Keutzer, Kurt and Gholami, Amir},
+  journal = {arXiv preprint arXiv:2401.18079},
+  year    = {2024},
+  url     = {https://arxiv.org/abs/2401.18079},
+}
+
+% ============================================================
 % Flash Attention
 % ============================================================
 
@@ -711,6 +763,15 @@
   booktitle = {arXiv preprint arXiv:1706.02677},
   year      = {2017},
   url       = {https://arxiv.org/abs/1706.02677},
+}
+
+@inproceedings{hoffer2017train,
+  title     = {Train longer, generalize better: closing the generalization gap in large batch training},
+  author    = {Hoffer, Elad and Hubara, Itay and Soudry, Daniel},
+  booktitle = {Advances in Neural Information Processing Systems},
+  volume    = {30},
+  year      = {2017},
+  url       = {https://arxiv.org/abs/1705.08741},
 }
 
 @article{kaplan2020scaling,

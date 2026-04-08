@@ -2,6 +2,8 @@
 
 \section{Training a GPT-2 Model}
 
+\subsection{Architecture}
+
 % -----------------------------------------------------------------------
 \begin{frame}{Introduction}
 
@@ -238,6 +240,8 @@
   \end{columns}
 \end{frame}
 
+\subsection{Optimization}
+
 % -----------------------------------------------------------------------
 \begin{frame}{Optimizer: AdamW with Selective Weight Decay}
 
@@ -365,6 +369,8 @@
     \end{column}
   \end{columns}
 \end{frame}
+
+\subsection{Mixed Precision Training}
 
 % -----------------------------------------------------------------------
 \begin{frame}{Floating Point Formats for Deep Learning}
@@ -571,7 +577,7 @@
 
   \vspace{0.2em}
   \begin{center}
-  \begin{tikzpicture}[font=\small,
+  \begin{tikzpicture}[font=\small, scale=0.88, every node/.style={transform shape},
     box/.style={draw, thick, rounded corners=3pt, minimum width=2.6cm, minimum height=0.65cm, align=center},
     fp32/.style={box, fill=violet!15},
     bf16/.style={box, fill=green!15},
@@ -581,47 +587,47 @@
     lbl/.style={font=\tiny, gray, align=center},
   ]
     % === Left: Storage ===
-    \node[fp32] (mw) at (0, 6.2) {Master weights $\theta$};
+    \node[fp32] (mw) at (0, 6.7) {Master weights $\theta$};
     \node[lbl, above=0pt of mw] {float32};
 
     % Cast down
-    \node[cast] (castdown) at (0, 5.3) {cast to bf16};
+    \node[cast] (castdown) at (0, 5.7) {cast to bf16};
     \draw[arr] (mw) -- (castdown);
 
     % bf16 weights copy
-    \node[bf16] (wbf) at (0, 4.4) {Weights $\hat{\theta}$};
-    \node[lbl, above=0pt of wbf] {bfloat16};
+    \node[bf16] (wbf) at (0, 4.8) {Weights $\hat{\theta}$};
+    \node[lbl, right=2pt of wbf] {bfloat16};
     \draw[arr] (castdown) -- (wbf);
 
     % Forward
-    \node[op] (fwd) at (0, 3.4) {Forward pass};
-    \node[lbl, above=0pt of fwd] {bf16 compute};
+    \node[op] (fwd) at (0, 3.7) {Forward pass};
+    \node[lbl, above right=1pt and 2pt of fwd] {bf16 compute};
     \draw[arr] (wbf) -- (fwd);
 
     % Input
-    \node[bf16, minimum width=1.8cm] (input) at (-3.5, 3.4) {Input $x$};
+    \node[bf16, minimum width=1.8cm] (input) at (-3.5, 3.7) {Input $x$};
     \node[lbl, above=0pt of input] {bf16};
     \draw[arr] (input) -- (fwd);
 
     % Loss (fp32)
-    \node[fp32, minimum width=1.8cm] (loss) at (3.5, 3.4) {Loss $\mathcal{L}$};
+    \node[fp32, minimum width=1.8cm] (loss) at (3.5, 3.7) {Loss $\mathcal{L}$};
     \node[lbl, above=0pt of loss] {float32};
     \draw[arr] (fwd) -- (loss);
 
     % Activations stored
-    \node[bf16, minimum width=1.8cm] (act) at (-3.5, 2.4) {Activations};
+    \node[bf16, minimum width=1.8cm] (act) at (-3.5, 2.6) {Activations};
     \node[lbl, above=0pt of act] {bf16};
     \draw[arr, dashed, green!50!black] (fwd) -- (act);
 
     % Backward
-    \node[op] (bwd) at (0, 2.4) {Backward pass};
+    \node[op] (bwd) at (0, 2.6) {Backward pass};
     \node[lbl, above=0pt of bwd] {bf16 compute};
     \draw[arr] (loss) |- (bwd);
     \draw[arr, dashed, green!50!black] (act) -- (bwd);
 
     % Gradients in fp32
-    \node[fp32] (grad) at (0, 1.4) {Gradients $\nabla_\theta \mathcal{L}$};
-    \node[lbl, above=0pt of grad] {float32};
+    \node[fp32] (grad) at (0, 1.5) {Gradients $\nabla_\theta \mathcal{L}$};
+    \node[lbl, right=2pt of grad] {float32};
     \draw[arr] (bwd) -- (grad);
 
     % Optimizer
@@ -671,7 +677,7 @@
       Not needed for \texttt{bfloat16} (same range as float32).
     \end{column}
     \begin{column}{0.44\textwidth}
-      \begin{tikzpicture}[font=\small,
+      \begin{tikzpicture}[font=\small, scale=0.82, every node/.style={transform shape},
         sbox/.style={draw, rounded corners, fill=blue!8, text width=3.0cm, align=center, minimum height=0.6cm},
         obox/.style={draw, rounded corners, fill=orange!15, text width=3.0cm, align=center, minimum height=0.6cm},
         gbox/.style={draw, rounded corners, fill=green!15, text width=3.0cm, align=center, minimum height=0.6cm},
@@ -688,7 +694,7 @@
         \draw[arr] (unsc)  -- (clip);
         \draw[arr] (clip)  -- (opt);
         % inf/nan branch
-        \node[font=\tiny, red, align=center] (skip) at (2.4, 1.95) {inf/nan?\\skip \& reduce $S$};
+        \node[font=\tiny, red, align=center] (skip) at (3.2, 1.95) {inf/nan?\\skip \& reduce $S$};
         \draw[-Stealth, red, dashed] (unsc.east) -- (skip);
       \end{tikzpicture}
     \end{column}
@@ -696,52 +702,8 @@
 \end{frame}
 
 % -----------------------------------------------------------------------
-\begin{frame}[fragile]{Mixed Precision Training: PyTorch Code}
 
-  \begin{columns}
-    \begin{column}{0.55\textwidth}
-\begin{lstlisting}[language=Python, basicstyle=\ttfamily\scriptsize,
-  keywordstyle=\color{blue}, commentstyle=\color{gray},
-  stringstyle=\color{red!70!black}, showstringspaces=false,
-  frame=single, xleftmargin=0pt, numbers=left, numberstyle=\tiny\color{gray}]
-# Setup
-ctx = torch.amp.autocast(
-    device_type='cuda',
-    dtype=torch.bfloat16)
-scaler = torch.amp.GradScaler(
-    enabled=(dtype == torch.float16))
-
-# Training loop
-for batch in dataloader:
-    optimizer.zero_grad()
-
-    # Forward in reduced precision
-    with ctx:
-        logits = model(batch.input)
-        loss = F.cross_entropy(
-            logits, batch.target)
-
-    # Backward (scaler for fp16 only)
-    scaler.scale(loss).backward()
-    scaler.unscale_(optimizer)
-    torch.nn.utils.clip_grad_norm_(
-        model.parameters(), 1.0)
-    scaler.step(optimizer)
-    scaler.update()
-\end{lstlisting}
-    \end{column}
-    \begin{column}{0.42\textwidth}
-      \textbf{Key points}:
-      \begin{itemize}
-        \item \texttt{autocast} context manager casts eligible ops (matmuls, convolutions) to bf16/fp16 automatically
-        \item Matmul inputs are cast to bf16, but tensor cores accumulate in float32 internally
-        \item Loss is computed in float32 (not cast by autocast)
-        \item \texttt{GradScaler} is only needed for float16; for bfloat16 it is a no-op (\texttt{enabled=False})
-        \item Master weights and optimizer states remain in float32 throughout
-      \end{itemize}
-    \end{column}
-  \end{columns}
-\end{frame}
+\subsection{Compilation and Kernel Fusion}
 
 % -----------------------------------------------------------------------
 \begin{frame}{\texttt{torch.compile}}
@@ -995,6 +957,8 @@ for batch in dataloader:
   \end{columns}
 \end{frame}
 
+\subsection{Distributed Training and Data Loading}
+
 % -----------------------------------------------------------------------
 \begin{frame}{Distributed Data Parallel (DDP)}
 
@@ -1013,7 +977,7 @@ for batch in dataloader:
       \textbf{Effective batch}: scales linearly with number of GPUs. Throughput scales near-linearly.
     \end{column}
     \begin{column}{0.48\textwidth}
-      \begin{tikzpicture}[font=\small,
+      \begin{tikzpicture}[font=\small, scale=0.82, every node/.style={transform shape},
         gpu/.style={draw, fill=orange!15, rounded corners, minimum width=1.6cm, minimum height=0.7cm, align=center},
         model/.style={draw, fill=blue!8, rounded corners, minimum width=1.6cm, minimum height=0.5cm, align=center, font=\tiny},
         sync/.style={draw, fill=green!15, rounded corners, minimum width=4.2cm, minimum height=0.6cm, align=center},
@@ -1056,23 +1020,14 @@ for batch in dataloader:
         \draw[arr] (ar) -- (upd);
 
         % Loop back
-        \draw[arr, dashed, gray] (upd.south) -- ++(0,-0.4) -| (-0.8, 5.5) -- (g0.west);
+        \draw[arr, dashed, gray] (upd.south) -- ++(0,-0.4) -| (-1.1, 5.5) -- (g0.west);
       \end{tikzpicture}
     \end{column}
   \end{columns}
 \end{frame}
 
-% -----------------------------------------------------------------------
-\begin{frame}{Data Loading}
 
-  \textbf{Data loading with \texttt{np.memmap}}:
-  \begin{itemize}
-    \item Tokenized data is stored as a binary file of \texttt{uint16} token IDs
-    \item \texttt{np.memmap} maps the file into virtual memory --- only the accessed pages are loaded from disk
-    \item Enables training on datasets larger than RAM
-    \item Re-created each batch to avoid a memory leak
-  \end{itemize}
-\end{frame}
+\subsection{Hyperparameters}
 
 % -----------------------------------------------------------------------
 \begin{frame}{Hyperparameters}

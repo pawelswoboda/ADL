@@ -593,7 +593,7 @@
       \begin{itemize}
         \item If loss spikes early: reduce LR or increase warmup
         \item If loss plateaus: try $2\text{--}3\times$ higher LR
-        \item When scaling batch size $B \to kB$: scale $\eta \to k\eta$ (linear scaling rule)
+        \item When scaling batch size $B \to kB$: scale $\eta \to k\eta$ (linear) or $\eta \to \sqrt{k}\,\eta$ (square root)
       \end{itemize}
     \end{column}
   \end{columns}
@@ -603,46 +603,44 @@
 \subsection{Batch Size Selection}
 
 % -----------------------------------------------------------------------
-\begin{frame}{Batch Size and the Linear Scaling Rule}
+\begin{frame}{Batch Size and Learning Rate Scaling}
 
   The mini-batch gradient \emph{averages} over $B$ random samples:
   \[
     \hat{g}_B = \frac{1}{B} \sum_{i=1}^{B} \nabla L_i(\vw) \qquad \Rightarrow \qquad \vw_{t+1} = \vw_t - \eta\, \hat{g}_B
   \]
 
-  \vspace{0.2em}
-  \textbf{Linear scaling rule}~\cite{goyal2017accurate}: With $k\times$ larger batch we take $k\times$ fewer steps per epoch. To cover the same distance in weight space, scale $\eta \to k\eta$:
+  \begin{columns}[T]
+    \begin{column}{0.48\textwidth}
+      \textbf{Linear scaling}~\cite{goyal2017accurate}:
+      \[
+        B \to kB \;\Rightarrow\; \eta \to k\eta
+      \]
+      \begin{itemize}
+        \item With $k\times$ larger batch, $k\times$ fewer steps per epoch
+        \item Scale LR proportionally to cover the same distance in weight space
+        \item Matches the \emph{expected} update: one large step $\approx$ $k$ small steps
+      \end{itemize}
+    \end{column}
+    \begin{column}{0.48\textwidth}
+      \textbf{Square root scaling}~\cite{hoffer2017train}:
+      \[
+        B \to kB \;\Rightarrow\; \eta \to \sqrt{k}\,\eta
+      \]
+      \begin{itemize}
+        \item Gradient noise std decreases as $1/\sqrt{B}$
+        \item Scaling by $\sqrt{k}$ preserves the signal-to-noise ratio of parameter updates
+        \item More conservative; works better for very large $B$ where linear scaling diverges
+      \end{itemize}
+    \end{column}
+  \end{columns}
 
-  \medskip
-  \begin{center}
-  \begin{minipage}[c]{0.42\textwidth}
-  \begin{tcolorbox}[colback=slide_blue!30, colframe=slide_blue!80, boxrule=0.6pt, arc=3pt, left=6pt, right=6pt, top=4pt, bottom=4pt]
-    \centering
-    {\small\textbf{1 step, batch $kB$, rate $k\eta$}}\\[4pt]
-    $\vw - k\eta\, \hat{g}_{kB}$
-  \end{tcolorbox}
-  \end{minipage}%
-  \hfill
-  \begin{minipage}[c]{0.06\textwidth}
-    \centering $\approx$
-  \end{minipage}%
-  \hfill
-  \begin{minipage}[c]{0.42\textwidth}
-  \begin{tcolorbox}[colback=slide_beige!30, colframe=slide_beige!80, boxrule=0.6pt, arc=3pt, left=6pt, right=6pt, top=4pt, bottom=4pt]
-    \centering
-    {\small\textbf{$k$ steps, batch $B$, rate $\eta$}}\\[4pt]
-    $\vw - \eta \displaystyle\sum_{j=1}^{k} \hat{g}_{B}^{(j)}$
-  \end{tcolorbox}
-  \end{minipage}
-  \end{center}
-  Both sides have the same \emph{expected} update: $\mathbb{E}[\hat{g}_{kB}] = \mathbb{E}[\hat{g}_B]$ because both are sample means of i.i.d.\ draws (batch size only affects variance, not expectation).
-
-  \vspace{0.3em}
-  \textbf{Limitations:}
+  \vspace{0.4em}
+  \textbf{When to use which?}
   \begin{itemize}
-    \item Assumes $\text{Var}[\hat{g}]$ is small enough that linear approximation holds --- breaks for very large $B$
-    \item Does not account for Adam's adaptive scaling (empirically still useful)
-    \item Requires LR warmup to work at large batch sizes
+    \item Linear scaling is the default for moderate batch size increases ($k \leq 8$--$16$); requires LR warmup
+    \item Square root scaling is more robust at very large batch sizes (above $B_\text{crit}$)
+    \item In practice, the optimal exponent is often between $0.5$ and $1.0$ and depends on the optimizer, model, and data
   \end{itemize}
 
 \end{frame}
@@ -1159,7 +1157,7 @@
 
     \item \textbf{Use $\mu$P for large models.} Tune on a small proxy ($\sim$$10\text{--}100\times$ cheaper), transfer LR and other HPs to the target scale.
 
-    \item \textbf{Scale batch size with compute.} Use the linear scaling rule; start small, ramp up. Stay near $B_{\text{crit}}$.
+    \item \textbf{Scale batch size with compute.} Use the linear or square root scaling rule; start small, ramp up. Stay near $B_{\text{crit}}$.
 
     \item \textbf{Keep everything else at defaults.} Weight decay $= 0.1$, $\beta_1 = 0.9$, $\beta_2 = 0.95$, grad clip $= 1.0$.
 
@@ -1206,7 +1204,7 @@
       \item \textbf{Scaling laws} predict performance from small experiments
       \item \textbf{$\mu$P} enables \emph{hyperparameter transfer} from small to large models
       \item \textbf{LLM recipes} have converged: AdamW, $\lambda{=}0.1$, $\beta_2{=}0.95$, cosine LR, grad clip 1.0
-      \item \textbf{Batch size} interacts with LR via the linear scaling rule; respect $B_{\text{crit}}$
+      \item \textbf{Batch size} interacts with LR via scaling rules (linear or $\sqrt{k}$); respect $B_{\text{crit}}$
       \item \textbf{Recent:} schedule-free optimizers and HP scaling laws make tuning more principled
     \end{itemize}
   \end{block}

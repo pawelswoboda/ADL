@@ -61,24 +61,15 @@
       GPUs have a two-level memory hierarchy:
 
       \vspace{0.5em}
-      \begin{center}
-      \begin{tabular}{lcc}
-        \toprule
-        & \textbf{SRAM} & \textbf{HBM} \\
-        \midrule
-        Size   & $\sim$20\,MB   & $\sim$40--80\,GB \\
-        Bandwidth & $\sim$19\,TB/s & $\sim$1.5--3\,TB/s \\
-        Latency   & Low            & High \\
-        \bottomrule
-      \end{tabular}
-      \end{center}
+      \begin{description}
+        \item[HBM (off-chip):] Large ($\sim$40--80\,GB) but slow ($\sim$1.5--3\,TB/s). Stores model parameters, activations, optimizer states. Every kernel reads inputs from and writes outputs to HBM.
+        \item[SRAM (on-chip):] Small ($\sim$20\,MB) but fast ($\sim$19\,TB/s, $\sim$10$\times$ faster). Each streaming multiprocessor has its own SRAM (shared memory). Data must be explicitly loaded into SRAM before compute.
+      \end{description}
 
       \vspace{0.5em}
-      \begin{itemize}
-        \item SRAM is on-chip (shared memory), fast but small
-        \item HBM is off-chip, large but slow
-        \item Standard attention materializes $S, P \in \mathbb{R}^{T \times T}$ in HBM
-      \end{itemize}
+      \begin{alertblock}{Implication for attention}
+        Standard attention writes $S, P \in \mathbb{R}^{T \times T}$ to HBM between steps. If these intermediates fit in SRAM, we can avoid the round-trip entirely.
+      \end{alertblock}
     \end{column}
     \begin{column}{0.42\textwidth}
       \centering
@@ -91,12 +82,21 @@
 
   \begin{columns}
     \begin{column}{0.55\textwidth}
-      Standard attention implementation:
-      \begin{enumerate}
-        \item Compute $S = QK^\top$ \quad $\to$ write $S$ to HBM
-        \item Compute $P = \text{softmax}(S)$ \quad $\to$ read $S$, write $P$ to HBM
-        \item Compute $O = PV$ \quad $\to$ read $P$ from HBM
-      \end{enumerate}
+      \begin{algorithm}[H]
+        \caption{Standard Attention}
+        \KwIn{$Q, K, V \in \mathbb{R}^{T \times d}$ in HBM}
+        \KwOut{$O \in \mathbb{R}^{T \times d}$}
+        Load $Q, K$ from HBM\;
+        Compute $S = QK^\top \in \mathbb{R}^{T \times T}$\;
+        Write $S$ to HBM\;
+        Load $S$ from HBM\;
+        Compute $P = \text{softmax}(S) \in \mathbb{R}^{T \times T}$\;
+        Write $P$ to HBM\;
+        Load $P, V$ from HBM\;
+        Compute $O = PV \in \mathbb{R}^{T \times d}$\;
+        Write $O$ to HBM\;
+        \Return $O$\;
+      \end{algorithm}
 
       \vspace{0.5em}
       \textbf{Problems:}
