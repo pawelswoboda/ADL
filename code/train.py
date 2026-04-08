@@ -20,14 +20,18 @@ import os
 import time
 import math
 import pickle
+import json
+import urllib.request
 from contextlib import nullcontext
 
 import numpy as np
 import torch
+import torch.nn.functional as F
 from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.distributed import init_process_group, destroy_process_group
 
-from model_transformer import GPTConfig, GPT
+import tiktoken
+# model class is imported below after configurator sets model_type
 
 # -----------------------------------------------------------------------------
 # default config values designed to train a gpt2 (124M) on OpenWebText
@@ -35,25 +39,22 @@ from model_transformer import GPTConfig, GPT
 out_dir = 'out'
 eval_interval = 2000
 log_interval = 1
+diag_interval = 100 # how often to log detailed per-layer diagnostics
 eval_iters = 200
 eval_only = False # if True, script exits right after the first eval
 always_save_checkpoint = True # if True, always save a checkpoint after each eval
 init_from = 'scratch' # 'scratch' or 'resume' or 'gpt2*'
 # wandb logging
-wandb_log = False # disabled by default
+wandb_log = True
 wandb_project = 'owt'
 wandb_run_name = 'gpt2' # 'run' + str(time.time())
 # data
 dataset = 'openwebtext'
-gradient_accumulation_steps = 5 * 8 # used to simulate larger batch sizes
-batch_size = 12 # if gradient_accumulation_steps > 1, this is the micro-batch size
+gradient_accumulation_steps = 15 # used to simulate larger batch sizes
+batch_size = 32 # if gradient_accumulation_steps > 1, this is the micro-batch size
 block_size = 1024
 # model
-n_layer = 12
-n_head = 12
-n_embd = 768
-dropout = 0.0 # for pretraining 0 is good, for finetuning try 0.1+
-bias = False # do we use bias inside LayerNorm and Linear layers?
+model_type = 'gpt' # 'gpt', 'rnn', 'gru', or 'mamba2'
 # adamw optimizer
 learning_rate = 6e-4 # max learning rate
 max_iters = 600000 # total number of training iterations
@@ -72,10 +73,25 @@ backend = 'nccl' # 'nccl', 'gloo', etc.
 device = 'cuda' # examples: 'cpu', 'cuda', 'cuda:0', 'cuda:1' etc., or try 'mps' on macbooks
 dtype = 'bfloat16' if torch.cuda.is_available() and torch.cuda.is_bf16_supported() else 'float16' # 'float32', 'bfloat16', or 'float16', the latter will auto implement a GradScaler
 compile = True # use PyTorch 2.0 to compile the model to be faster
+# hellaswag evaluation
+hellaswag_eval = True # if True, evaluate on HellaSwag val set at each eval_interval
+hellaswag_num_examples = 200 # number of val examples to evaluate (full val = 10042)
 # -----------------------------------------------------------------------------
 config_keys = [k for k,v in globals().items() if not k.startswith('_') and isinstance(v, (int, float, bool, str))]
 exec(open('configurator.py').read()) # overrides from command line or config file
 config = {k: globals()[k] for k in config_keys} # will be useful for logging
+
+# import model class based on model_type
+if model_type == 'gpt':
+    from model import GPTConfig as ModelConfig, GPT as Model
+elif model_type == 'rnn':
+    from model_rnn import RNNConfig as ModelConfig, VanillaRNN as Model
+elif model_type == 'gru':
+    from model_gru import GRUConfig as ModelConfig, GRU as Model
+elif model_type == 'mamba2':
+    from model_mamba2 import Mamba2Config as ModelConfig, Mamba2 as Model
+else:
+    raise ValueError(f"unknown model_type: {model_type}")
 # -----------------------------------------------------------------------------
 
 # various inits, derived attributes, I/O setup
@@ -143,31 +159,44 @@ if os.path.exists(meta_path):
     meta_vocab_size = meta['vocab_size']
     print(f"found vocab_size = {meta_vocab_size} (inside {meta_path})")
 
+# set up encode/decode for sample generation during eval
+if os.path.exists(meta_path):
+    stoi, itos = meta['stoi'], meta['itos']
+    encode = lambda s: [stoi[c] for c in s]
+    decode = lambda l: ''.join([itos[i] for i in l])
+else:
+    enc = tiktoken.get_encoding("gpt2")
+    encode = lambda s: enc.encode(s, allowed_special={"<|endoftext|>"})
+    decode = lambda l: enc.decode(l)
+
+sample_prompts = [
+    "I am Donald Trump and",
+    "As a male feminist I think",
+    "God's chosen people are",
+    "I do not believe in evolution since",
+]
+
 # model init
-model_args = dict(n_layer=n_layer, n_head=n_head, n_embd=n_embd, block_size=block_size,
-                  bias=bias, vocab_size=None, dropout=dropout) # start with model_args from command line
 if init_from == 'scratch':
     # init a new model from scratch
     print("Initializing a new model from scratch")
     # determine the vocab size we'll use for from-scratch training
     if meta_vocab_size is None:
         print("defaulting to vocab_size of GPT-2 to 50304 (50257 rounded up for efficiency)")
-    model_args['vocab_size'] = meta_vocab_size if meta_vocab_size is not None else 50304
-    gptconf = GPTConfig(**model_args)
-    model = GPT(gptconf)
+    vocab_size = meta_vocab_size if meta_vocab_size is not None else 50304
+    model = Model(ModelConfig(block_size=block_size, vocab_size=vocab_size))
 elif init_from == 'resume':
     print(f"Resuming training from {out_dir}")
     # resume training from a checkpoint.
     ckpt_path = os.path.join(out_dir, 'ckpt.pt')
     checkpoint = torch.load(ckpt_path, map_location=device)
-    checkpoint_model_args = checkpoint['model_args']
-    # force these config attributes to be equal otherwise we can't even resume training
-    # the rest of the attributes (e.g. dropout) can stay as desired from command line
-    for k in ['n_layer', 'n_head', 'n_embd', 'block_size', 'bias', 'vocab_size']:
-        model_args[k] = checkpoint_model_args[k]
-    # create the model
-    gptconf = GPTConfig(**model_args)
-    model = GPT(gptconf)
+    if 'model_type' in checkpoint:
+        assert model_type == checkpoint['model_type'], \
+            f"model_type mismatch: '{model_type}' vs checkpoint '{checkpoint['model_type']}'"
+    # restore model config from checkpoint, filtering to valid fields
+    ckpt_args = {k: v for k, v in checkpoint['model_args'].items()
+                 if k in ModelConfig.__dataclass_fields__}
+    model = Model(ModelConfig(**ckpt_args))
     state_dict = checkpoint['model']
     # fix the keys of the state dictionary :(
     # honestly no idea how checkpoints sometimes get this prefix, have to debug more
@@ -179,17 +208,13 @@ elif init_from == 'resume':
     iter_num = checkpoint['iter_num']
     best_val_loss = checkpoint['best_val_loss']
 elif init_from.startswith('gpt2'):
+    assert model_type == 'gpt', "pretrained GPT-2 weights only available for model_type='gpt'"
     print(f"Initializing from OpenAI GPT-2 weights: {init_from}")
     # initialize from OpenAI GPT-2 weights
-    override_args = dict(dropout=dropout)
-    model = GPT.from_pretrained(init_from, override_args)
-    # read off the created config params, so we can store them into checkpoint correctly
-    for k in ['n_layer', 'n_head', 'n_embd', 'block_size', 'bias', 'vocab_size']:
-        model_args[k] = getattr(model.config, k)
-# crop down the model block size if desired, using model surgery
-if block_size < model.config.block_size:
-    model.crop_block_size(block_size)
-    model_args['block_size'] = block_size # so that the checkpoint will have the right value
+    model = Model.from_pretrained(init_from)
+# store model config for checkpointing
+model_args = vars(model.config).copy()
+print("number of parameters: %.2fM" % (sum(p.numel() for p in model.parameters())/1e6,))
 model.to(device)
 
 # initialize a GradScaler. If enabled=False scaler is a no-op
@@ -241,16 +266,86 @@ def get_lr(it):
     coeff = 0.5 * (1.0 + math.cos(math.pi * decay_ratio)) # coeff ranges 0..1
     return min_lr + coeff * (learning_rate - min_lr)
 
+# HellaSwag evaluation helpers
+_HELLASWAG_URL = "https://raw.githubusercontent.com/rowanz/hellaswag/master/data/hellaswag_val.jsonl"
+_HELLASWAG_CACHE = os.path.join("data", "hellaswag", "hellaswag_val.jsonl")
+
+def _download_hellaswag():
+    if not os.path.exists(_HELLASWAG_CACHE):
+        os.makedirs(os.path.dirname(_HELLASWAG_CACHE), exist_ok=True)
+        print(f"Downloading HellaSwag val set to {_HELLASWAG_CACHE}...")
+        urllib.request.urlretrieve(_HELLASWAG_URL, _HELLASWAG_CACHE)
+
+def _render_hellaswag_example(example, enc):
+    """Tokenize a HellaSwag example into (tok_rows, mask_rows, label).
+    tok_rows[i]  = context tokens + ending[i] tokens
+    mask_rows[i] = 0s for context, 1s for ending (loss is computed only on ending)
+    """
+    ctx_tokens = enc.encode(example['ctx'])
+    tok_rows, mask_rows = [], []
+    for ending in example['endings']:
+        end_tokens = enc.encode(" " + ending)
+        tok_rows.append(ctx_tokens + end_tokens)
+        mask_rows.append([0] * len(ctx_tokens) + [1] * len(end_tokens))
+    return tok_rows, mask_rows, int(example['label'])
+
+@torch.no_grad()
+def evaluate_hellaswag(mdl, num_examples):
+    """Evaluate mdl on HellaSwag; returns accuracy over num_examples examples."""
+    _download_hellaswag()
+    enc_hs = tiktoken.get_encoding("gpt2")
+    mdl.eval()
+    num_correct = num_total = 0
+    with open(_HELLASWAG_CACHE) as f:
+        for i, line in enumerate(f):
+            if num_examples is not None and i >= num_examples:
+                break
+            example = json.loads(line)
+            tok_rows, mask_rows, label = _render_hellaswag_example(example, enc_hs)
+
+            # pad all 4 rows to the same length, truncating from the left if over block_size
+            T = min(max(len(t) for t in tok_rows), block_size)
+            tokens = torch.zeros(4, T, dtype=torch.long, device=device)
+            masks  = torch.zeros(4, T, dtype=torch.long, device=device)
+            for j, (toks, mask) in enumerate(zip(tok_rows, mask_rows)):
+                if len(toks) > T:          # truncate context from the left
+                    toks, mask = toks[-T:], mask[-T:]
+                tokens[j, :len(toks)] = torch.tensor(toks, dtype=torch.long)
+                masks[j,  :len(mask)] = torch.tensor(mask, dtype=torch.long)
+
+            # forward: pass tokens as targets so the model returns full-sequence logits
+            with ctx:
+                logits, _ = mdl(tokens, tokens)  # (4, T, vocab_size)
+
+            # per-token CE loss, averaged over ending tokens only
+            shift_logits = logits[:, :-1, :].contiguous()   # (4, T-1, V)
+            shift_tokens = tokens[:, 1:].contiguous()        # (4, T-1)
+            shift_masks  = masks[:, 1:].float()              # (4, T-1)
+            flat_losses = F.cross_entropy(
+                shift_logits.view(-1, shift_logits.size(-1)),
+                shift_tokens.view(-1), reduction='none',
+            ).view(4, -1)                                    # (4, T-1)
+            row_losses = (flat_losses * shift_masks).sum(1) / shift_masks.sum(1).clamp(min=1)
+            num_correct += int(row_losses.argmin().item() == label)
+            num_total += 1
+    mdl.train()
+    return num_correct / num_total if num_total > 0 else 0.0
+
 # logging
 if wandb_log and master_process:
     import wandb
     wandb.init(project=wandb_project, name=wandb_run_name, config=config)
 
+# training diagnostics
+from train_diagnostics import TrainingDiagnostics
+raw_model = model.module if ddp else model # unwrap DDP container if needed
+diag = TrainingDiagnostics(raw_model, optimizer, diag_interval) if (wandb_log and master_process) else None
+
 # training loop
 X, Y = get_batch('train') # fetch the very first batch
 t0 = time.time()
+train_start_time = t0
 local_iter_num = 0 # number of iterations in the lifetime of this process
-raw_model = model.module if ddp else model # unwrap DDP container if needed
 running_mfu = -1.0
 while True:
 
@@ -258,19 +353,48 @@ while True:
     lr = get_lr(iter_num) if decay_lr else learning_rate
     for param_group in optimizer.param_groups:
         param_group['lr'] = lr
+    if diag:
+        diag.begin_step(iter_num)
 
     # evaluate the loss on train/val sets and write checkpoints
     if iter_num % eval_interval == 0 and master_process:
         losses = estimate_loss()
         print(f"step {iter_num}: train loss {losses['train']:.4f}, val loss {losses['val']:.4f}")
+        # generate sample completions using model's generate method
+        model.eval()
+        sample_completions = []
+        for prompt in sample_prompts:
+            ids = encode(prompt)
+            x = torch.tensor(ids, dtype=torch.long, device=device)[None, ...]
+            with ctx:
+                y = raw_model.generate(x, max_new_tokens=128, temperature=0.8, top_k=200)
+            completion = decode(y[0].tolist())
+            print(f"--- Sample ---\n{completion}\n--------------")
+            sample_completions.append((prompt, completion))
+        model.train()
+        # HellaSwag evaluation
+        hellaswag_acc = None
+        if hellaswag_eval:
+            hellaswag_acc = evaluate_hellaswag(raw_model, hellaswag_num_examples)
+            print(f"step {iter_num}: hellaswag acc {hellaswag_acc:.4f} ({hellaswag_num_examples} examples)")
         if wandb_log:
-            wandb.log({
+            tokens_seen = iter_num * tokens_per_iter
+            log_dict = {
                 "iter": iter_num,
+                "tokens": tokens_seen,
                 "train/loss": losses['train'],
                 "val/loss": losses['val'],
                 "lr": lr,
                 "mfu": running_mfu*100, # convert to percentage
-            })
+            }
+            if hellaswag_acc is not None:
+                log_dict["val/hellaswag_acc"] = hellaswag_acc
+            if sample_completions:
+                table = wandb.Table(columns=["prompt", "completion"])
+                for prompt, completion in sample_completions:
+                    table.add_data(prompt, completion)
+                log_dict["samples"] = table
+            wandb.log(log_dict, step=tokens_seen)
         if losses['val'] < best_val_loss or always_save_checkpoint:
             best_val_loss = losses['val']
             if iter_num > 0:
@@ -278,6 +402,7 @@ while True:
                     'model': raw_model.state_dict(),
                     'optimizer': optimizer.state_dict(),
                     'model_args': model_args,
+                    'model_type': model_type,
                     'iter_num': iter_num,
                     'best_val_loss': best_val_loss,
                     'config': config,
@@ -306,7 +431,7 @@ while True:
     # clip the gradient
     if grad_clip != 0.0:
         scaler.unscale_(optimizer)
-        torch.nn.utils.clip_grad_norm_(model.parameters(), grad_clip)
+        grad_norm = torch.nn.utils.clip_grad_norm_(model.parameters(), grad_clip).item()
     # step the optimizer and scaler if training in fp16
     scaler.step(optimizer)
     scaler.update()
@@ -324,7 +449,26 @@ while True:
         if local_iter_num >= 5: # let the training loop settle a bit
             mfu = raw_model.estimate_mfu(batch_size * gradient_accumulation_steps, dt)
             running_mfu = mfu if running_mfu == -1.0 else 0.9*running_mfu + 0.1*mfu
-        print(f"iter {iter_num}: loss {lossf:.4f}, time {dt*1000:.2f}ms, mfu {running_mfu*100:.2f}%")
+        elapsed = time.time() - train_start_time
+        elapsed_h, elapsed_rem = divmod(int(elapsed), 3600)
+        elapsed_m, elapsed_s = divmod(elapsed_rem, 60)
+        print(f"iter {iter_num}: loss {lossf:.4f}, iter_time {int(dt)}s:{int((dt%1)*1000):03d}ms, elapsed {elapsed_h:02d}:{elapsed_m:02d}:{elapsed_s:02d}, mfu {running_mfu*100:.2f}%")
+        if wandb_log:
+            tokens_seen = iter_num * tokens_per_iter
+            log_dict = {
+                "iter": iter_num,
+                "tokens": tokens_seen,
+                "train/loss_iter": lossf,
+                "lr": lr,
+                "mfu": running_mfu*100,
+                "time_ms": dt*1000,
+                "training/grad_norm": grad_norm,
+            }
+            if diag:
+                log_dict.update(diag.collect(
+                    scaler=scaler if dtype == 'float16' else None,
+                ))
+            wandb.log(log_dict, step=tokens_seen)
     iter_num += 1
     local_iter_num += 1
 
