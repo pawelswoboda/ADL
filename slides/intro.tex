@@ -1,0 +1,210 @@
+% !TEX root=./adl.tex
+
+\section{Introduction}
+
+\begin{frame}{Overall Goals}
+  \begin{itemize}
+    \item Understand current deep learning state of the art (LLMs, vision, multimodal)
+    \item Achieve mastery of deep neural networks
+    \item Cover a wide range of topics, fast tempo, in-depth
+    \item Coding whenever possible, conceptual and technical depth
+    \item After the course you will be well-equipped for a Master's thesis
+  \end{itemize}
+
+  \vspace{1em}
+  \textbf{Side Effects}
+  \begin{itemize}
+    \item Earning potential increased (!?)
+    \item You will come to appreciate the bitter lesson~\cite{sutton2019bitter}
+    \item Ability to follow and discern the scientific literature in deep learning
+    \item You will become more productive and iterate faster
+    \item You will learn to intuit: what is fundamentally important vs.\ what will fade away?
+      Where do performance limitations come from?
+    \item Better mental preparation for AGI?
+  \end{itemize}
+\end{frame}
+
+\begin{frame}{Requirements}
+  \begin{columns}
+    \begin{column}{0.48\textwidth}
+      \textbf{Necessary}
+      \begin{itemize}
+        \item (Introduction to) Deep Learning
+        \item Machine Learning
+      \end{itemize}
+
+      \vspace{0.8em}
+      \textbf{Desirable}
+      \begin{itemize}
+          \item Reinforcement Learning (Milica Gasic)
+          \item Implementing Transformers Practical (Carol van Niekerk)
+      \end{itemize}
+    \end{column}
+    \begin{column}{0.48\textwidth}
+      \textbf{RL Resources}
+      \begin{itemize}
+        \item \cite{silver2015rl}
+        \item \cite{schneider2023rl}
+        \item \cite{sutton2018rl}
+      \end{itemize}
+    \end{column}
+  \end{columns}
+
+  \vspace{1em}
+  \begin{alertblock}{Interaction}
+    Please initiate discussion, pose questions etc.
+  \end{alertblock}
+
+  \vspace{1em}
+  \begin{alertblock}{Tempo}
+    Due to the amount of material covered, I will pursue a higher speed.
+  \end{alertblock}
+
+  \vspace{1em}
+  \begin{alertblock}{Expectation}
+    I expect a big time investment from students. I also invest effort.
+  \end{alertblock}
+
+  \vspace{1em}
+  \begin{alertblock}{Usage of LLMs}
+	  Do not use LLMs for writing code! Looking up function definitions, helping to learn etc.\ is of course alright.
+	  Cognitive offloading to LLMs is going to be counterproductive, when you want to learn and understand in depth.
+  \end{alertblock}
+\end{frame}
+
+\begin{frame}{Organization}
+  \begin{columns}
+    \begin{column}{0.48\textwidth}
+      \textbf{People}
+      \begin{itemize}
+        \item \textbf{Lecturer:} Paul Swoboda \\
+            {\small\email{paul.swoboda@hhu.de}}
+        \item \textbf{Assistant:} Pawe\l{} Batorski \\
+            {\small\email{pawel.batorski@hhu.de}}
+        \item \textbf{Tutor:} Abtin Pourhadi \\
+            {\small\email{abtin.pourhadi@hhu.de}}
+      \end{itemize}
+
+      \vspace{0.8em}
+      \textbf{Administrative questions} \\
+      (exam registration, study regulations, etc.)
+      \begin{itemize}
+        \item Claudia Forstinger \\
+          \small\email{claudia.forstinger@hhu.de}
+      \end{itemize}
+    \end{column}
+    \begin{column}{0.48\textwidth}
+      \textbf{Communication}
+      \begin{itemize}
+        \item Primary channel: Discord $\rightarrow$ or would you prefer rocketchat? \\
+            %\textcolor{red}{\url{discord.gg/...}}
+      \end{itemize}
+
+      \vspace{0.8em}
+      \textbf{Materials}
+      \begin{itemize}
+        \item Github \\
+            {\small\textcolor{red}{\url{https://github.com/pawelswoboda/ADL}}}
+	\item Please file corrections etc.\ through pull requests
+      \end{itemize}
+
+    \end{column}
+  \end{columns}
+\end{frame}
+
+\begin{frame}{Lecture Modality}
+	\begin{itemize}
+		\item Assignments will be given each week/second week, depending on scope of exercise. Work on them in groups of three.
+		\item Assignments will be corrected, but we will not count points (thank you OpenAI/Anthropic/...)
+		\item Two or three mini-exams will determine the grade. One or two exams mid-semester, the final one at the end.
+		\item Access to GPUs for completing exercises will be granted on request.
+	\end{itemize}
+\end{frame}
+
+\begin{frame}{Topics}
+  \begin{columns}
+    \begin{column}{0.48\textwidth}
+      \textbf{Transformers}
+      \begin{itemize}
+        \item GPT-2 reimplementation ({\`a} la Karpathy)
+	\item Recent architectural improvements
+	\item Positional Encodings: RoPE, YaRN
+	\item Muon optimizer
+	\item Training: Pre-training, SFT, RLHF \& post-training
+	\item Efficient attention: \{Flash$|$Tind$|$Tree\} attention
+	\item KV-Cache: Multi-head latent attention, grouped query attention
+	\item Mixture of experts, load balancing
+	\item Transformers for computer vision: ViT, DETR, TrackFormer, MaskFormer, SWin, $\ldots$
+	\item Multimodal models: CLIP, SigLIP, PaliGemma
+      \end{itemize}
+
+      \textbf{Recursive Models}
+      \begin{itemize}
+	      \item RNNs, LSTM, GRU
+	      \item Mamba\{1$|$2\}: Efficient computation with prefix sum \& chunked matrix multiplication
+      \end{itemize}
+    \end{column}
+
+    \begin{column}{0.48\textwidth}
+      \textbf{Training}
+      \begin{itemize}
+	      \item Efficiency: Mixed precision, kernel fusion 
+	      \item Parallelism: Distributed training, Data/model/pipeline parallelism, sharding
+          \item Hyperparameters
+	      \item Fine-tuning: LoRA, Adapters
+	      \item Distillation
+	      \item Reinforcement learning: PPO, GRPO
+	      \item Scaling laws
+      \end{itemize}
+
+
+      \textbf{Agentic}
+      \begin{itemize}
+	      \item Prompting: In-context learning, \{chain$|$tree\} of thought
+	      \item Memory
+	      \item Reasoning
+      \end{itemize}
+
+  \begin{alertblock}{Theme}
+	  I hope to cover all the essential technical content that allows deep technical understanding of the current iteration of intelligent machines.
+  \end{alertblock}
+    \end{column}
+  \end{columns}
+\end{frame}
+
+\begin{frame}{The Bitter Lesson~\cite{sutton2019bitter}}
+  \textbf{Core thesis:} General methods leveraging computation beat methods leveraging human knowledge --- and by a large margin.
+
+  \begin{description}[style=nextline]
+    \item[Chess] Human-crafted evaluation functions dominated for decades, but massive brute-force search defeated Kasparov in 1997~\cite{campbell2002deep}.
+    \item[Go] Initial efforts exploited human knowledge of the game. AlphaGo~Zero learned tabula rasa via self-play + search, surpassing all predecessors~\cite{silver2017mastering}.
+    \item[Speech] Hand-engineered phoneme/vocal-tract models lost to statistical HMMs in the 1970s DARPA competition. Deep learning pushed this further~\cite{hinton2012deep}.
+    \item[Vision] Edge detectors, SIFT features, generalized cylinders --- all replaced by learned convolutions~\cite{krizhevsky2012imagenet}.
+  \end{description}
+
+  \begin{alertblock}{The Lesson}
+    \begin{enumerate}
+      \item Researchers build domain knowledge into agents --- helps short-term, satisfying personally.
+      \item In the long run it plateaus and \emph{inhibits} further progress.
+      \item Breakthroughs come from scaling computation via \textbf{search} and \textbf{learning}.
+    \end{enumerate}
+  \end{alertblock}
+
+  \vspace{0.3em}
+  {\small ``We want AI agents that can \emph{discover} like we can, not which contain what we have discovered.'' --- R.~Sutton}
+\end{frame}
+
+\begin{frame}{Philosophical/Speculation}
+	\begin{itemize}
+		\item \underline{AGI}: I think it is a plausible hypothesis that LLMs (or incremental improvements of them) will lead to human-level intelligence in a vast array of settings.
+		\item \underline{Timeline:} I think timeslines are on the shorter side.
+		\item \underline{Emergence of intelligence}: It is interesting that relatively easy ideas result in emergence of intelligence.
+		\item \underline{Ghosts}: LLMs are ghost-like: They are an echo (statistical destillation) of humans organisms, but lack embodiment. Is this a deeper restriction?
+		\item \underline{Criticism}: Some people do not believe in LLMs:
+			\begin{itemize}
+				\item \underline{World models}: Yann LeCun thinks world models are necessary: Causal and physical understanding of the world is not present in LLMs.
+				\item \underline{Bitter lesson}: Richard Sutton thinks that LLMs and transformers are not bitter-pilled enough. We only scale through pre- and post-training, in a higly complex manner. A truly bitter-lesson pilled approach would require a single fundamental principle that learns through general interaction with the world, i.e.\ test-time training.
+				\item \underline{Jagged Intelligence}: Right now LLMs have jagged intelligence: Superhuman at some complex tasks, struggling with some simple ones. I think that humans suffer from the same, though.
+			\end{itemize}
+	\end{itemize}
+\end{frame}

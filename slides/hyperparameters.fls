@@ -1,0 +1,11 @@
+PWD /Users/pswoboda/repo/ADL/slides
+INPUT /usr/local/texlive/2024basic/texmf.cnf
+INPUT /usr/local/texlive/2024basic/texmf-dist/web2c/texmf.cnf
+INPUT /usr/local/texlive/2024basic/texmf-var/web2c/pdftex/pdflatex.fmt
+INPUT /Users/pswoboda/repo/ADL/slides/hyperparameters.tex
+OUTPUT hyperparameters.log
+INPUT /usr/local/texlive/2024basic/texmf-dist/fonts/tfm/public/cm/cmbx10.tfm
+INPUT /usr/local/texlive/2024basic/texmf-dist/fonts/tfm/public/cm/cmti10.tfm
+OUTPUT hyperparameters.pdf
+INPUT /usr/local/texlive/2024basic/texmf-var/fonts/map/pdftex/updmap/pdftex.map
+INPUT /usr/local/texlive/2024basic/texmf-dist/fonts/tfm/public/cm/cmtt10.tfm

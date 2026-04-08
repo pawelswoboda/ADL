@@ -1,0 +1,99 @@
+% !TEX root=./adl.tex
+% Reusable LLM Training Stages illustration
+% Usage: \llmtrainingstages{highlight}
+%   highlight = "all"          -> all stages fully colored
+%   highlight = "pretraining"  -> pretraining colored, SFT and RL greyed out
+%   highlight = "sft"          -> pretraining and SFT colored, RL greyed out
+%   highlight = "rl"           -> all stages colored (same as "all")
+
+\newcommand{\llmtrainingstages}[1]{%
+  \begin{center}
+    \begin{tikzpicture}[
+      scale=0.95, every node/.style={scale=0.95},
+      stage/.style={rectangle, draw, rounded corners, minimum width=3cm, minimum height=0.8cm, align=center, font=\small\bfseries},
+      databox/.style={rectangle, draw, dashed, rounded corners, minimum width=3cm, align=center, font=\scriptsize},
+      lossbox/.style={rectangle, draw, rounded corners, minimum width=3cm, align=center, font=\scriptsize},
+      goalbox/.style={align=center, font=\scriptsize\itshape, text width=3cm},
+      arr/.style={-{Stealth[length=5pt]}, thick},
+      greyed/.style={opacity=0.25},
+    ]
+      % Determine colors based on highlight parameter
+      % Pretraining is always active
+      \node[stage, fill=blue!15] (pt) at (-5,0) {Pretraining};
+      \node[databox, fill=gray!8] (ptdata) at (-5, -1.2) {Web text\\(trillions of tokens)};
+      \node[lossbox, fill=yellow!15] (ptloss) at (-5, -2.5) {Per-token\\cross-entropy};
+      \node[goalbox] (ptgoal) at (-5, 1.1) {Knowledge \&\\language ability};
+      \draw[arr, gray] (ptdata) -- (pt);
+      \draw[arr, gray] (ptloss) -- (ptdata);
+      \draw[arr, gray, dashed] (pt) -- (ptgoal);
+
+      % SFT: greyed if highlight=pretraining
+      \ifstrequal{#1}{pretraining}{%
+        \begin{scope}[greyed]
+          \node[stage, fill=green!15] (sft) at (0,0) {SFT};
+          \node[databox, fill=gray!8] (sftdata) at (0, -1.2) {Instruction--response\\pairs (curated)};
+          \node[lossbox, fill=yellow!15] (sftloss) at (0, -2.5) {Per-token\\cross-entropy};
+          \node[goalbox] (sftgoal) at (0, 1.1) {Instruction\\following};
+          \draw[arr, gray] (sftdata) -- (sft);
+          \draw[arr, gray] (sftloss) -- (sftdata);
+          \draw[arr, gray, dashed] (sft) -- (sftgoal);
+        \end{scope}
+      }{%
+        \node[stage, fill=green!15] (sft) at (0,0) {SFT};
+        \node[databox, fill=gray!8] (sftdata) at (0, -1.2) {Instruction--response\\pairs (curated)};
+        \node[lossbox, fill=yellow!15] (sftloss) at (0, -2.5) {Per-token\\cross-entropy};
+        \node[goalbox] (sftgoal) at (0, 1.1) {Instruction\\following};
+        \draw[arr, gray] (sftdata) -- (sft);
+        \draw[arr, gray] (sftloss) -- (sftdata);
+        \draw[arr, gray, dashed] (sft) -- (sftgoal);
+      }
+
+      % RL: greyed if highlight=pretraining or highlight=sft
+      \ifstrequal{#1}{pretraining}{%
+        \begin{scope}[greyed]
+          \node[stage, fill=orange!15] (rl) at (5,0) {RL};
+          \node[databox, fill=gray!8] (rldata) at (5, -1.2) {Preferences / verifiers\\(scalar reward)};
+          \node[lossbox, fill=yellow!15] (rlloss) at (5, -2.5) {Policy gradient\\(sequence-level)};
+          \node[goalbox] (rlgoal) at (5, 1.1) {Alignment,\\safety, reasoning};
+          \draw[arr, gray] (rldata) -- (rl);
+          \draw[arr, gray] (rlloss) -- (rldata);
+          \draw[arr, gray, dashed] (rl) -- (rlgoal);
+        \end{scope}
+      }{%
+        \ifstrequal{#1}{sft}{%
+          \begin{scope}[greyed]
+            \node[stage, fill=orange!15] (rl) at (5,0) {RL};
+            \node[databox, fill=gray!8] (rldata) at (5, -1.2) {Preferences / verifiers\\(scalar reward)};
+            \node[lossbox, fill=yellow!15] (rlloss) at (5, -2.5) {Policy gradient\\(sequence-level)};
+            \node[goalbox] (rlgoal) at (5, 1.1) {Alignment,\\safety, reasoning};
+            \draw[arr, gray] (rldata) -- (rl);
+            \draw[arr, gray] (rlloss) -- (rldata);
+            \draw[arr, gray, dashed] (rl) -- (rlgoal);
+          \end{scope}
+        }{%
+          \node[stage, fill=orange!15] (rl) at (5,0) {RL};
+          \node[databox, fill=gray!8] (rldata) at (5, -1.2) {Preferences / verifiers\\(scalar reward)};
+          \node[lossbox, fill=yellow!15] (rlloss) at (5, -2.5) {Policy gradient\\(sequence-level)};
+          \node[goalbox] (rlgoal) at (5, 1.1) {Alignment,\\safety, reasoning};
+          \draw[arr, gray] (rldata) -- (rl);
+          \draw[arr, gray] (rlloss) -- (rldata);
+          \draw[arr, gray, dashed] (rl) -- (rlgoal);
+        }%
+      }
+
+      % Arrows between stages (always drawn, greyed as needed)
+      \ifstrequal{#1}{pretraining}{%
+        \draw[arr, opacity=0.25] (pt) -- (sft);
+        \draw[arr, opacity=0.25] (sft) -- (rl);
+      }{%
+        \ifstrequal{#1}{sft}{%
+          \draw[arr] (pt) -- (sft);
+          \draw[arr, opacity=0.25] (sft) -- (rl);
+        }{%
+          \draw[arr] (pt) -- (sft);
+          \draw[arr] (sft) -- (rl);
+        }%
+      }
+    \end{tikzpicture}
+  \end{center}
+}

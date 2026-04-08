@@ -1,0 +1,10 @@
+PWD /Users/pswoboda/repo/ADL/slides
+INPUT /usr/local/texlive/2024basic/texmf.cnf
+INPUT /usr/local/texlive/2024basic/texmf-dist/web2c/texmf.cnf
+INPUT /usr/local/texlive/2024basic/texmf-var/web2c/pdftex/pdflatex.fmt
+INPUT /Users/pswoboda/repo/ADL/slides/intro.tex
+OUTPUT intro.log
+INPUT /usr/local/texlive/2024basic/texmf-dist/fonts/tfm/public/cm/cmbx10.tfm
+INPUT /usr/local/texlive/2024basic/texmf-dist/tex/latex/base/omscmr.fd
+INPUT /usr/local/texlive/2024basic/texmf-dist/tex/latex/base/omscmr.fd
+INPUT /usr/local/texlive/2024basic/texmf-dist/tex/latex/base/omscmr.fd

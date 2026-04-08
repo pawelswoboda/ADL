@@ -1,0 +1,944 @@
+% !TEX root=./adl.tex
+
+% -----------------------------------------------------------------------
+\section{Multimodal Models}
+
+% =======================================================================
+\subsection{From Language to Vision-Language}
+
+% -----------------------------------------------------------------------
+\begin{frame}{Motivation: Why Multimodal?}
+
+  Large language models understand text, but the world is \emph{multimodal}: images, video, audio, \ldots
+
+  \vspace{0.5em}
+  \begin{columns}
+    \begin{column}{0.48\textwidth}
+      \textbf{Key questions}:
+      \begin{itemize}
+        \item Can we learn \emph{joint} representations of images and text?
+        \item Can a model \emph{reason} about images using language?
+        \item Can we leverage web-scale image-text data?
+      \end{itemize}
+    \end{column}
+    \begin{column}{0.48\textwidth}
+      \textbf{Two paradigms}:
+      \begin{description}[style=nextline]
+        \item[Contrastive alignment] Learn a shared embedding space for images and text (CLIP, SigLIP)
+        \item[Generative VLM] Feed visual features into a language model that \emph{generates} text (PaliGemma, LLaVA, \ldots)
+      \end{description}
+    \end{column}
+  \end{columns}
+
+  \vspace{0.5em}
+  \begin{center}
+    \begin{tikzpicture}[
+      scale=0.8, every node/.style={scale=0.8},
+      box/.style={draw, rounded corners, fill=blue!8, minimum width=2.2cm, minimum height=0.5cm, align=center, font=\small},
+      arr/.style={-Stealth, thick},
+    ]
+      % Contrastive
+      \node[box, fill=orange!15] (img1) at (-3.5, 0) {Image Encoder};
+      \node[box, fill=cyan!15] (txt1) at (-3.5, -1.2) {Text Encoder};
+      \node[font=\small] at (-3.5, 1.0) {\textbf{Contrastive (CLIP)}};
+      \node[draw, circle, inner sep=2pt, font=\small] (sim) at (-1.0, -0.6) {$\cos$};
+      \draw[arr] (img1) -- (sim);
+      \draw[arr] (txt1) -- (sim);
+
+      % Arrow between
+      \node[font=\Large] at (1.0, -0.4) {$\Rightarrow$};
+
+      % Generative
+      \node[box, fill=orange!15] (img2) at (4.0, 0) {Image Encoder};
+      \node[box, fill=green!15] (proj) at (4.0, -1.2) {Projection};
+      \node[box, fill=cyan!15] (llm) at (6.5, -1.2) {LLM};
+      \node[font=\small] at (5.0, 1.0) {\textbf{Generative (PaliGemma)}};
+      \draw[arr] (img2) -- (proj);
+      \draw[arr] (proj) -- (llm);
+      \node[font=\scriptsize, anchor=west] at (7.5, -1.2) {$\to$ text};
+    \end{tikzpicture}
+  \end{center}
+\end{frame}
+
+% =======================================================================
+\subsection{CLIP}
+
+% -----------------------------------------------------------------------
+\begin{frame}{CLIP: Contrastive Language-Image Pre-training}
+
+  \cite{radford2021clip}: Learn visual representations from \textbf{natural language supervision} instead of fixed label sets.
+
+  \vspace{0.5em}
+  \textbf{Core idea}: Train two encoders (image + text) so that matching pairs have high cosine similarity in a shared embedding space.
+
+  \vspace{0.3em}
+  \begin{center}
+    \begin{tikzpicture}[
+      scale=0.85, every node/.style={scale=0.85},
+      enc/.style={draw, rounded corners, minimum width=2.0cm, minimum height=0.55cm, align=center, font=\small},
+      arr/.style={-Stealth, thick},
+    ]
+      % Image side
+      \node[font=\scriptsize] (img) at (-3.0, 0) {Image};
+      \node[enc, fill=orange!20] (ienc) at (-3.0, 1.2) {Image Encoder};
+      \node[enc, fill=orange!10] (iproj) at (-3.0, 2.4) {Linear Proj.};
+      \node[draw, circle, fill=orange!8, inner sep=3pt, font=\small] (ie) at (-3.0, 3.6) {$\mathbf{I}_i$};
+      \draw[arr] (img) -- (ienc);
+      \draw[arr] (ienc) -- (iproj);
+      \draw[arr] (iproj) -- (ie);
+
+      % Text side
+      \node[font=\scriptsize] (txt) at (3.0, 0) {Text};
+      \node[enc, fill=cyan!20] (tenc) at (3.0, 1.2) {Text Encoder};
+      \node[enc, fill=cyan!10] (tproj) at (3.0, 2.4) {Linear Proj.};
+      \node[draw, circle, fill=cyan!8, inner sep=3pt, font=\small] (te) at (3.0, 3.6) {$\mathbf{T}_j$};
+      \draw[arr] (txt) -- (tenc);
+      \draw[arr] (tenc) -- (tproj);
+      \draw[arr] (tproj) -- (te);
+
+      % Similarity matrix
+      \draw[<->, thick, violet] (ie) -- (te) node[midway, above, font=\small] {$\cos(\mathbf{I}_i, \mathbf{T}_j) / \tau$};
+
+      % Annotations
+      \node[font=\scriptsize, text=gray, anchor=east] at (-4.2, 1.2) {ViT or ResNet};
+      \node[font=\scriptsize, text=gray, anchor=west] at (4.2, 1.2) {Transformer};
+    \end{tikzpicture}
+  \end{center}
+
+  \vspace{0.2em}
+  \begin{itemize}
+    \item \textbf{Dataset}: 400M image-text pairs from the web (WebImageText)
+    \item \textbf{Encoders}: ViT (best: ViT-L/14) or ResNet for images; Transformer for text
+    \item Both encoders project into a shared $d$-dimensional space via learned linear projections
+  \end{itemize}
+\end{frame}
+
+% -----------------------------------------------------------------------
+\begin{frame}{CLIP: Contrastive Loss}
+
+  Given a batch of $N$ image-text pairs, CLIP computes an $N \times N$ matrix of scaled cosine similarities:
+  \[
+    \ell_{ij} = \frac{\mathbf{I}_i \cdot \mathbf{T}_j}{\tau}
+  \]
+  where $\tau$ is a \textbf{learnable temperature} parameter (log-parameterized, initialized to $\nicefrac{1}{0.07}$).
+
+  \vspace{0.3em}
+  The loss is a \textbf{symmetric cross-entropy} over this matrix:
+  \begin{align*}
+    \mathcal{L}_{\text{img}} &= -\frac{1}{N} \sum_{i=1}^{N} \log \frac{\exp(\ell_{ii})}{\sum_{j=1}^{N} \exp(\ell_{ij})}
+    & \text{(image} \to \text{text)} \\[4pt]
+    \mathcal{L}_{\text{txt}} &= -\frac{1}{N} \sum_{j=1}^{N} \log \frac{\exp(\ell_{jj})}{\sum_{i=1}^{N} \exp(\ell_{ij})}
+    & \text{(text} \to \text{image)} \\[4pt]
+    \mathcal{L}_{\text{CLIP}} &= \tfrac{1}{2}\bigl(\mathcal{L}_{\text{img}} + \mathcal{L}_{\text{txt}}\bigr)
+  \end{align*}
+
+  \begin{itemize}
+    \item Ground truth: the \textbf{diagonal} of the $N \times N$ matrix (matching pairs)
+    \item Each row = $N$-way classification: ``which text matches this image?''
+    \item Each column = $N$-way classification: ``which image matches this text?''
+    \item Large batch size ($N = 32{,}768$) is critical: more negatives $\Rightarrow$ better representations
+  \end{itemize}
+\end{frame}
+
+% -----------------------------------------------------------------------
+\begin{frame}{CLIP: Contrastive Loss --- Similarity Matrix}
+
+  \begin{center}
+    \begin{tikzpicture}[scale=0.75, every node/.style={scale=0.75}]
+      \def\n{6}
+      \def\s{0.9}
+
+      % Column labels (text)
+      \foreach \j in {1,...,\n} {
+        \node[font=\scriptsize, anchor=south] at ({(\j-0.5)*\s}, {\n*\s + 0.1}) {$\mathbf{T}_{\j}$};
+      }
+      % Row labels (images)
+      \foreach \i in {1,...,\n} {
+        \node[font=\scriptsize, anchor=east] at (-0.15, {(\n - \i + 0.5)*\s}) {$\mathbf{I}_{\i}$};
+      }
+
+      % Grid with diagonal highlighted
+      \foreach \i in {1,...,\n} {
+        \foreach \j in {1,...,\n} {
+          \pgfmathtruncatemacro{\isdiag}{\i == \j ? 1 : 0}
+          \ifnum\isdiag=1
+            \fill[green!40] ({(\j-1)*\s}, {(\n-\i)*\s}) rectangle ++(\s, \s);
+            \node[font=\small\bfseries] at ({(\j-0.5)*\s}, {(\n-\i+0.5)*\s}) {\checkmark};
+          \else
+            \fill[red!10] ({(\j-1)*\s}, {(\n-\i)*\s}) rectangle ++(\s, \s);
+          \fi
+          \draw[gray!50] ({(\j-1)*\s}, {(\n-\i)*\s}) rectangle ++(\s, \s);
+        }
+      }
+
+      % Brace and label right
+      \draw[decorate, decoration={brace, amplitude=5pt}, thick]
+        ({\n*\s + 0.2}, {\n*\s}) -- ({\n*\s + 0.2}, 0)
+        node[midway, right=8pt, font=\small, align=left] {$N \times N$ cosine\\similarity matrix};
+
+      % Legend
+      \fill[green!40] (0, -1.0) rectangle ++(0.5, 0.5);
+      \node[font=\small, anchor=west] at (0.65, -0.75) {= matching pair (maximize)};
+      \fill[red!10] (0, -1.8) rectangle ++(0.5, 0.5);
+      \node[font=\small, anchor=west] at (0.65, -1.55) {= non-matching pair (minimize)};
+    \end{tikzpicture}
+  \end{center}
+
+  \vspace{0.3em}
+  Each row and each column is treated as an independent $N$-way softmax classification.
+  The model learns to push matching pairs (diagonal) together and non-matching pairs apart.
+\end{frame}
+
+% -----------------------------------------------------------------------
+\begin{frame}{CLIP: Zero-Shot Image Classification}
+
+  CLIP enables \textbf{zero-shot classification} without any task-specific training:
+
+  \vspace{0.3em}
+  \begin{center}
+    \begin{tikzpicture}[
+      scale=0.8, every node/.style={scale=0.8},
+      enc/.style={draw, rounded corners, fill=orange!15, minimum width=1.8cm, minimum height=0.5cm, align=center, font=\small},
+      tenc/.style={draw, rounded corners, fill=cyan!15, minimum width=2.5cm, minimum height=0.4cm, align=center, font=\scriptsize},
+      arr/.style={-Stealth, thick},
+    ]
+      % Image
+      \node[font=\scriptsize] (img) at (-4.0, 0) {Test image};
+      \node[enc] (ienc) at (-4.0, 1.5) {Image Encoder};
+      \node[draw, circle, fill=orange!8, inner sep=2pt, font=\small] (ie) at (-4.0, 3.0) {$\mathbf{I}$};
+      \draw[arr] (img) -- (ienc);
+      \draw[arr] (ienc) -- (ie);
+
+      % Text prompts
+      \node[tenc] (t1) at (2.0, 3.8) {``A photo of a \textbf{dog}''};
+      \node[tenc] (t2) at (2.0, 3.0) {``A photo of a \textbf{cat}''};
+      \node[tenc] (t3) at (2.0, 2.2) {``A photo of a \textbf{car}''};
+      \node[font=\small] at (2.0, 1.4) {$\vdots$};
+      \node[tenc] (tn) at (2.0, 0.7) {``A photo of a \textbf{plane}''};
+
+      % Text encoder label
+      \node[font=\scriptsize, text=gray, anchor=west] at (4.0, 3.0) {Text Encoder};
+
+      % Cosine similarities
+      \draw[arr, violet] (ie) -- (t1) node[midway, above, font=\scriptsize, violet] {$0.92$};
+      \draw[arr, gray!50] (ie) -- (t2);
+      \draw[arr, gray!50] (ie) -- (t3);
+      \draw[arr, gray!50] (ie) -- (tn);
+
+      % Prediction
+      \node[draw, rounded corners, fill=green!15, font=\small] at (2.0, 4.8) {Prediction: \textbf{dog}};
+      \draw[arr, green!50!black] (t1) -- (2.0, 4.5);
+    \end{tikzpicture}
+  \end{center}
+
+  \vspace{0.2em}
+  \begin{enumerate}
+    \item Construct text prompts for each class: \texttt{"A photo of a \{class\}."}
+    \item Encode all prompts with the text encoder $\to$ class embeddings
+    \item Encode the test image $\to$ image embedding
+    \item Predict the class with the highest cosine similarity
+  \end{enumerate}
+
+  \textbf{Prompt engineering}: Ensembling multiple templates (e.g.\ ``A photo of a big \{class\}'', ``A bright photo of a \{class\}'') improves accuracy by $\sim$3--5\%.
+\end{frame}
+
+% -----------------------------------------------------------------------
+\begin{frame}{CLIP: Key Results}
+
+  \begin{columns}
+    \begin{column}{0.48\textwidth}
+      \textbf{Zero-shot performance}:
+      \begin{itemize}
+        \item ImageNet: \textbf{76.2\%} zero-shot (ViT-L/14@336px)
+        \item Matches supervised ResNet-50 (76.1\%) \emph{without seeing a single ImageNet example}
+        \item Competitive on 16 / 27 downstream datasets
+      \end{itemize}
+
+      \vspace{0.3em}
+      \textbf{Robustness}:
+      \begin{itemize}
+        \item Much more robust to distribution shift than supervised models
+        \item Degrades less on ImageNet-V2, ImageNet-R, ImageNet-Sketch, ObjectNet
+      \end{itemize}
+    \end{column}
+    \begin{column}{0.48\textwidth}
+      \textbf{Limitations}:
+      \begin{itemize}
+        \item Struggles with fine-grained tasks (car models, flower species)
+        \item Poor at abstract/systematic reasoning (counting objects)
+        \item Cannot \emph{generate} text --- only compare embeddings
+      \end{itemize}
+
+      \vspace{0.3em}
+      \begin{block}{Legacy}
+        CLIP's main impact: the \textbf{vision encoder} trained with language supervision became the standard visual backbone for subsequent VLMs (LLaVA, OpenFlamingo, \ldots).
+      \end{block}
+    \end{column}
+  \end{columns}
+\end{frame}
+
+% =======================================================================
+\subsection{SigLIP}
+
+% -----------------------------------------------------------------------
+\begin{frame}{SigLIP: Sigmoid Loss for Language-Image Pre-training}
+
+  \cite{zhai2023siglip} replaces CLIP's softmax contrastive loss with a \textbf{sigmoid loss} that decomposes into independent per-pair terms.
+
+  \vspace{0.3em}
+  For each pair $(i, j)$ in a batch of $N$ image-text pairs, compute the logit:
+  \[
+    z_{ij} = \tau \cdot \mathbf{I}_i \cdot \mathbf{T}_j + b
+  \]
+  where $\tau > 0$ is a learnable temperature (parameterized as $\tau = e^{t}$ to stay positive) and $b$ is a learnable bias (initialized to $-10$ to counteract the imbalance between the many negatives and few positives).
+
+  \[
+    y_{ij} =
+    \begin{cases}
+      +1 & \text{if } i = j \text{ (matching pair)} \\
+      -1 & \text{if } i \neq j \text{ (non-matching)}
+    \end{cases}
+  \]
+
+  \[
+    \mathcal{L}_{\text{SigLIP}} = -\frac{1}{N} \sum_{i=1}^{N} \sum_{j=1}^{N} \log \sigma\!\big(y_{ij} \cdot z_{ij}\big)
+  \]
+  Note: the sum is over all $N^2$ pairs but divided by $N$, so each image contributes $1$ positive and $N{-}1$ negative terms.
+
+  \vspace{0.3em}
+  \begin{columns}
+    \begin{column}{0.48\textwidth}
+      \textbf{CLIP (softmax)}:
+      \begin{itemize}
+        \item Global normalization over full batch
+        \item Requires all-gather across GPUs
+        \item $N$-way classification per row/column
+      \end{itemize}
+    \end{column}
+    \begin{column}{0.48\textwidth}
+      \textbf{SigLIP (sigmoid)}:
+      \begin{itemize}
+        \item Independent binary classification per pair
+        \item No global normalization needed
+        \item Scales better to very large batches and distributed training
+      \end{itemize}
+    \end{column}
+  \end{columns}
+\end{frame}
+
+% -----------------------------------------------------------------------
+\begin{frame}{SigLIP: Architecture and Training}
+
+  \begin{columns}
+    \begin{column}{0.55\textwidth}
+      \textbf{ViT-So400m/14}: a \emph{shape-optimized} ViT from \cite{dehghani2023shape}.
+      Instead of uniformly scaling depth/width, a compute-optimal search over depth, width, and MLP dimension finds a better shape for a given parameter budget.
+
+      \vspace{0.3em}
+      \begin{center}
+      \scriptsize
+      \begin{tabular}{l c c c c c}
+        \toprule
+        \textbf{Model} & \textbf{Depth} & \textbf{Width} & \textbf{Heads} & \textbf{MLP} & \textbf{Params} \\
+        \midrule
+        ViT-B/16  & 12 & 768  & 12 & 3072 & 86M  \\
+        ViT-L/16  & 24 & 1024 & 16 & 4096 & 307M \\
+        \textbf{So400m/14} & \textbf{27} & \textbf{1152} & \textbf{16} & \textbf{4304} & \textbf{428M} \\
+        ViT-H/14  & 32 & 1280 & 16 & 5120 & 632M \\
+        \bottomrule
+      \end{tabular}
+      \end{center}
+      \vspace{0.1em}
+
+      Note: MLP dim $= 3.74 \times$ width (not the standard $4\times$). The search finds a non-standard shape: more depth and width than ViT-L but a narrower MLP ratio, achieving better performance than ViT-H at fewer parameters.
+
+      \vspace{0.2em}
+      \textbf{Text encoder}: same shape as the image encoder (depth 27, width 1152). Fully symmetric two-tower design.
+    \end{column}
+    \begin{column}{0.43\textwidth}
+      \textbf{Training}:
+      \begin{itemize}
+        \item \textbf{Dataset}: WebLI (Google's web-scraped image-text dataset), $\sim$10B pairs
+        \item \textbf{Batch sizes}: from 1K to 1M; sweet spot at $N = 32{,}768$
+        \item Resolution: $224 \times 224$, optionally fine-tuned at $384 \times 384$
+        \item Shared embedding space dim: 1152 (= hidden width, no extra projection)
+      \end{itemize}
+    \end{column}
+  \end{columns}
+\end{frame}
+
+% -----------------------------------------------------------------------
+\begin{frame}{SigLIP: Results}
+
+  \textbf{Zero-shot ImageNet top-1 accuracy}:
+  \vspace{0.2em}
+
+  \begin{columns}
+    \begin{column}{0.48\textwidth}
+      \begin{center}
+      \scriptsize
+      \begin{tabular}{l c c}
+        \toprule
+        \textbf{Model} & \textbf{Params} & \textbf{IN top-1} \\
+        \midrule
+        ResNet-50 (supervised) & 25M & 76.1\% \\
+        CLIP ViT-L/14@336 & 428M & 76.2\% \\
+        \midrule
+        SigLIP B/16@256 & 86M & 76.6\% \\
+        SigLIP L/16@256 & 307M & 80.5\% \\
+        SigLIP L/16@384 & 307M & 82.1\% \\
+        SigLIP So400m/14@224 & 428M & 82.2\% \\
+        SigLIP So400m/14@384 & 428M & \textbf{83.2\%} \\
+        \bottomrule
+      \end{tabular}
+      \end{center}
+    \end{column}
+    \begin{column}{0.48\textwidth}
+      \begin{itemize}
+        \item SigLIP B/16 already matches CLIP ViT-L/14 and supervised ResNet-50
+        \item Shape-optimized So400m/14 pushes to \textbf{83.2\%} zero-shot
+        \item Higher resolution at fine-tuning consistently helps (+1--2\%)
+      \end{itemize}
+    \end{column}
+  \end{columns}
+\end{frame}
+
+% -----------------------------------------------------------------------
+\begin{frame}{SigLIP: Sigmoid vs.\ Softmax at Different Batch Sizes}
+
+  \textbf{ViT-B/16} on WebLI, zero-shot ImageNet accuracy (\%). Same architecture, same data, only the loss changes.
+
+  \vspace{0.3em}
+  \begin{center}
+  \small
+  \begin{tabular}{r c c c c c c}
+    \toprule
+    & \multicolumn{2}{c}{\textbf{3B examples seen}} & & \multicolumn{2}{c}{\textbf{9B examples seen}} \\
+    \cmidrule{2-3} \cmidrule{5-6}
+    \textbf{Batch size} & Sigmoid & Softmax & & Sigmoid & Softmax \\
+    \midrule
+    512   & 51.5 & 47.7 & & --- & --- \\
+    1K    & 57.3 & 53.2 & & --- & --- \\
+    4K    & 65.3 & 63.8 & & 68.4 & 66.6 \\
+    8K    & 68.6 & 66.6 & & 70.6 & 69.4 \\
+    16K   & ---  & ---  & & 72.3 & 71.7 \\
+    32K   & 69.9 & 69.9 & & \textbf{73.4} & 72.9 \\
+    98K   & 69.5 & 69.7 & & 73.0 & \textbf{73.2} \\
+    \bottomrule
+  \end{tabular}
+  \end{center}
+
+  \vspace{0.3em}
+  \begin{itemize}
+    \item \textbf{Small batches}: sigmoid clearly better (e.g.\ +4.1\% at batch 1K)
+    \item \textbf{Medium batches}: sigmoid peaks earlier (32K vs.\ 98K for softmax)
+    \item \textbf{Large batches}: both losses converge; softmax slightly better at 98K with long training
+    \item Sigmoid does not require cross-device all-gather for the normalizing denominator
+  \end{itemize}
+\end{frame}
+
+% =======================================================================
+\subsection{PaliGemma}
+
+% -----------------------------------------------------------------------
+\begin{frame}{PaliGemma: A Versatile Vision-Language Model}
+
+  \cite{beyer2024paligemma}: Combine a strong vision encoder (SigLIP) with a strong LLM (Gemma) via a \textbf{simple linear projection}.
+
+  \vspace{0.2em}
+  \begin{center}
+    \begin{tikzpicture}[
+      scale=0.82, every node/.style={scale=0.82},
+      comp/.style={draw, rounded corners, minimum height=0.55cm, align=center, font=\small},
+      arr/.style={-Stealth, thick},
+      tok/.style={minimum width=0.44cm, minimum height=0.44cm, draw=gray!60,
+                  inner sep=0pt, font=\tiny, line width=0.3pt},
+    ]
+      % ============================================================
+      %  TOKEN SEQUENCE (middle row) — laid out first to set positions
+      % ============================================================
+      \def\toksep{0.48}
+      \def\toksy{0}
+
+      % Image tokens: indices 0..4, dots, 6  (7 slots)
+      \foreach \i in {0,...,4} {
+        \node[tok, fill=orange!25] at ({-4.2 + \i*\toksep}, \toksy) {};
+      }
+      \node[font=\tiny] at ({-4.2 + 5*\toksep}, \toksy) {$\cdots$};
+      \node[tok, fill=orange!25] at ({-4.2 + 6*\toksep}, \toksy) {};
+
+      % Text tokens: indices 7..10  (4 slots)
+      \foreach \i in {7,...,10} {
+        \node[tok, fill=cyan!25] at ({-4.2 + \i*\toksep}, \toksy) {};
+      }
+
+      % Output tokens: indices 11..14  (4 slots)
+      \foreach \i in {11,...,14} {
+        \node[tok, fill=green!25] at ({-4.2 + \i*\toksep}, \toksy) {};
+      }
+
+      % Output text labels inside the output tokens
+      \node[font=\tiny, green!30!black, baseline, inner sep=0pt, anchor=base] at ({-4.2 + 11*\toksep}, {\toksy - 0.06}) {A\strut};
+      \node[font=\tiny, green!30!black, baseline, inner sep=0pt, anchor=base] at ({-4.2 + 12*\toksep}, {\toksy - 0.06}) {dog\strut};
+      \node[font=\tiny, green!30!black, baseline, inner sep=0pt, anchor=base] at ({-4.2 + 13*\toksep}, {\toksy - 0.06}) {on\strut};
+      \node[font=\tiny, green!30!black, baseline, inner sep=0pt, anchor=base] at ({-4.2 + 14*\toksep}, {\toksy - 0.06}) {the\strut};
+      \node[font=\small, green!50!black] at ({-4.2 + 15*\toksep}, \toksy) {$\cdots$};
+
+      % Braces above token sequence (labeling each group)
+      \draw[decorate, decoration={brace, amplitude=3pt}, thick, orange!70!black]
+        ({-4.2 - \toksep/2 + 0.02}, {\toksy + 0.32}) -- ({-4.2 + 6*\toksep + \toksep/2 - 0.02}, {\toksy + 0.32})
+        node[midway, above=4pt, font=\tiny, text=orange!70!black] {256 image tokens};
+
+      \draw[decorate, decoration={brace, amplitude=3pt}, thick, blue!70!black]
+        ({-4.2 + 7*\toksep - \toksep/2 + 0.02}, {\toksy + 0.32}) -- ({-4.2 + 10*\toksep + \toksep/2 - 0.02}, {\toksy + 0.32})
+        node[midway, above=4pt, font=\tiny, text=blue!70!black] {prefix text};
+
+      \draw[decorate, decoration={brace, amplitude=3pt}, thick, green!50!black]
+        ({-4.2 + 11*\toksep - \toksep/2 + 0.02}, {\toksy + 0.32}) -- ({-4.2 + 14*\toksep + \toksep/2 - 0.02}, {\toksy + 0.32})
+        node[midway, above=4pt, font=\tiny, text=green!50!black] {generated output};
+
+      % ============================================================
+      %  Derived x-centres for alignment
+      % ============================================================
+      \pgfmathsetmacro{\imgcx}{-4.2 + 3*\toksep}      % centre of image tokens
+      \pgfmathsetmacro{\txtcx}{-4.2 + 8.5*\toksep}     % centre of text tokens
+      \pgfmathsetmacro{\outcx}{-4.2 + 12.5*\toksep}    % centre of output tokens
+
+      % ============================================================
+      %  IMAGE BRANCH — on top, centred above image tokens
+      %  Layout (top to bottom): image → SigLIP → Linear Proj → tokens
+      % ============================================================
+      \def\imgsize{1.4}
+      \pgfmathsetmacro{\imgL}{\imgcx - \imgsize/2}
+      \pgfmathsetmacro{\imgR}{\imgcx + \imgsize/2}
+      % Position image at top
+      \pgfmathsetmacro{\imgT}{5.0}
+      \pgfmathsetmacro{\imgB}{\imgT - \imgsize}
+
+      % Tikz "photo" with patch grid
+      \begin{scope}
+        \clip (\imgL, \imgB) rectangle (\imgR, \imgT);
+        \fill[blue!25] (\imgL, \imgB) rectangle (\imgR, \imgT);
+        \fill[green!35!brown!30] (\imgL, \imgB) rectangle (\imgR, {\imgB + 0.45});
+        \fill[yellow!70!orange] ({\imgcx + 0.4}, {\imgT - 0.28}) circle (0.18);
+        \fill[brown!60] ({\imgcx - 0.28}, {\imgB + 0.28}) rectangle ({\imgcx - 0.20}, {\imgB + 0.7});
+        \fill[green!50!black] ({\imgcx - 0.24}, {\imgB + 0.68}) circle (0.2);
+        \fill[brown!50] ({\imgcx + 0.20}, {\imgB + 0.28}) ellipse (0.18 and 0.11);
+        \fill[brown!50] ({\imgcx + 0.36}, {\imgB + 0.36}) circle (0.08);
+      \end{scope}
+      \pgfmathsetmacro{\ps}{\imgsize / 4}
+      \foreach \r in {0,...,3} {
+        \foreach \c in {0,...,3} {
+          \draw[white, line width=0.5pt, opacity=0.8]
+            ({\imgL + \c*\ps}, {\imgB + \r*\ps}) rectangle ++({\ps}, {\ps});
+        }
+      }
+      \draw[thick] (\imgL, \imgB) rectangle (\imgR, \imgT);
+      \node[font=\tiny, text=gray, anchor=east] at ({\imgL - 0.1}, {\imgB + \imgsize/2}) {$16{\times}16$ patches};
+
+      % SigLIP box — below image
+      \node[comp, fill=orange!20, minimum width=1.8cm] (vit) at (\imgcx, {\imgB - 0.85}) {SigLIP ViT {\tiny (400M)}};
+      \draw[arr] (\imgcx, \imgB) -- (vit);
+
+      % Linear Proj — below SigLIP
+      \node[comp, fill=green!15, minimum width=1.8cm] (proj) at (\imgcx, {\imgB - 1.95}) {Linear Proj.};
+      \draw[arr] (vit) -- (proj);
+
+      % Arrow from Linear Proj down to image tokens
+      \draw[arr, orange!70!black] (proj) -- (\imgcx, {\toksy + 0.85});
+
+      % ============================================================
+      %  TEXT BRANCH — on top, centred above prefix text tokens
+      % ============================================================
+      \node[font=\scriptsize] (txtlabel) at (\txtcx, \imgT) {\textit{``Describe this image.''}};
+      \node[comp, fill=cyan!10, minimum width=1.8cm] (tokenizer) at (\txtcx, {\imgT - 0.8}) {Tokenizer};
+      \draw[arr] (txtlabel) -- (tokenizer);
+
+      % Arrow from Tokenizer down to text tokens
+      \draw[arr, blue!70!black] (tokenizer) -- (\txtcx, {\toksy + 0.85});
+
+      % ============================================================
+      %  GEMMA — wide block BELOW the token sequence
+      % ============================================================
+      \pgfmathsetmacro{\gemmaL}{-4.2 - \toksep/2 - 0.05}
+      \pgfmathsetmacro{\gemmaR}{-4.2 + 14*\toksep + \toksep/2 + 0.05}
+      \pgfmathsetmacro{\gemmaT}{\toksy - 0.85}
+      \pgfmathsetmacro{\gemmaB}{\toksy - 1.55}
+
+      \fill[cyan!12, rounded corners=4pt] (\gemmaL, \gemmaB) rectangle (\gemmaR, \gemmaT);
+      \draw[thick, rounded corners=4pt] (\gemmaL, \gemmaB) rectangle (\gemmaR, \gemmaT);
+      \node[font=\small] at ({(\gemmaL+\gemmaR)/2}, {(\gemmaB+\gemmaT)/2}) {\textbf{Gemma 2B} {\tiny (decoder-only)}};
+
+      % Arrows: all input tokens feed down into Gemma
+      \foreach \i in {0,...,4} {
+        \draw[-Stealth, thin, orange!50!black, opacity=0.5]
+          ({-4.2 + \i*\toksep}, {\toksy - 0.22}) -- ({-4.2 + \i*\toksep}, \gemmaT);
+      }
+      \draw[-Stealth, thin, orange!50!black, opacity=0.5]
+        ({-4.2 + 6*\toksep}, {\toksy - 0.22}) -- ({-4.2 + 6*\toksep}, \gemmaT);
+      \foreach \i in {7,...,10} {
+        \draw[-Stealth, thin, blue!50!black, opacity=0.5]
+          ({-4.2 + \i*\toksep}, {\toksy - 0.22}) -- ({-4.2 + \i*\toksep}, \gemmaT);
+      }
+
+      % Autoregressive: up arrow (Gemma -> token) slightly left, down arrow (token -> Gemma) slightly right
+      \foreach \i in {11,...,14} {
+        \draw[-Stealth, thick, green!50!black]
+          ({-4.2 + \i*\toksep - 0.06}, \gemmaT) -- ({-4.2 + \i*\toksep - 0.06}, {\toksy - 0.22});
+        \draw[-Stealth, thick, green!50!black]
+          ({-4.2 + \i*\toksep + 0.06}, {\toksy - 0.22}) -- ({-4.2 + \i*\toksep + 0.06}, \gemmaT);
+      }
+      \node[font=\tiny, text=green!40!black, anchor=west] at ({-4.2 + 14*\toksep + \toksep/2 + 0.05}, {(\toksy - 0.22 + \gemmaT)/2}) {autoregressive};
+
+      % ============================================================
+      %  Bracket: input to Gemma (prefix)
+      % ============================================================
+      \draw[decorate, decoration={brace, amplitude=4pt, mirror}, thick, gray]
+        ({-4.2 - \toksep/2 + 0.02}, {\toksy - 0.22 - 0.08}) -- ({-4.2 + 10*\toksep + \toksep/2 - 0.02}, {\toksy - 0.22 - 0.08})
+        node[midway, below=5pt, font=\tiny, text=gray] {prefix};
+
+    \end{tikzpicture}
+  \end{center}
+
+  \vspace{0.1em}
+  \begin{itemize}
+    \item \textbf{Total}: $\sim$3B parameters (400M vision + 2B language + linear projection)
+    \item \textbf{Key design choice}: A simple linear connector suffices when both components are individually strong
+  \end{itemize}
+\end{frame}
+
+% -----------------------------------------------------------------------
+\begin{frame}{PaliGemma: Three-Stage Training}
+
+  \begin{center}
+    \begin{tikzpicture}[
+      scale=0.85, every node/.style={scale=0.85},
+      stage/.style={draw, rounded corners, thick, minimum width=3.0cm, minimum height=1.2cm, align=center, font=\small},
+      arr/.style={-Stealth, very thick, gray},
+    ]
+      % Stage 1
+      \node[stage, fill=orange!12] (s1) at (-4.0, 0) {\textbf{Stage 1}\\Unimodal\\Pretraining};
+      % Stage 2
+      \node[stage, fill=blue!12] (s2) at (0.0, 0) {\textbf{Stage 2}\\Multimodal\\Pretraining};
+      % Stage 3
+      \node[stage, fill=green!12] (s3) at (4.0, 0) {\textbf{Stage 3}\\Task-Specific\\Fine-Tuning};
+
+      \draw[arr] (s1) -- (s2);
+      \draw[arr] (s2) -- (s3);
+    \end{tikzpicture}
+  \end{center}
+
+  \vspace{0.3em}
+  \begin{description}[style=nextline]
+    \item[Stage 1: Unimodal pretraining]
+      SigLIP and Gemma are pretrained \emph{separately} on their respective data.
+      \begin{itemize}
+        \item SigLIP: contrastive (sigmoid) loss on image-text pairs
+        \item Gemma: autoregressive next-token prediction on text
+      \end{itemize}
+    \item[Stage 2: Multimodal pretraining]
+      Full model trained jointly on a large mixture of multimodal tasks (captioning, VQA, OCR, detection, \ldots).
+      Vision encoder is \emph{unfrozen}.
+      Resolution: $224 \times 224$ (256 image tokens).
+      \begin{itemize}
+        \item \textbf{Loss}: Purely autoregressive next-token prediction on \emph{suffix (output) tokens only} --- no contrastive loss
+        \item Image and prefix text tokens are excluded from the loss (prefix-LM masking)
+        \item Gradients still flow into the vision encoder via backpropagation through the linear projection
+      \end{itemize}
+    \item[Stage 3: Task-specific fine-tuning]
+      Fine-tune on individual downstream benchmarks. Same loss as Stage~2.
+      \begin{itemize}
+        \item Resolution can be increased: $448 \times 448$ ($\to$ 1024 tokens) or $896 \times 896$ ($\to$ 4096 tokens) for detail-oriented tasks (OCR, documents)
+      \end{itemize}
+  \end{description}
+\end{frame}
+
+% -----------------------------------------------------------------------
+\begin{frame}{PaliGemma: Prefix-LM Attention Mask}
+
+  \begin{columns}
+    \begin{column}{0.55\textwidth}
+      \begin{center}
+        \begin{tikzpicture}[scale=0.52, every node/.style={scale=0.52}]
+          % Dimensions: 4 image + 3 prefix + 4 suffix = 11
+          \def\nimgtok{4}
+          \def\npreftok{3}
+          \def\nsuftok{4}
+          \pgfmathtruncatemacro{\ntot}{\nimgtok+\npreftok+\nsuftok}
+          \def\s{0.72}
+
+          % Fill cells
+          \foreach \row in {1,...,\ntot} {
+            \foreach \col in {1,...,\ntot} {
+              % Prefix region: rows 1..(nimgtok+npreftok), cols 1..(nimgtok+npreftok)
+              \pgfmathtruncatemacro{\inprefix}{(\row<=\nimgtok+\npreftok) && (\col<=\nimgtok+\npreftok) ? 1 : 0}
+              % Suffix causal: rows > (nimgtok+npreftok), col <= row
+              \pgfmathtruncatemacro{\insuffcausal}{(\row>\nimgtok+\npreftok) && (\col<=\row) ? 1 : 0}
+              % Suffix attending to prefix: rows > (nimgtok+npreftok), cols <= (nimgtok+npreftok)
+              % Already covered by insuffcausal since col<=row and row>prefix end implies col<=row covers prefix cols too
+              \pgfmathtruncatemacro{\attend}{\inprefix || \insuffcausal ? 1 : 0}
+              \ifnum\attend=1
+                % Color by region
+                \pgfmathtruncatemacro{\isimg}{\col<=\nimgtok ? 1 : 0}
+                \pgfmathtruncatemacro{\ispref}{(\col>\nimgtok) && (\col<=\nimgtok+\npreftok) ? 1 : 0}
+                \pgfmathtruncatemacro{\issuf}{\col>\nimgtok+\npreftok ? 1 : 0}
+                \ifnum\isimg=1
+                  \fill[orange!35] ({(\col-1)*\s}, {(\ntot-\row)*\s}) rectangle ++(\s, \s);
+                \fi
+                \ifnum\ispref=1
+                  \fill[cyan!30] ({(\col-1)*\s}, {(\ntot-\row)*\s}) rectangle ++(\s, \s);
+                \fi
+                \ifnum\issuf=1
+                  \fill[green!35] ({(\col-1)*\s}, {(\ntot-\row)*\s}) rectangle ++(\s, \s);
+                \fi
+              \else
+                \fill[gray!8] ({(\col-1)*\s}, {(\ntot-\row)*\s}) rectangle ++(\s, \s);
+              \fi
+              \draw[gray!40, thin] ({(\col-1)*\s}, {(\ntot-\row)*\s}) rectangle ++(\s, \s);
+            }
+          }
+
+          % Row labels (left) — what token is attending
+          \foreach \i in {1,...,\nimgtok} {
+            \node[font=\tiny, anchor=east, text=orange!70!black] at (-0.15, {(\ntot-\i+0.5)*\s}) {img$_{\i}$};
+          }
+          \pgfmathtruncatemacro{\prefstart}{\nimgtok+1}
+          \pgfmathtruncatemacro{\prefend}{\nimgtok+\npreftok}
+          \foreach \i [evaluate=\i as \j using int(\i-\nimgtok)] in {\prefstart,...,\prefend} {
+            \node[font=\tiny, anchor=east, text=blue!70!black] at (-0.15, {(\ntot-\i+0.5)*\s}) {txt$_{\j}$};
+          }
+          \pgfmathtruncatemacro{\sufstart}{\nimgtok+\npreftok+1}
+          \foreach \i [evaluate=\i as \j using int(\i-\nimgtok-\npreftok)] in {\sufstart,...,\ntot} {
+            \node[font=\tiny, anchor=east, text=green!50!black] at (-0.15, {(\ntot-\i+0.5)*\s}) {out$_{\j}$};
+          }
+
+          % Column labels (top) — what token is attended to
+          \foreach \i in {1,...,\nimgtok} {
+            \node[font=\tiny, rotate=50, anchor=south west, text=orange!70!black] at ({(\i-0.5)*\s-0.1}, {\ntot*\s+0.1}) {img$_{\i}$};
+          }
+          \foreach \i [evaluate=\i as \j using int(\i-\nimgtok)] in {\prefstart,...,\prefend} {
+            \node[font=\tiny, rotate=50, anchor=south west, text=blue!70!black] at ({(\i-0.5)*\s-0.1}, {\ntot*\s+0.1}) {txt$_{\j}$};
+          }
+          \foreach \i [evaluate=\i as \j using int(\i-\nimgtok-\npreftok)] in {\sufstart,...,\ntot} {
+            \node[font=\tiny, rotate=50, anchor=south west, text=green!50!black] at ({(\i-0.5)*\s-0.1}, {\ntot*\s+0.1}) {out$_{\j}$};
+          }
+
+          % Region separators
+          \draw[thick, orange!70!black] (0, {(\ntot-\nimgtok)*\s}) -- ({\ntot*\s}, {(\ntot-\nimgtok)*\s});
+          \draw[thick, orange!70!black] ({\nimgtok*\s}, 0) -- ({\nimgtok*\s}, {\ntot*\s});
+          \draw[thick, blue!70!black] (0, {(\ntot-\nimgtok-\npreftok)*\s}) -- ({\ntot*\s}, {(\ntot-\nimgtok-\npreftok)*\s});
+          \draw[thick, blue!70!black] ({(\nimgtok+\npreftok)*\s}, 0) -- ({(\nimgtok+\npreftok)*\s}, {\ntot*\s});
+
+          % Axis labels
+          \node[font=\small, rotate=90, anchor=south] at (-1.1, {\ntot*\s/2}) {attending token};
+          \node[font=\small, anchor=south] at ({\ntot*\s/2}, {\ntot*\s+1.3}) {attended-to token};
+
+          % Braces at top for regions
+          \draw[decorate, decoration={brace, amplitude=3pt, mirror}, thick, orange!70!black]
+            (0, -0.25) -- ({\nimgtok*\s}, -0.25) node[midway, below=4pt, font=\tiny] {image};
+          \draw[decorate, decoration={brace, amplitude=3pt, mirror}, thick, blue!70!black]
+            ({\nimgtok*\s}, -0.25) -- ({(\nimgtok+\npreftok)*\s}, -0.25) node[midway, below=4pt, font=\tiny] {prefix};
+          \draw[decorate, decoration={brace, amplitude=3pt, mirror}, thick, green!50!black]
+            ({(\nimgtok+\npreftok)*\s}, -0.25) -- ({\ntot*\s}, -0.25) node[midway, below=4pt, font=\tiny] {suffix};
+        \end{tikzpicture}
+      \end{center}
+    \end{column}
+    \begin{column}{0.43\textwidth}
+      \textbf{Prefix-LM masking}:
+      \begin{itemize}
+        \item \textcolor{orange!70!black}{\textbf{Image}} + \textcolor{blue!70!black}{\textbf{prefix text}} tokens: \textbf{bidirectional} attention (full block)
+        \item \textcolor{green!50!black}{\textbf{Suffix (output)}} tokens: \textbf{causal} attention (lower triangle)
+        \item Suffix tokens attend to all prefix tokens + causally to previous suffix tokens
+      \end{itemize}
+
+      \vspace{0.3em}
+      \textbf{Loss masking}:
+      \begin{itemize}
+        \item Loss computed \emph{only} on \textcolor{green!50!black}{\textbf{suffix}} tokens
+        \item Image and prefix tokens are excluded
+        \item Gradients still flow into the vision encoder via backpropagation
+      \end{itemize}
+
+      \vspace{0.3em}
+      {\small Colored cells = attention allowed.\\
+      Gray cells = masked (no attention).}
+    \end{column}
+  \end{columns}
+\end{frame}
+
+% -----------------------------------------------------------------------
+\begin{frame}{PaliGemma: Tasks and Capabilities}
+
+  PaliGemma handles diverse vision-language tasks through \textbf{text prompts}:
+
+  \vspace{0.3em}
+  \begin{center}
+  \small
+  \begin{tabular}{l l l}
+    \toprule
+    \textbf{Task} & \textbf{Prompt} & \textbf{Output} \\
+    \midrule
+    Captioning & \texttt{caption en} & ``A dog running on the beach'' \\
+    VQA & \texttt{What color is the car?} & ``red'' \\
+    Object detection & \texttt{detect dog} & \texttt{<loc0123><loc0456>...~dog} \\
+    OCR & \texttt{ocr} & Extracted text from image \\
+    \bottomrule
+  \end{tabular}
+  \end{center}
+
+  \vspace{0.5em}
+  \begin{columns}
+    \begin{column}{0.48\textwidth}
+      \textbf{Object detection via text}:
+      \begin{itemize}
+        \item Bounding boxes encoded as special \texttt{<loc>} tokens
+        \item Normalized coordinates in $[0, 1023]$
+        \item No task-specific detection head needed
+      \end{itemize}
+    \end{column}
+    \begin{column}{0.48\textwidth}
+      \textbf{Why this works}:
+      \begin{itemize}
+        \item All tasks unified as text generation
+        \item No task-specific architectures
+        \item Same model, different prompts
+        \item Higher resolution for detail-oriented tasks (OCR, documents)
+      \end{itemize}
+    \end{column}
+  \end{columns}
+\end{frame}
+
+% -----------------------------------------------------------------------
+\begin{frame}{PaliGemma: Benchmark Results}
+
+  PaliGemma (3B) vs.\ larger VLMs after task-specific fine-tuning. Bold = best in column.
+
+  \vspace{0.3em}
+  \begin{center}
+  \resizebox{\textwidth}{!}{%
+  \begin{tabular}{l c c | c c c c c c c}
+    \toprule
+    \textbf{Model} & \textbf{Size} & \textbf{Res.} & \textbf{VQAv2} & \textbf{TextVQA} & \textbf{DocVQA} & \textbf{ChartQA} & \textbf{AI2D} & \textbf{SciQA} & \textbf{GQA} \\
+    \midrule
+    LLaVA-1.5     & 7B  & 336  & 78.5  & 58.2  & --    & --    & --    & 66.8  & 62.0 \\
+    LLaVA-1.5     & 13B & 336  & 80.0  & 61.3  & --    & --    & --    & 71.6  & 63.3 \\
+    Qwen-VL-Chat  & 10B & 448  & 78.2  & 61.5  & 65.1  & 65.7  & 62.3  & 68.2  & 57.5 \\
+    \midrule
+    PaliGemma     & 3B  & 224  & 83.2  & 55.5  & 43.7  & 57.1  & 72.1  & 95.4  & 65.6 \\
+    PaliGemma     & 3B  & 448  & \textbf{85.6}  & 73.2  & 78.0  & 71.4  & \textbf{73.3}  & \textbf{95.9}  & \textbf{67.0} \\
+    PaliGemma     & 3B  & 896  & --    & \textbf{76.5}  & \textbf{84.8}  & --    & --    & --    & -- \\
+    \bottomrule
+  \end{tabular}
+  }
+  \end{center}
+
+  \vspace{0.2em}
+  {\scriptsize SciQA = ScienceQA (image subset). All PaliGemma numbers from \cite{beyer2024paligemma}.}
+
+  \vspace{0.3em}
+  \begin{itemize}
+    \item 3B model outperforms LLaVA-1.5-13B on most benchmarks
+    \item \textbf{Resolution is critical}: DocVQA jumps from 43.7 (224px) to 84.8 (896px)
+    \item ScienceQA at 95.9\% --- remarkable for a 3B model
+  \end{itemize}
+\end{frame}
+
+% -----------------------------------------------------------------------
+\begin{frame}{PaliGemma: OCR, Captioning \& Localization}
+
+  \vspace{-0.3em}
+  \textbf{OCR \& text-heavy benchmarks}:
+  \vspace{0.2em}
+
+  \begin{center}
+  \small
+  \begin{tabular}{l c | c c c c}
+    \toprule
+    \textbf{Model} & \textbf{Res.} & \textbf{OCR-VQA} & \textbf{ST-VQA} & \textbf{InfoVQA} & \textbf{TallyQA\textsuperscript{s/c}} \\
+    \midrule
+    PaliGemma-3B     & 224  & 73.2  & 63.3  & 28.5   & 81.7\,/\,69.6 \\
+    PaliGemma-3B     & 448  & 75.6  & 81.8  & 40.5   & 84.9\,/\,72.3 \\
+    PaliGemma-3B     & 896  & \textbf{75.9}  & \textbf{84.4}  & \textbf{47.8}   & -- \\
+    \bottomrule
+  \end{tabular}
+  \end{center}
+
+  \vspace{0.3em}
+  \textbf{Captioning \& referring expression segmentation}:
+  \vspace{0.2em}
+
+  \begin{center}
+  \small
+  \begin{tabular}{l c | c c | c c c}
+    \toprule
+    \textbf{Model} & \textbf{Res.} & \textbf{COCO\textsuperscript{CIDEr}} & \textbf{TextCaps\textsuperscript{CIDEr}} & \textbf{RefCOCO} & \textbf{RefCOCO+} & \textbf{RefCOCOg} \\
+    \midrule
+    PaliGemma-3B & 224 & 141.9  & 127.5  & 73.4  & 68.3  & 67.7 \\
+    PaliGemma-3B & 448 & \textbf{144.6}  & \textbf{153.9}  & 75.6  & 69.8  & 70.2 \\
+    PaliGemma-3B & 896 & --     & --     & \textbf{76.9}  & \textbf{72.2}  & \textbf{72.2} \\
+    \bottomrule
+  \end{tabular}
+  \end{center}
+
+  \vspace{0.2em}
+  {\scriptsize RefCOCO metrics: Mean IoU. TallyQA\textsuperscript{s/c} = simple/complex split.}
+
+  \vspace{0.3em}
+  \begin{block}{Design Lessons}
+    \begin{enumerate}
+      \item A \textbf{simple linear connector} suffices when both vision encoder and LLM are strong
+      \item \textbf{Resolution matters}: cheap to increase at fine-tuning, large gains on detail-oriented tasks
+      \item \textbf{Unified text generation} handles captioning, VQA, detection, OCR without architectural changes
+    \end{enumerate}
+  \end{block}
+\end{frame}
+
+% =======================================================================
+\subsection{Summary}
+
+% -----------------------------------------------------------------------
+\begin{frame}{Multimodal Models: Summary}
+
+  \textbf{Evolution of vision-language models}:
+
+  \vspace{0.3em}
+  \begin{center}
+    \begin{tikzpicture}[
+      scale=0.8, every node/.style={scale=0.8},
+      model/.style={draw, rounded corners, thick, minimum width=2.8cm, minimum height=0.8cm, align=center, font=\small},
+      arr/.style={-Stealth, very thick, gray!60},
+    ]
+      \node[model, fill=orange!15] (clip) at (-3.5, 0) {\textbf{CLIP} (2021)\\Contrastive alignment};
+      \node[model, fill=violet!12] (siglip) at (0.5, 0) {\textbf{SigLIP} (2023)\\Sigmoid loss};
+      \node[model, fill=green!15] (pali) at (4.5, 0) {\textbf{PaliGemma} (2024)\\Generative VLM};
+
+      \draw[arr] (clip) -- (siglip) node[midway, above, font=\scriptsize] {better loss};
+      \draw[arr] (siglip) -- (pali) node[midway, above, font=\scriptsize] {+ LLM};
+    \end{tikzpicture}
+  \end{center}
+
+  \vspace{0.5em}
+  \begin{columns}
+    \begin{column}{0.48\textwidth}
+      \textbf{CLIP}:
+      \begin{itemize}
+        \item Dual encoder, shared embedding space
+        \item Softmax contrastive loss (InfoNCE)
+        \item Zero-shot classification via text prompts
+        \item Cannot generate text
+      \end{itemize}
+    \end{column}
+    \begin{column}{0.48\textwidth}
+      \textbf{PaliGemma}:
+      \begin{itemize}
+        \item SigLIP vision encoder + Gemma LLM
+        \item Simple linear projection connector
+        \item Generates text conditioned on images
+        \item Unified interface for captioning, VQA, detection, OCR
+      \end{itemize}
+    \end{column}
+  \end{columns}
+
+  \vspace{0.3em}
+  \textbf{Key insight}: Contrastive pretraining produces excellent visual features. Pairing them with a language model unlocks generative capabilities far beyond embedding comparison.
+\end{frame}

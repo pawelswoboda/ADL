@@ -1,0 +1,17 @@
+# Fdb version 4
+["pdflatex"] 1775555527.80819 "/Users/pswoboda/repo/ADL/slides/hyperparameters.tex" "hyperparameters.pdf" "hyperparameters" 1775555528.5487 2
+  "/Users/pswoboda/repo/ADL/slides/hyperparameters.tex" 1775553599.44924 28183 abfb8cf2a7f585d9862b91f4e27a49fd ""
+  "/usr/local/texlive/2024basic/texmf-dist/fonts/tfm/public/cm/cmbx10.tfm" 1136768653 1328 c834bbb027764024c09d3d2bf908b5f0 ""
+  "/usr/local/texlive/2024basic/texmf-dist/fonts/tfm/public/cm/cmti10.tfm" 1136768653 1480 aa8e34af0eb6a2941b776984cf1dfdc4 ""
+  "/usr/local/texlive/2024basic/texmf-dist/fonts/tfm/public/cm/cmtt10.tfm" 1136768653 768 1321e9409b4137d6fb428ac9dc956269 ""
+  "/usr/local/texlive/2024basic/texmf-dist/web2c/texmf.cnf" 1739380943 42148 61becc7c670cd061bb319c643c27fdd4 ""
+  "/usr/local/texlive/2024basic/texmf-var/fonts/map/pdftex/updmap/pdftex.map" 1747940624 323424 b60ccf2ccfa420f4162855008464b6f2 ""
+  "/usr/local/texlive/2024basic/texmf-var/web2c/pdftex/pdflatex.fmt" 1773842147 2896523 c490fef3640f6b612de8979c8f50c338 ""
+  "/usr/local/texlive/2024basic/texmf.cnf" 1710011638 628 8b896f7d9d41b43f4346b9091e52171f ""
+  "hyperparameters.aux" 1775555527.80768 32 3985256e7290058c681f74d7a3565a19 "pdflatex"
+  "hyperparameters.tex" 1775553599.44924 28183 abfb8cf2a7f585d9862b91f4e27a49fd ""
+  (generated)
+  "hyperparameters.aux"
+  "hyperparameters.log"
+  "hyperparameters.pdf"
+  (rewritten before read)

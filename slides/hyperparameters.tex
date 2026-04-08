@@ -1,0 +1,1213 @@
+% !TEX root=./adl.tex
+
+\section{Hyperparameter Selection}
+
+% -----------------------------------------------------------------------
+\begin{frame}{Why Hyperparameters Matter}
+
+  Deep learning performance is highly sensitive to hyperparameter choices.
+  Poor choices can lead to divergence, slow convergence, or suboptimal generalization.
+
+  \vspace{0.5em}
+  \textbf{Key hyperparameters in LLM training:}
+  \begin{itemize}
+    \item \textbf{Learning rate} and its \emph{schedule} (warmup, decay shape)
+    \item \textbf{Batch size} (interacts with learning rate)
+    \item \textbf{Weight decay} (regularization strength)
+    \item \textbf{Adam parameters} ($\beta_1, \beta_2, \epsilon$)
+    \item \textbf{Architectural choices}: depth, width, number of heads
+    \item \textbf{Data mix} and \emph{training duration} (tokens seen)
+  \end{itemize}
+
+  \vspace{0.5em}
+  \textbf{Challenge:} Each training run takes a long time.
+  We cannot do grid search over hyperparameters.
+
+  \vspace{0.3em}
+  $\Rightarrow$ Need principled, efficient strategies \& insights.
+\end{frame}
+
+% -----------------------------------------------------------------------
+\subsection{Classical Hyperparameter Optimization}
+
+% -----------------------------------------------------------------------
+\begin{frame}{Grid Search vs.\ Random Search}
+
+  \begin{columns}[T]
+    \begin{column}{0.52\textwidth}
+      \textbf{Grid search:}
+      \begin{itemize}
+        \item Evaluate all combinations on a regular grid
+        \item Cost grows \emph{exponentially} in the number of hyperparameters: $\mathcal{O}(k^d)$
+        \item Wastes budget on unimportant dimensions
+      \end{itemize}
+
+      \vspace{0.4em}
+      \textbf{Random search}~\cite{bergstra2012random}:
+      \begin{itemize}
+        \item Sample configurations uniformly at random
+        \item Each trial explores a \emph{distinct value} for every dimension
+        \item Provably more efficient when only a few hyperparameters matter (low effective dimensionality)
+        \item Matches or beats grid search using a fraction of the budget
+      \end{itemize}
+    \end{column}
+    \begin{column}{0.44\textwidth}
+      \begin{center}
+        \begin{tikzpicture}[scale=0.55]
+          % Grid search
+          \begin{scope}[shift={(-0.2,0)}]
+            \draw[->] (0,0) -- (3.2,0) node[right, font=\scriptsize] {HP 1};
+            \draw[->] (0,0) -- (0,3.2) node[above, font=\scriptsize] {HP 2};
+            \node[font=\scriptsize\bfseries] at (1.5,3.6) {Grid Search};
+            \foreach \x in {0.5,1.5,2.5} {
+              \foreach \y in {0.5,1.5,2.5} {
+                \fill[blue!70] (\x,\y) circle (2pt);
+              }
+            }
+            % projections - only 3 unique per axis
+            \foreach \x in {0.5,1.5,2.5} {
+              \draw[blue!40, thick] (\x,0) -- (\x,-0.15);
+            }
+            \foreach \y in {0.5,1.5,2.5} {
+              \draw[blue!40, thick] (0,\y) -- (-0.15,\y);
+            }
+          \end{scope}
+          % Random search
+          \begin{scope}[shift={(4.5,0)}]
+            \draw[->] (0,0) -- (3.2,0) node[right, font=\scriptsize] {HP 1};
+            \draw[->] (0,0) -- (0,3.2) node[above, font=\scriptsize] {HP 2};
+            \node[font=\scriptsize\bfseries] at (1.5,3.6) {Random Search};
+            % 9 random points
+            \fill[red!70] (0.3,2.1) circle (2pt);
+            \fill[red!70] (0.8,0.4) circle (2pt);
+            \fill[red!70] (1.1,2.7) circle (2pt);
+            \fill[red!70] (1.6,1.3) circle (2pt);
+            \fill[red!70] (2.0,0.8) circle (2pt);
+            \fill[red!70] (2.3,2.4) circle (2pt);
+            \fill[red!70] (2.7,1.8) circle (2pt);
+            \fill[red!70] (0.5,1.5) circle (2pt);
+            \fill[red!70] (1.9,2.9) circle (2pt);
+            % projections - 9 unique per axis
+            \foreach \x in {0.3,0.5,0.8,1.1,1.6,1.9,2.0,2.3,2.7} {
+              \draw[red!40, thick] (\x,0) -- (\x,-0.15);
+            }
+            \foreach \y in {0.4,0.8,1.3,1.5,1.8,2.1,2.4,2.7,2.9} {
+              \draw[red!40, thick] (0,\y) -- (-0.15,\y);
+            }
+          \end{scope}
+        \end{tikzpicture}
+      \end{center}
+      \vspace{0.2em}
+      {\scriptsize Random search projects onto more distinct values per axis (tick marks). After Bergstra \& Bengio (2012).}
+    \end{column}
+  \end{columns}
+\end{frame}
+
+% -----------------------------------------------------------------------
+\begin{frame}{Successive Halving}
+
+  \textbf{Key idea:} Most bad configurations can be identified early.
+  Stop them quickly and reallocate budget to promising ones~\cite{li2017hyperband}.
+
+  \vspace{0.3em}
+  \begin{columns}[T]
+    \begin{column}{0.50\textwidth}
+      \textbf{Algorithm (SHA):}
+      \begin{enumerate}
+        \item Sample $n$ random configurations
+        \item Train each for a small budget $b$
+        \item Evaluate; keep the top $1/\eta$ fraction (typically $\eta = 3$)
+        \item Multiply budget by $\eta$, repeat until one remains
+      \end{enumerate}
+
+      \vspace{0.3em}
+      \textbf{Properties:}
+      \begin{itemize}
+        \item Total compute $\approx n \cdot B_{\max} / \log_\eta(n)$
+        \item Much less than training all $n$ to completion
+        \item \alert{Tradeoff:} more initial configs $\Rightarrow$ better coverage but more aggressive early stopping
+      \end{itemize}
+    \end{column}
+    \begin{column}{0.47\textwidth}
+      \begin{center}
+        \resizebox{\columnwidth}{!}{%
+        \begin{tikzpicture}[
+          cell/.style={
+            draw, minimum width=1.3cm, minimum height=0.5cm,
+            font=\small, inner sep=2pt, anchor=center
+          },
+          active/.style={cell, fill=green!20},
+          elim/.style={cell, fill=gray!8, text=gray!50},
+          rndlabel/.style={font=\small\bfseries, anchor=east},
+          budlabel/.style={font=\small, anchor=west, text=blue!70!black},
+        ]
+          \def\rowsep{0.75}
+
+          % --- Round 1: 9 configs, budget b ---
+          \node[rndlabel] at (-0.3, 0) {Round 1};
+          \foreach \i in {1,...,9} {
+            \node[active] at (\i*1.55, 0) {$c_{\i}$};
+          }
+          \node[budlabel] at (15.3, 0) {budget $b$};
+
+          % Arrow round 1 -> 2
+          \draw[->, thick, green!50!black] (5*1.55, -0.35) -- (5*1.55, -\rowsep+0.35)
+            node[midway, right=1pt, font=\tiny] {top-3};
+
+          % --- Round 2: 3 survivors, 6 eliminated ---
+          \node[rndlabel] at (-0.3, -\rowsep) {Round 2};
+          \foreach \i in {1,3,4,6,7,8} {
+            \node[elim] at (\i*1.55, -\rowsep) {$c_{\i}$};
+          }
+          \foreach \i in {2, 5, 9} {
+            \node[active] at (\i*1.55, -\rowsep) {$c_{\i}$};
+          }
+          \node[budlabel] at (15.3, -\rowsep) {budget $3b$};
+
+          % Arrow round 2 -> 3
+          \draw[->, thick, green!50!black] (5*1.55, -\rowsep-0.35) -- (5*1.55, -2*\rowsep+0.35)
+            node[midway, right=1pt, font=\tiny] {top-1};
+
+          % --- Round 3: 1 winner ---
+          \node[rndlabel] at (-0.3, -2*\rowsep) {Round 3};
+          \foreach \i in {1,2,3,4,6,7,8,9} {
+            \node[elim] at (\i*1.55, -2*\rowsep) {$c_{\i}$};
+          }
+          \node[active, fill=green!40] at (5*1.55, -2*\rowsep) {$c_{5}$};
+          \node[budlabel] at (15.3, -2*\rowsep) {budget $9b$};
+
+          % Winner annotation
+          \draw[->, thick, green!50!black] (5*1.55, -2*\rowsep-0.35) -- (5*1.55, -2*\rowsep-0.75)
+            node[below, font=\small\bfseries, green!50!black] {Best};
+        \end{tikzpicture}%
+        }
+      \end{center}
+      \vspace{-0.3em}
+      {\scriptsize Example: $n{=}9$, $\eta{=}3$. Each round keeps top $\nicefrac{1}{\eta}$ and multiplies budget by~$\eta$.}
+    \end{column}
+  \end{columns}
+\end{frame}
+
+% -----------------------------------------------------------------------
+\begin{frame}{Hyperband}
+
+  \textbf{Problem with SHA:} Must choose $n$ upfront --- trade-off between coverage and early stopping aggressiveness.
+
+  \vspace{0.3em}
+  \textbf{Hyperband}~\cite{li2017hyperband} runs \emph{multiple independent SHA instances} (called \emph{brackets}) in parallel, each with a different $n$-vs-budget trade-off:
+
+  \vspace{0.2em}
+  \begin{columns}[T]
+    \begin{column}{0.55\textwidth}
+      \textbf{Setup:} Given total budget $B$ and $\eta$, create $s_{\max}{+}1$ brackets.
+      Each bracket \emph{independently} samples its own fresh random configs:
+      \begin{description}[leftmargin=0.5em]
+        \item[Brk 0:] sample 81 configs, start at budget $b{=}1$
+        \item[Brk 1:] sample 9 configs, start at budget $b{=}3$
+        \item[Brk 2:] sample 6 configs, start at budget $b{=}9$
+        \item[Brk 3:] sample 4 configs, start at budget $b{=}27$
+      \end{description}
+      \vspace{0.2em}
+      \textbf{Within each bracket:} run SHA --- evaluate, keep best $\nicefrac{1}{\eta}$, multiply budget by $\eta$, repeat.
+
+      \vspace{0.2em}
+      \textbf{Output:} Return the best config across all brackets.
+    \end{column}
+    \begin{column}{0.42\textwidth}
+      \begin{center}
+        \resizebox{\columnwidth}{!}{%
+        \begin{tikzpicture}[
+          cell/.style={
+            draw, minimum width=1.3cm, minimum height=0.5cm,
+            font=\small, inner sep=2pt, anchor=center
+          },
+          header/.style={cell, fill=blue!15, font=\small\bfseries},
+          active/.style={cell, fill=green!20},
+          empty/.style={cell, fill=gray!8, text=gray!50},
+        ]
+          \def\colsep{1.55}
+          \def\rowsep{0.75}
+
+          % Column headers
+          \node[header] at (0, 0.5) {Round};
+          \node[header] at (1*\colsep, 0.5) {Brk 0};
+          \node[header] at (2*\colsep, 0.5) {Brk 1};
+          \node[header] at (3*\colsep, 0.5) {Brk 2};
+          \node[header] at (4*\colsep, 0.5) {Brk 3};
+
+          % Round column
+          \node[cell, fill=blue!5] at (0, -0*\rowsep) {$b{=}1$};
+          \node[cell, fill=blue!5] at (0, -1*\rowsep) {$b{=}3$};
+          \node[cell, fill=blue!5] at (0, -2*\rowsep) {$b{=}9$};
+          \node[cell, fill=blue!5] at (0, -3*\rowsep) {$b{=}27$};
+
+          % Bracket 0
+          \node[active] (b0r0) at (1*\colsep, -0*\rowsep) {81};
+          \node[active] (b0r1) at (1*\colsep, -1*\rowsep) {27};
+          \node[active] (b0r2) at (1*\colsep, -2*\rowsep) {9};
+          \node[active] (b0r3) at (1*\colsep, -3*\rowsep) {3};
+
+          % Bracket 1
+          \node[empty] at (2*\colsep, -0*\rowsep) {---};
+          \node[active] (b1r1) at (2*\colsep, -1*\rowsep) {9};
+          \node[active] (b1r2) at (2*\colsep, -2*\rowsep) {3};
+          \node[active] (b1r3) at (2*\colsep, -3*\rowsep) {1};
+
+          % Bracket 2
+          \node[empty] at (3*\colsep, -0*\rowsep) {---};
+          \node[empty] at (3*\colsep, -1*\rowsep) {---};
+          \node[active] (b2r2) at (3*\colsep, -2*\rowsep) {6};
+          \node[active] (b2r3) at (3*\colsep, -3*\rowsep) {2};
+
+          % Bracket 3
+          \node[empty] at (4*\colsep, -0*\rowsep) {---};
+          \node[empty] at (4*\colsep, -1*\rowsep) {---};
+          \node[empty] at (4*\colsep, -2*\rowsep) {---};
+          \node[active] (b3r3) at (4*\colsep, -3*\rowsep) {4};
+
+          % Arrows within Bracket 0
+          \draw[->, thick, green!50!black] (b0r0.south) -- (b0r1.north) node[midway, right=1pt, font=\tiny] {top-27};
+          \draw[->, thick, green!50!black] (b0r1.south) -- (b0r2.north) node[midway, right=1pt, font=\tiny] {top-9};
+          \draw[->, thick, green!50!black] (b0r2.south) -- (b0r3.north) node[midway, right=1pt, font=\tiny] {top-3};
+
+          % Arrows within Bracket 1
+          \draw[->, thick, green!50!black] (b1r1.south) -- (b1r2.north) node[midway, right=1pt, font=\tiny] {top-3};
+          \draw[->, thick, green!50!black] (b1r2.south) -- (b1r3.north) node[midway, right=1pt, font=\tiny] {top-1};
+
+          % Arrow within Bracket 2
+          \draw[->, thick, green!50!black] (b2r2.south) -- (b2r3.north) node[midway, right=1pt, font=\tiny] {top-2};
+        \end{tikzpicture}%
+        }
+      \end{center}
+      \vspace{-0.2em}
+      {\scriptsize Cells = \#configs at each budget level ($\eta{=}3$). Arrows: top-$\nicefrac{1}{\eta}$ advance to next round.}
+    \end{column}
+  \end{columns}
+
+  \vspace{0.3em}
+  Each bracket uses $\approx$ the same total compute. Provides $\approx \log(B_{\max})$ speedup over random search.
+
+\end{frame}
+
+% -----------------------------------------------------------------------
+\begin{frame}{TPE --- Tree-structured Parzen Estimator}
+
+  \begin{columns}[T]
+    \begin{column}{0.50\textwidth}
+      TPE follows the idea of Bayesian optimization but takes a different approach~\cite{bergstra2011algorithms}.
+
+      \vspace{0.2em}
+      \textbf{KDE:} Given points $\{x_1, \ldots, x_n\}$, estimate a smooth density:
+      $\hat{p}(x) = \frac{1}{n} \sum_{i} K_h(x - x_i)$
+
+      \vspace{0.3em}
+      \textbf{Core idea:} Split trials at threshold $y^*$ (e.g.\ top 20\%). Fit a KDE to each group:
+      \[
+        p(\vx \mid y) {=} \begin{cases}
+          \ell(\vx) & y < y^* ~ \text{(good)} \\
+          g(\vx)    & y \geq y^* ~ \text{(bad)}
+        \end{cases}
+      \]
+
+      \vspace{0.2em}
+      \textbf{Next config:} Sample from $\ell(\vx)$, pick the one maximizing $\ell(\vx) / g(\vx)$.
+      \begin{itemize}
+        \item High $\ell$: looks good. Low $g$: not bad.
+        \item $\ell/g \propto$ Expected Improvement
+      \end{itemize}
+
+      \vspace{0.2em}
+      {\small Each HP modelled independently $\Rightarrow$ scales to many dims. Default in Optuna~\cite{akiba2019optuna}.}
+
+      \vspace{0.2em}
+      {\small \textbf{Note:} TPE can be understood as Bayesian optimization where the density ratio $\ell/g$ plays the role of the acquisition function~\cite{snoek2012practical}.}
+    \end{column}
+    \begin{column}{0.47\textwidth}
+      \begin{center}
+        \resizebox{\columnwidth}{!}{%
+        \begin{tikzpicture}
+          % --- Top plot: observations split into good/bad ---
+          \begin{scope}[shift={(0,0.6)}]
+            \draw[->] (0,0) -- (6.2,0) node[right, font=\scriptsize] {HP $x$};
+            \draw[->] (0,0) -- (0,3.2) node[above, font=\scriptsize] {loss $y$};
+
+            % Threshold line
+            \draw[dashed, gray, thick] (0, 1.8) -- (6, 1.8);
+            \node[font=\scriptsize, gray, anchor=west] at (6.05, 1.8) {$y^*$};
+
+            % Good trials: cluster A around x~1.5 (2 points), cluster B around x~4.5 (3 points)
+            \fill[green!60!black] (1.2, 1.2) circle (3pt);
+            \fill[green!60!black] (1.7, 0.9) circle (3pt);
+            \fill[green!60!black] (4.2, 1.5) circle (3pt);
+            \fill[green!60!black] (4.5, 1.0) circle (3pt);
+            \fill[green!60!black] (4.8, 1.3) circle (3pt);
+
+            % Bad trials: flanking cluster B on both sides (x~3-3.5 and x~5.3-5.8), plus one far left
+            \fill[red!70!black] (0.4, 2.7) circle (3pt);
+            \fill[red!70!black] (2.9, 2.2) circle (3pt);
+            \fill[red!70!black] (3.3, 2.5) circle (3pt);
+            \fill[red!70!black] (3.6, 2.3) circle (3pt);
+            \fill[red!70!black] (5.3, 2.4) circle (3pt);
+            \fill[red!70!black] (5.6, 2.1) circle (3pt);
+            \fill[red!70!black] (5.9, 2.7) circle (3pt);
+
+            \node[font=\scriptsize, green!60!black] at (1.2, 0.4) {good};
+            \node[font=\scriptsize, red!70!black] at (5.9, 3.0) {bad};
+          \end{scope}
+
+          % --- Middle plot: two KDEs ---
+          \begin{scope}[shift={(0,-2.0)}]
+            \draw[->] (0,0) -- (6.2,0) node[right, font=\scriptsize] {HP $x$};
+            \draw[->] (0,0) -- (0,1.8) node[above, font=\scriptsize] {density};
+
+            % l(x) - two peaks: smaller at x~1.5, larger at x~4.5
+            \draw[thick, green!60!black, domain=0.1:6, samples=100, smooth]
+              plot (\x, {0.35*exp(-1.5*(\x-1.2)*(\x-1.2)) + 0.4*exp(-1.5*(\x-1.7)*(\x-1.7))
+                + 0.4*exp(-1.2*(\x-4.2)*(\x-4.2)) + 0.5*exp(-1.2*(\x-4.5)*(\x-4.5))
+                + 0.35*exp(-1.2*(\x-4.8)*(\x-4.8))});
+            \node[font=\scriptsize, green!60!black, anchor=south] at (1.5, 0.75) {$\ell(x)$};
+
+            % g(x) - flanking cluster B: peaks around x~3.2 and x~5.6
+            \draw[thick, red!70!black, domain=0.1:6, samples=100, smooth]
+              plot (\x, {0.1*exp(-0.8*(\x-0.4)*(\x-0.4))
+                + 0.2*exp(-1.0*(\x-2.9)*(\x-2.9)) + 0.25*exp(-1.0*(\x-3.3)*(\x-3.3))
+                + 0.2*exp(-1.0*(\x-3.6)*(\x-3.6))
+                + 0.2*exp(-1.0*(\x-5.3)*(\x-5.3)) + 0.25*exp(-1.0*(\x-5.6)*(\x-5.6))
+                + 0.2*exp(-1.0*(\x-5.9)*(\x-5.9))});
+            \node[font=\scriptsize, red!70!black, anchor=south] at (5.6, 0.65) {$g(x)$};
+          \end{scope}
+
+          % --- Bottom plot: ratio l/g ---
+          \begin{scope}[shift={(0,-4.0)}]
+            \draw[->] (0,0) -- (6.2,0) node[right, font=\scriptsize] {HP $x$};
+            \draw[->] (0,0) -- (0,1.5) node[above, font=\scriptsize] {$\frac{\ell}{g}$};
+
+            % Ratio: high peak at x~1.5 (good, no bad), smaller peak at x~4.5 (good but also bad)
+            \draw[thick, orange!80!black, domain=0.1:6, samples=100, smooth]
+              plot (\x, {max(0.02, 1.2*exp(-1.0*(\x-1.5)*(\x-1.5))
+                + 0.35*exp(-0.8*(\x-4.4)*(\x-4.4)))});
+
+            % Next sample marker at x~1.5 (the better ratio)
+            \draw[thick, green!50!black, dashed] (1.5, 0) -- (1.5, 1.3);
+            \fill[green!50!black] (1.5, 0) circle (3pt);
+            \node[font=\scriptsize\bfseries, green!50!black, anchor=south] at (1.5, 1.35) {next $\vx^*$};
+
+            % Annotation for the smaller peak
+            \draw[<-, gray, thin] (4.4, 0.4) -- (5.5, 0.9)
+              node[right, font=\tiny, gray, align=left] {high $\ell$ but\\also high $g$};
+          \end{scope}
+        \end{tikzpicture}%
+        }
+      \end{center}
+    \end{column}
+  \end{columns}
+
+\end{frame}
+
+% -----------------------------------------------------------------------
+\begin{frame}{BOHB --- Bayesian Optimization and Hyperband}
+
+  \textbf{Problem:} Hyperband explores broadly but samples configs \emph{randomly}. TPE samples intelligently but evaluates each config to completion (no early stopping).
+
+  \vspace{0.3em}
+  \textbf{BOHB}~\cite{falkner2018bohb} combines both: use TPE to \emph{sample} configs, Hyperband to \emph{schedule} them.
+
+  \vspace{0.3em}
+  \textbf{Algorithm:}
+  \begin{enumerate}
+    \item Run Hyperband's bracket structure (multiple SHA instances with different budgets)
+    \item Instead of sampling configs uniformly at random, use a \textbf{TPE model} fitted on completed evaluations at the \emph{current budget level}
+    \item As more configs finish, the TPE model improves $\Rightarrow$ later configs are better
+  \end{enumerate}
+
+  \vspace{0.3em}
+  \textbf{Key design choices:}
+  \begin{itemize}
+    \item Fit TPE only on results from the \emph{same budget level} (short runs inform short-run sampling, long runs inform long-run sampling)
+    \item Fall back to random sampling until enough observations exist (typically $\geq$\,10)
+    \item Inherits Hyperband's parallelism: multiple brackets run concurrently
+  \end{itemize}
+
+  \vspace{0.3em}
+  \textbf{Result:} Matches Hyperband's fast early progress \emph{and} TPE's late-stage refinement. Consistently among the best methods across benchmarks.
+
+\end{frame}
+
+% -----------------------------------------------------------------------
+\begin{frame}{Comparing HPO Methods}
+
+  When controlling for total compute budget, there is no single best method~\cite{falkner2018bohb}.
+
+  \vspace{0.3em}
+  \begin{center}
+    \renewcommand{\arraystretch}{1.3}
+    \resizebox{\textwidth}{!}{%
+    \begin{tabular}{llll}
+      \toprule
+      \textbf{Method} & \textbf{Strengths} & \textbf{Weaknesses} & \textbf{Speedup vs.\ RS} \\
+      \midrule
+      Random search & Trivially parallel, strong baseline & No learning from past trials & $1\times$ (baseline) \\
+      Hyperband / SHA & Fast with small budgets; explores broadly & Relies on cheap proxies being informative & $5$--$30\times$ \\
+      TPE / Bayesian opt. & Exploits structure; best with few HPs & Sequential; slow start & $2$--$5\times$ \\
+      BOHB & Informed sampling + early stopping & More complex to implement & $10$--$50\times$ \\
+      \bottomrule
+    \end{tabular}%
+    }
+  \end{center}
+  {\scriptsize Speedups from \cite{li2017hyperband} and \cite{falkner2018bohb}, measured as wall-clock time to reach target validation error on neural network benchmarks.}
+
+  \vspace{0.3em}
+  \textbf{Key findings:}
+  \begin{itemize}
+    \item \textbf{Small compute budget:} Hyperband wins --- aggressive early stopping explores more configs
+    \item \textbf{Large compute budget:} Bayesian methods (TPE) win --- learned surrogate model pays off
+    \item \textbf{General purpose:} BOHB (Hyperband + TPE) rarely loses badly to any single method
+    \item \textbf{Random search} is competitive in high dimensions and embarrassingly parallel settings
+  \end{itemize}
+
+\end{frame}
+
+% -----------------------------------------------------------------------
+\subsection{Learning Rate Schedules}
+
+% -----------------------------------------------------------------------
+\begin{frame}{Learning Rate: The Most Important Hyperparameter}
+
+  The learning rate $\eta$ controls the step size of gradient updates.
+  Too high $\Rightarrow$ divergence. Too low $\Rightarrow$ slow convergence / poor optima.
+
+  \vspace{0.4em}
+  \textbf{LR Range Test}~\cite{smith2017cyclical}:
+  \begin{itemize}
+    \item Increase $\eta$ exponentially from very small to very large over one epoch
+    \item Plot loss vs.\ $\eta$; the optimal range is where loss decreases fastest
+    \item Quick diagnostic before a full training run
+  \end{itemize}
+
+  \vspace{0.4em}
+  \textbf{Common LR schedules for LLM pretraining:}
+
+  \vspace{0.2em}
+  \begin{center}
+    \begin{tikzpicture}[scale=0.85]
+      % Cosine schedule
+      \begin{scope}[shift={(0,0)}]
+        \draw[->] (0,0) -- (4.2,0) node[right, font=\scriptsize] {step};
+        \draw[->] (0,0) -- (0,2.5) node[above, font=\scriptsize] {$\eta$};
+        \node[font=\scriptsize\bfseries] at (2,2.9) {Cosine Decay};
+        % warmup
+        \draw[thick, blue!70] (0,0) -- (0.6,2);
+        % cosine decay
+        \draw[thick, blue!70, domain=0.6:4, samples=100] plot (\x, {1.0 + 1.0*cos((\x-0.6)/(4-0.6)*180)});
+      \end{scope}
+      % WSD schedule
+      \begin{scope}[shift={(5.5,0)}]
+        \draw[->] (0,0) -- (4.2,0) node[right, font=\scriptsize] {step};
+        \draw[->] (0,0) -- (0,2.5) node[above, font=\scriptsize] {$\eta$};
+        \node[font=\scriptsize\bfseries] at (2,2.9) {WSD (Warmup-Stable-Decay)};
+        % warmup
+        \draw[thick, red!70] (0,0) -- (0.5,2);
+        % stable
+        \draw[thick, red!70] (0.5,2) -- (2.8,2);
+        % decay
+        \draw[thick, red!70, domain=2.8:4, samples=50] plot (\x, {2.0*cos((\x-2.8)/(4-2.8)*90)});
+      \end{scope}
+    \end{tikzpicture}
+  \end{center}
+
+  \vspace{0.2em}
+  {\small
+  \textbf{Cosine decay}~\cite{loshchilov2017sgdr}: Standard for GPT-3, LLaMA, Chinchilla.
+  \textbf{WSD}: Used in MiniCPM, recent practice. Allows extending training without restarting.}
+\end{frame}
+
+% -----------------------------------------------------------------------
+\begin{frame}{Learning Rate Warmup}
+
+  \textbf{Problem:} Adam's moving-average estimates $m_t, v_t$ are initialized to zero.
+  Early in training they are heavily biased, so the effective step sizes $m_t / \sqrt{v_t}$ can be unreliable and cause divergent updates.
+
+  \vspace{0.4em}
+  \textbf{Solution:} Start with $\eta \approx 0$ and linearly increase to the target $\eta_{\max}$ over a \emph{warmup period}, giving the moment estimates time to stabilize~\cite{goyal2017accurate}.
+
+  \[
+    \eta_t = \begin{cases}
+      \eta_{\max} \cdot \frac{t}{T_{\text{warmup}}} & \text{if } t \leq T_{\text{warmup}} \\
+      \text{schedule}(\eta_{\max}, t) & \text{otherwise}
+    \end{cases}
+  \]
+
+  \vspace{0.3em}
+  \textbf{Typical warmup durations:}
+  \begin{itemize}
+    \item GPT-3: 375M tokens ($\approx$ 0.1\% of training)~\cite{brown2020gpt3}
+    \item LLaMA: 2000 steps~\cite{touvron2023llama}
+    \item Chinchilla: 5B tokens~\cite{hoffmann2022chinchilla}
+    \item Rule of thumb: $\sim$0.1--1\% of total training steps
+  \end{itemize}
+
+  \vspace{0.3em}
+  \textbf{Why it works:}
+  \begin{itemize}
+    \item Gives Adam's moment estimates ($m_t$, $v_t$) enough samples to become reliable
+    \item Also helps with large early gradients (complementary to gradient clipping)
+    \item Especially important with large batch sizes: linear scaling rule $\Rightarrow$ larger LR $\Rightarrow$ unreliable early steps are amplified
+  \end{itemize}
+\end{frame}
+
+% -----------------------------------------------------------------------
+\begin{frame}{Choosing a Good Learning Rate}
+
+  \begin{columns}[T]
+    \begin{column}{0.50\textwidth}
+      \textbf{Safe LR regimes by task:}
+      \begin{description}[labelwidth=\widthof{\bfseries Fine-tune~~}, leftmargin=!]
+        \item[From scratch] $10^{-4}$--$10^{-3}$ (Adam/AdamW). Larger models $\Rightarrow$ lower end. Use LR range test or $\mu$P to narrow down.
+        \item[Fine-tune] $10^{-5}$--$5 \times 10^{-5}$ (full fine-tuning). $10\text{--}50\times$ smaller than pretraining LR to avoid catastrophic forgetting.
+        \item[LoRA/PEFT] $10^{-4}$--$3 \times 10^{-4}$. Adapters have few parameters $\Rightarrow$ can tolerate higher LR than full fine-tuning.
+        \item[SGD (vision)] $10^{-2}$--$10^{-1}$. SGD needs $\sim$$100\times$ higher LR than Adam since it lacks adaptive scaling.
+      \end{description}
+    \end{column}
+    \begin{column}{0.48\textwidth}
+      \textbf{LR range test}~\cite{smith2017cyclical}:
+
+      \begin{center}
+      \begin{tikzpicture}[scale=0.75]
+        \draw[->, thick] (0,0) -- (5,0) node[below, font=\scriptsize] {$\log \eta$};
+        \draw[->, thick] (0,0) -- (0,3.5) node[above, font=\scriptsize] {loss};
+        % Loss curve: flat, then decrease, then increase
+        \draw[slide_blue!80!black, very thick] plot[smooth, tension=0.6] coordinates
+          {(0.2,2.8) (1.0,2.7) (1.8,2.3) (2.5,1.5) (3.2,1.2) (3.8,1.8) (4.5,3.2)};
+        % Good region
+        \draw[green!60!black, very thick, <->] (1.5, 0.3) -- (3.3, 0.3);
+        \node[green!60!black, font=\scriptsize, above] at (2.4, 0.3) {good range};
+        % Annotation
+        \draw[->, gray, thin] (4.2, 2.8) -- (4.5, 3.1);
+        \node[gray, font=\tiny, left] at (4.2, 2.7) {diverges};
+      \end{tikzpicture}
+      \end{center}
+      {\small Sweep $\eta$ exponentially over one epoch. Pick the range where loss drops fastest (steepest descent), not the minimum.}
+
+      \medskip
+      \textbf{Rules of thumb:}
+      \begin{itemize}
+        \item If loss spikes early: reduce LR or increase warmup
+        \item If loss plateaus: try $2\text{--}3\times$ higher LR
+        \item When scaling batch size $B \to kB$: scale $\eta \to k\eta$ (linear scaling rule)
+      \end{itemize}
+    \end{column}
+  \end{columns}
+\end{frame}
+
+% -----------------------------------------------------------------------
+\subsection{Batch Size Selection}
+
+% -----------------------------------------------------------------------
+\begin{frame}{Batch Size and the Linear Scaling Rule}
+
+  The mini-batch gradient \emph{averages} over $B$ random samples:
+  \[
+    \hat{g}_B = \frac{1}{B} \sum_{i=1}^{B} \nabla L_i(\vw) \qquad \Rightarrow \qquad \vw_{t+1} = \vw_t - \eta\, \hat{g}_B
+  \]
+
+  \vspace{0.2em}
+  \textbf{Linear scaling rule}~\cite{goyal2017accurate}: With $k\times$ larger batch we take $k\times$ fewer steps per epoch. To cover the same distance in weight space, scale $\eta \to k\eta$:
+
+  \medskip
+  \begin{center}
+  \begin{minipage}[c]{0.42\textwidth}
+  \begin{tcolorbox}[colback=slide_blue!30, colframe=slide_blue!80, boxrule=0.6pt, arc=3pt, left=6pt, right=6pt, top=4pt, bottom=4pt]
+    \centering
+    {\small\textbf{1 step, batch $kB$, rate $k\eta$}}\\[4pt]
+    $\vw - k\eta\, \hat{g}_{kB}$
+  \end{tcolorbox}
+  \end{minipage}%
+  \hfill
+  \begin{minipage}[c]{0.06\textwidth}
+    \centering $\approx$
+  \end{minipage}%
+  \hfill
+  \begin{minipage}[c]{0.42\textwidth}
+  \begin{tcolorbox}[colback=slide_beige!30, colframe=slide_beige!80, boxrule=0.6pt, arc=3pt, left=6pt, right=6pt, top=4pt, bottom=4pt]
+    \centering
+    {\small\textbf{$k$ steps, batch $B$, rate $\eta$}}\\[4pt]
+    $\vw - \eta \displaystyle\sum_{j=1}^{k} \hat{g}_{B}^{(j)}$
+  \end{tcolorbox}
+  \end{minipage}
+  \end{center}
+  Both sides have the same \emph{expected} update: $\mathbb{E}[\hat{g}_{kB}] = \mathbb{E}[\hat{g}_B]$ because both are sample means of i.i.d.\ draws (batch size only affects variance, not expectation).
+
+  \vspace{0.3em}
+  \textbf{Limitations:}
+  \begin{itemize}
+    \item Assumes $\text{Var}[\hat{g}]$ is small enough that linear approximation holds --- breaks for very large $B$
+    \item Does not account for Adam's adaptive scaling (empirically still useful)
+    \item Requires LR warmup to work at large batch sizes
+  \end{itemize}
+
+\end{frame}
+
+% -----------------------------------------------------------------------
+\begin{frame}{Critical Batch Size}
+
+  \textbf{Why maximize batch size?} Larger $B$ means fewer gradient steps per epoch $\Rightarrow$ fewer synchronization rounds in distributed training, better GPU utilization, and faster wall-clock time. But there is a limit:
+
+  \medskip
+  \begin{columns}[T]
+    \begin{column}{0.52\textwidth}
+      \textbf{Critical batch size}~\cite{mccandlish2018empirical}:
+      \begin{itemize}
+        \item Below $B_{\text{crit}}$: doubling $B$ halves training time (perfect scaling)
+        \item Above $B_{\text{crit}}$: diminishing returns
+        \item $B_{\text{crit}} \propto 1/L$: smaller loss $\Rightarrow$ larger $B_{\text{crit}}$
+      \end{itemize}
+    \end{column}
+    \begin{column}{0.46\textwidth}
+      \centering
+      \begin{tikzpicture}[scale=0.85]
+        % Axes
+        \draw[->, thick] (0,0) -- (5.2,0) node[below] {\small batch size $B$};
+        \draw[->, thick] (0,0) -- (0,4.2) node[above, font=\small] {steps $S$};
+
+        % Steps to converge: S ~ 1/B for B < Bcrit, then flattens (S ~ S_min + Bcrit/B models this)
+        \draw[slide_blue!80!black, very thick]
+          plot[smooth, domain=0.3:5, samples=50]
+          (\x, {0.6 + 3.0 * 0.3 / \x});
+
+        % B_crit dashed line
+        \draw[dashed, thick, gray] (1.4, 0) -- (1.4, 3.8);
+        \node[below, font=\small] at (1.4, 0) {$B_{\text{crit}}$};
+
+        % Region labels
+        \node[font=\scriptsize, text=green!50!black, align=center] at (0.7, 3.6) {perfect\\[-2pt]scaling};
+        \node[font=\scriptsize, text=red!60!black, align=center] at (3.5, 3.0) {diminishing\\[-2pt]returns};
+      \end{tikzpicture}
+    \end{column}
+  \end{columns}
+
+  \medskip
+  \textbf{Typical batch sizes:}
+  \begin{description}[labelwidth=\widthof{\bfseries Vision~~}, leftmargin=!]
+    \item[LLM] GPT-3: 3.2M tokens, LLaMA-2: 4M, Chinchilla: 1.5M, DeepSeek-V3: 15.6M
+    \item[Vision] ViT-L: 4096 images, CLIP: 32k image-text pairs, MAE: 4096
+    \item[RL] PPO collects trajectories (e.g.\ 2048 steps $\times$ 32 envs $=$ 65k state-action pairs), then trains for multiple epochs on random mini-batches (e.g.\ 4096 pairs) subsampled from the buffer
+  \end{description}
+\end{frame}
+
+% -----------------------------------------------------------------------
+\begin{frame}{Gradient Noise Scale and Batch Size Ramp-Up}
+
+  \begin{columns}[T]
+    \begin{column}{0.50\textwidth}
+      \textbf{Gradient noise scale}~\cite{mccandlish2018empirical}:
+      \begin{align*}
+        G &= \mathbb{E}[\nabla L_i] \\
+        \Sigma &= \text{Cov}(\nabla L_i) = \mathbb{E}[(\nabla L_i - G)(\nabla L_i - G)^\top] \\
+        \mathcal{B}_{\text{noise}} &= \frac{\text{tr}(\Sigma)}{|G|^2}
+      \end{align*}
+      The mini-batch gradient has variance $\text{Var}[\hat{g}_B] = \Sigma / B$, so the noise-to-signal ratio of a step is:
+      \[
+        \frac{\text{tr}(\Sigma / B)}{|G|^2} = \frac{\mathcal{B}_{\text{noise}}}{B}
+      \]
+      \begin{itemize}
+        \item $B \ll \mathcal{B}_{\text{noise}}$: ratio $\gg 1$, step is mostly noise $\Rightarrow$ but cheap, so efficient
+        \item $B \approx \mathcal{B}_{\text{noise}}$: ratio $\approx 1$, noise $\approx$ signal $\Rightarrow$ sweet spot
+        \item $B \gg \mathcal{B}_{\text{noise}}$: ratio $\ll 1$, very accurate but extra samples wasted
+      \end{itemize}
+    \end{column}
+    \begin{column}{0.48\textwidth}
+      \textbf{Batch size ramp-up:}
+
+      Since $B_{\text{crit}} \propto 1/L$, it grows during training as loss decreases. Ramp up $B$ to stay in the efficient regime:
+
+      \medskip
+      \begin{algorithm}[H]
+        \small
+        \caption{Batch Size Schedule}
+        \KwInput{$B_{\min}$, $B_{\max}$, ramp tokens $T_{\text{ramp}}$}
+        $B \gets B_{\min}$\;
+        \For{each training step $t$}{
+          \uIf{tokens seen $< T_{\text{ramp}}$}{
+            $B \gets B_{\min} + (B_{\max} - B_{\min}) \cdot \frac{\text{tokens seen}}{T_{\text{ramp}}}$\;
+          }
+          \Else{$B \gets B_{\max}$\;}
+          Train one step with batch size $B$\;
+        }
+      \end{algorithm}
+
+      \medskip
+      {\small GPT-3: 32k $\to$ 3.2M tokens over first 4--12B tokens~\cite{brown2020gpt3}}
+    \end{column}
+  \end{columns}
+\end{frame}
+
+% -----------------------------------------------------------------------
+\subsection{Weight Decay and AdamW}
+
+% -----------------------------------------------------------------------
+\begin{frame}{Weight Decay: L2 Regularization Done Right}
+
+  \textbf{Problem with L2 regularization in Adam:}
+
+  In standard Adam + L2, the regularization gradient $\lambda \vw$ gets divided by the adaptive second moment.
+  This \emph{decouples} the effective regularization from $\lambda$~\cite{loshchilov2019adamw}.
+
+  \vspace{0.3em}
+  \begin{columns}[T]
+    \begin{column}{0.48\textwidth}
+      \textbf{Adam + L2 (wrong):}
+      \[
+        \vw_{t+1} = \vw_t - \eta \cdot \frac{\hat{\vm}_t + \lambda \vw_t}{\sqrt{\hat{\vv}_t} + \epsilon}
+      \]
+      The $\lambda \vw_t$ term is scaled by $1/\sqrt{\hat{\vv}_t}$, giving inconsistent regularization.
+    \end{column}
+    \begin{column}{0.48\textwidth}
+      \textbf{AdamW (correct):}
+      \[
+        \vw_{t+1} = (1 - \eta\lambda)\,\vw_t - \eta \cdot \frac{\hat{\vm}_t}{\sqrt{\hat{\vv}_t} + \epsilon}
+      \]
+      Weight decay is applied \emph{directly} to the weights, independent of gradients.
+    \end{column}
+  \end{columns}
+
+  \vspace{0.5em}
+  \textbf{Practical defaults for LLMs:}
+  \begin{itemize}
+    \item Weight decay $\lambda = 0.1$ (nearly universal: GPT-3, LLaMA, Chinchilla, DeepSeek)
+    \item Apply weight decay to \emph{all weight matrices}, but \textbf{not} to biases, LayerNorm parameters, or embeddings
+    \item Adam betas: $\beta_1 = 0.9$, $\beta_2 = 0.95$, $\epsilon = 10^{-8}$
+    \item \textbf{Dropout:} Modern LLMs use $p = 0$ during pretraining (single-epoch $\Rightarrow$ no overfitting). Use $p = 0.1$--$0.3$ for fine-tuning on small datasets.
+  \end{itemize}
+\end{frame}
+
+% -----------------------------------------------------------------------
+\subsection{Scaling Laws}
+
+% -----------------------------------------------------------------------
+\begin{frame}{Neural Scaling Laws~\cite{kaplan2020scaling}}
+
+  \textbf{Key discovery:} LLM test loss follows \emph{power laws} in model size $N$ (non-embedding params), dataset size $D$ (tokens), and compute $C$ (FLOPs):
+  \[
+    L(N) = \left(\frac{N_c}{N}\right)^{\!\alpha_N}\!,\quad
+    L(D) = \left(\frac{D_c}{D}\right)^{\!\alpha_D}\!,\quad
+    L(C) = \left(\frac{C_c}{C}\right)^{\!\alpha_C}
+  \]
+
+  \begin{center}
+  \begin{tikzpicture}[scale=0.75]
+    % --- L(N) plot ---
+    \begin{scope}[shift={(0,0)}]
+      \draw[->, thick] (0,0) -- (4.5,0) node[below, font=\scriptsize] {$\log N$};
+      \draw[->, thick] (0,0) -- (0,3.5) node[above, font=\scriptsize] {$L$};
+      \node[font=\scriptsize\bfseries] at (2.2, 3.8) {$L(N)$};
+      % Power law: L = (Nc/N)^0.076, on log scale looks linear
+      % Plot from N=10^7 to 10^12, L from ~3.8 to ~1.6
+      \draw[slide_blue!80!black, very thick] plot[smooth, domain=0.2:4.2, samples=30]
+        (\x, {3.2 - 0.55*\x});
+      % Data points (Cerebras-GPT style)
+      \foreach \x/\y in {0.4/3.0, 1.0/2.7, 1.6/2.4, 2.2/2.1, 2.8/1.8, 3.4/1.5} {
+        \fill[slide_blue!80!black] (\x, \y) circle (2pt);
+      }
+      % Axis ticks
+      \node[below, font=\tiny] at (0.4,0) {$10^7$};
+      \node[below, font=\tiny] at (2.2,0) {$10^9$};
+      \node[below, font=\tiny] at (4.0,0) {$10^{11}$};
+    \end{scope}
+    % --- L(D) plot ---
+    \begin{scope}[shift={(5.5,0)}]
+      \draw[->, thick] (0,0) -- (4.5,0) node[below, font=\scriptsize] {$\log D$};
+      \draw[->, thick] (0,0) -- (0,3.5) node[above, font=\scriptsize] {$L$};
+      \node[font=\scriptsize\bfseries] at (2.2, 3.8) {$L(D)$};
+      \draw[red!70!black, very thick] plot[smooth, domain=0.2:4.2, samples=30]
+        (\x, {3.0 - 0.5*\x});
+      \foreach \x/\y in {0.5/2.8, 1.2/2.4, 1.9/2.1, 2.6/1.7, 3.3/1.4, 4.0/1.1} {
+        \fill[red!70!black] (\x, \y) circle (2pt);
+      }
+      \node[below, font=\tiny] at (0.5,0) {$10^8$};
+      \node[below, font=\tiny] at (2.2,0) {$10^{10}$};
+      \node[below, font=\tiny] at (4.0,0) {$10^{12}$};
+    \end{scope}
+    % --- L(C) plot ---
+    \begin{scope}[shift={(11,0)}]
+      \draw[->, thick] (0,0) -- (4.5,0) node[below, font=\scriptsize] {$\log C$};
+      \draw[->, thick] (0,0) -- (0,3.5) node[above, font=\scriptsize] {$L$};
+      \node[font=\scriptsize\bfseries] at (2.2, 3.8) {$L(C)$};
+      \draw[green!50!black, very thick] plot[smooth, domain=0.2:4.2, samples=30]
+        (\x, {3.1 - 0.52*\x});
+      \foreach \x/\y in {0.4/2.9, 1.1/2.5, 1.8/2.2, 2.5/1.8, 3.2/1.4, 3.9/1.1} {
+        \fill[green!50!black] (\x, \y) circle (2pt);
+      }
+      \node[below, font=\tiny] at (0.5,0) {$10^{17}$};
+      \node[below, font=\tiny] at (2.2,0) {$10^{20}$};
+      \node[below, font=\tiny] at (4.0,0) {$10^{23}$};
+    \end{scope}
+  \end{tikzpicture}
+  \end{center}
+
+  \vspace{-0.3em}
+  {\small
+  \begin{tabular}{lccc}
+    & $\alpha$ & Scale constant & Optimal alloc.\ $\propto C^{?}$ \\
+    \midrule
+    Parameters $N$ & 0.076 & $N_c = 8.8 \times 10^{13}$ & $N \propto C^{0.73}$ \\
+    Data $D$ & 0.095 & $D_c = 5.4 \times 10^{13}$ & $D \propto C^{0.27}$ \\
+    Compute $C$ & 0.050 & $C_c = 3.1 \times 10^{8}$ PF-days & --- \\
+  \end{tabular}
+  }
+
+  \vspace{0.2em}
+  {\small Straight lines on log-log plots $\Rightarrow$ power laws. Relationship: $C \approx 6ND$ (FLOPs).}
+\end{frame}
+
+% -----------------------------------------------------------------------
+\begin{frame}{Chinchilla Scaling Laws~\cite{hoffmann2022chinchilla}}
+
+  \textbf{Chinchilla correction:} Kaplan et al.\ recommended scaling $N$ faster than $D$.
+  Hoffmann et al.\ showed $N$ and $D$ should be scaled \emph{equally}:
+
+  \vspace{0.3em}
+  \begin{columns}[T]
+    \begin{column}{0.52\textwidth}
+      \textbf{Joint scaling law:}
+      \[
+        L(N,D) = E + \frac{A}{N^{\alpha}} + \frac{B}{D^{\beta}}
+      \]
+      {\small
+      \begin{tabular}{ll}
+        Irreducible loss & $E = 1.69$ \\
+        $A = 406.4$ & $\alpha = 0.34$ \\
+        $B = 410.7$ & $\beta = 0.28$ \\
+      \end{tabular}
+      }
+
+      \medskip
+      \textbf{Optimal allocation:}
+      \[
+        N_{\text{opt}} \propto C^{0.50}, \quad D_{\text{opt}} \propto C^{0.50}
+      \]
+      {\small Optimal ratio: $\approx 20$ tokens per parameter.}
+
+      \medskip
+      {\small Chinchilla (70B, 1.4T tokens) outperformed Gopher (280B, 300B tokens) with \emph{same compute}.}
+    \end{column}
+    \begin{column}{0.46\textwidth}
+      \centering
+      \begin{tikzpicture}[scale=0.8]
+        % IsoFLOP curves: for fixed C, plot L vs N
+        \draw[->, thick] (0,0) -- (5,0) node[below, font=\scriptsize] {parameters $N$};
+        \draw[->, thick] (0,0) -- (0,4.2) node[above, font=\scriptsize] {loss $L$};
+        \node[font=\scriptsize\bfseries] at (2.5, 4.5) {IsoFLOP curves};
+        % Each curve: fixed C, varying N (D = C/6N)
+        % Higher C -> lower curve, optimum shifts right
+        \draw[red!60, thick] plot[smooth, domain=0.3:4.5, samples=40]
+          (\x, {1.5 + 2.5/(\x)^0.5 + 0.08*(\x)^1.2});
+        \node[red!60, font=\tiny, right] at (4.5, 2.5) {$C_1$};
+        \draw[orange!80!red, thick] plot[smooth, domain=0.5:4.5, samples=40]
+          (\x, {1.2 + 2.0/(\x)^0.5 + 0.06*(\x)^1.2});
+        \node[orange!80!red, font=\tiny, right] at (4.5, 2.0) {$C_2$};
+        \draw[slide_blue!80!black, thick] plot[smooth, domain=0.7:4.5, samples=40]
+          (\x, {0.9 + 1.5/(\x)^0.5 + 0.04*(\x)^1.2});
+        \node[slide_blue!80!black, font=\tiny, right] at (4.5, 1.5) {$C_3$};
+        % Optimal points (minima)
+        \fill[red!60] (1.4, 3.25) circle (2.5pt);
+        \fill[orange!80!red] (1.8, 2.65) circle (2.5pt);
+        \fill[slide_blue!80!black] (2.2, 2.0) circle (2.5pt);
+        % Dashed line through optima
+        \draw[dashed, thick, gray] plot[smooth] coordinates {(1.4, 3.25) (1.8, 2.65) (2.2, 2.0)};
+        \node[gray, font=\tiny, right] at (2.3, 2.4) {$N_{\text{opt}}(C)$};
+        % C1 < C2 < C3
+        \node[font=\tiny] at (2.5, -0.5) {$C_1 < C_2 < C_3$};
+      \end{tikzpicture}
+
+      \medskip
+      {\small Each curve: fixed compute $C$, varying $N$ (with $D = C/6N$). Minima shift right with more compute.}
+    \end{column}
+  \end{columns}
+
+  \medskip
+  \textbf{Recent trend:} LLaMA-3, DeepSeek-V3 train \emph{well beyond} Chinchilla-optimal ($37$--$50\times$ tokens/param) --- smaller models trained longer are cheaper to \emph{serve}.
+\end{frame}
+
+% -----------------------------------------------------------------------
+\subsection{$\mu$P: Hyperparameter Transfer Across Scales}
+
+% -----------------------------------------------------------------------
+\begin{frame}{$\mu$P: Maximal Update Parameterization}
+
+  \textbf{Problem:} Optimal learning rate, initialization scale, etc.\ change with model width. Tuning on large models is prohibitively expensive.
+
+  \vspace{0.3em}
+  \textbf{$\mu$P}~\cite{yang2022muP}: A parameterization that ensures hyperparameters \emph{transfer} from small to large models.
+
+  \vspace{0.4em}
+  \begin{columns}[T]
+    \begin{column}{0.48\textwidth}
+      \textbf{Standard Parameterization (SP):}
+      \begin{itemize}
+        \item Init: $W_{ij} \sim \mathcal{N}(0, 1/n)$ (fan-in)
+        \item All layers use the \emph{same} learning rate
+        \item Optimal LR \emph{shifts} as width $n$ changes
+      \end{itemize}
+
+      \vspace{0.3em}
+      \textbf{$\mu$P:}
+      \begin{itemize}
+        \item Input layer: LR $\sim \eta$
+        \item Hidden layers: LR $\sim \eta / n$
+        \item Output layer: LR $\sim \eta / n$
+        \item Init: hidden weights $\sim 1/n$ (not $1/\sqrt{n}$)
+      \end{itemize}
+    \end{column}
+    \begin{column}{0.48\textwidth}
+      \textbf{Key result:}
+      \begin{itemize}
+        \item Under $\mu$P, the optimal LR for a 13B model can be found by tuning a \textbf{40M proxy}
+        \item Verified on GPT-3 scale models
+        \item Also transfers: init scale, weight decay, other Adam HPs
+      \end{itemize}
+
+      \vspace{0.3em}
+      \textbf{Practical recipe:}
+      \begin{enumerate}
+        \item Implement $\mu$P parameterization
+        \item Grid-search LR on a small proxy model ($\sim$100$\times$ cheaper)
+        \item Use the same LR for the full-scale model
+      \end{enumerate}
+
+      \vspace{0.2em}
+      {\small Used in Cerebras-GPT and adopted by several LLM labs.}
+    \end{column}
+  \end{columns}
+\end{frame}
+
+% -----------------------------------------------------------------------
+\begin{frame}{$\mu$P: Comparison with Standard Parameterization}
+
+  \textbf{Intuition:} In SP, hidden layer updates grow with width, causing the optimal LR to shrink.
+  $\mu$P rescales so that layer-wise update magnitudes stay $\mathcal{O}(1)$ regardless of width.
+
+  \vspace{0.4em}
+  \begin{center}
+    \renewcommand{\arraystretch}{1.3}
+    \begin{tabular}{lcc}
+      \toprule
+      & \textbf{Standard (SP)} & $\boldsymbol{\mu}$\textbf{P} \\
+      \midrule
+      Hidden weight init variance & $1/n$ & $1/n$ \\
+      Output weight init variance & $1/n$ & $1/n$ \\
+      Hidden weight learning rate & $\eta$ & $\eta / n$ \\
+      Output weight learning rate & $\eta$ & $\eta / n$ \\
+      Embedding learning rate & $\eta$ & $\eta$ \\
+      Hidden layer update size & $\mathcal{O}(\sqrt{n})$ & $\mathcal{O}(1)$ \\
+      \midrule
+      \textbf{Optimal LR transfers?} & \alert{No} & \textbf{Yes} \\
+      \bottomrule
+    \end{tabular}
+  \end{center}
+
+  \vspace{0.3em}
+  {\small $n$ = model width (hidden dimension). Under $\mu$P, the optimal $\eta$ found for a narrow model also works when $n$ is increased by orders of magnitude.}
+
+  \vspace{0.3em}
+  \textbf{Note:} $\mu$P transfers \emph{width}-dependent HPs. Depth scaling and the interplay with other dimensions (batch size, sequence length) remain active research areas.
+\end{frame}
+
+% -----------------------------------------------------------------------
+\subsection{LLM Training Recipes}
+
+% -----------------------------------------------------------------------
+\begin{frame}{LLM Hyperparameter Recipes}
+
+  \begin{center}
+    \renewcommand{\arraystretch}{1.2}
+    \resizebox{\textwidth}{!}{%
+    \begin{tabular}{lccccccc}
+      \toprule
+      & \textbf{GPT-3} & \textbf{Chinchilla} & \textbf{LLaMA} & \textbf{LLaMA-2} & \textbf{LLaMA-3} & \textbf{DeepSeek-V3} \\
+      & \scriptsize 175B & \scriptsize 70B & \scriptsize 65B & \scriptsize 70B & \scriptsize 405B & \scriptsize 671B (MoE) \\
+      \midrule
+      Peak LR & $6 \times 10^{-5}$ & $1 \times 10^{-4}$ & $1.5 \times 10^{-4}$ & $1.5 \times 10^{-4}$ & $8 \times 10^{-5}$ & $2.2 \times 10^{-4}$ \\
+      LR schedule & cosine & cosine & cosine & cosine & cosine & WSD \\
+      Min LR & $10\%$ of peak & $10\%$ of peak & $10\%$ of peak & $10\%$ of peak & $\frac{1}{80}$ peak & $\frac{1}{10}$ peak \\
+      Warmup & 375M tok & 5B tok & 2000 steps & 2000 steps & 8000 steps & 2000 steps \\
+      Batch size (tok) & 3.2M & 1.5M & 4M & 4M & 16M & 15.6M \\
+      Weight decay & 0.1 & 0.1 & 0.1 & 0.1 & 0.1 & 0.1 \\
+      $\beta_1, \beta_2$ & 0.9, 0.95 & 0.9, 0.95 & 0.9, 0.95 & 0.9, 0.95 & 0.9, 0.95 & 0.9, 0.95 \\
+      Grad clip & 1.0 & 1.0 & 1.0 & 1.0 & 1.0 & 1.0 \\
+      Tokens trained & 300B & 1.4T & 1.4T & 2T & 15T & 14.8T \\
+      Tok / param ratio & 1.7 & 20 & 21.5 & 28.6 & 37 & 22.1 \\
+      \bottomrule
+    \end{tabular}%
+    }
+  \end{center}
+
+  \vspace{0.2em}
+  {\small Sources: \cite{brown2020gpt3}, \cite{hoffmann2022chinchilla}, \cite{touvron2023llama}, \cite{touvron2023llama2}, \cite{grattafiori2024llama3}, \cite{deepseekai2024deepseekv3}.}
+\end{frame}
+
+% -----------------------------------------------------------------------
+\begin{frame}{Common Patterns in LLM Recipes}
+
+  Remarkably, despite different model sizes and labs, most choices converge:
+
+  \vspace{0.4em}
+  \textbf{Near-universal defaults:}
+  \begin{itemize}
+    \item \textbf{Optimizer:} AdamW with $\beta_1 = 0.9$, $\beta_2 = 0.95$
+    \item \textbf{Weight decay:} $\lambda = 0.1$
+    \item \textbf{Gradient clipping:} global norm $= 1.0$
+    \item \textbf{LR schedule:} cosine decay (WSD emerging as alternative)
+    \item \textbf{Precision:} BF16 mixed precision
+  \end{itemize}
+
+  \vspace{0.4em}
+  \textbf{Model-size-dependent:}
+  \begin{itemize}
+    \item \textbf{Peak learning rate:} Decreases with model size. Roughly $\eta \propto N^{-0.1}$ to $N^{-0.2}$
+    \item \textbf{Batch size:} Increases with model size (to match $B_{\text{crit}}$)
+    \item \textbf{Warmup steps:} Relatively short ($\sim$0.1--1\% of training)
+  \end{itemize}
+
+  \vspace{0.4em}
+  \textbf{Trend:} Labs are now training \emph{far beyond} Chinchilla-optimal token counts.
+  Inference cost matters: a smaller model trained on more data is cheaper to \emph{serve}.
+\end{frame}
+
+% -----------------------------------------------------------------------
+\begin{frame}{Vision Model Hyperparameter Recipes}
+
+  \begin{center}
+    \renewcommand{\arraystretch}{1.15}
+    \resizebox{\textwidth}{!}{%
+    \begin{tabular}{lccccccc}
+      \toprule
+      & \textbf{ResNet-50} & \textbf{ResNet-50} & \textbf{ResNeXt-101} & \textbf{ViT-B/16} & \textbf{ViT-L/16} & \textbf{MAE} & \textbf{DINOv2} \\
+      & \scriptsize orig.~\cite{he2016resnet} & \scriptsize improved~\cite{wightman2021resnet} & \scriptsize \cite{xie2017resnext} & \scriptsize \cite{dosovitskiy2021vit} & \scriptsize \cite{dosovitskiy2021vit} & \scriptsize ViT-L~\cite{he2022mae} & \scriptsize ViT-L/14~\cite{oquab2023dinov2} \\
+      \midrule
+      Optimizer & SGD+mom & LAMB & SGD+mom & Adam & Adam & AdamW & AdamW \\
+      Peak LR & 0.1 & $5 \times 10^{-3}$ & 0.1 & $8 \times 10^{-4}$ & $4 \times 10^{-4}$ & $1.5 \times 10^{-4}$ & $2 \times 10^{-4}$ \\
+      LR schedule & step & cosine & step & lin.\ decay & lin.\ decay & cosine & cosine \\
+      Warmup & --- & 5 ep & --- & 10k steps & 10k steps & 40 ep & 80 ep \\
+      Batch size & 256 & 2048 & 256 & 4096 & 4096 & 4096 & $\sim$1024 \\
+      Weight decay & $10^{-4}$ & 0.02 & $10^{-4}$ & 0.1 & 0.1 & 0.05 & 0.04$\to$0.4 \\
+      $\beta_1, \beta_2$ & 0.9, -- & -- & 0.9, -- & .9, .999 & .9, .999 & .9, .95 & .9, .999 \\
+      Grad clip & --- & --- & --- & 1.0 & 1.0 & --- & 3.0 \\
+      Epochs & 90 & 600 & 100 & 7 (JFT) & 7 (JFT) & 800 & 500 \\
+      Resolution & 224 & 224 & 224 & 224 & 224 & 224 & 224 \\
+      \bottomrule
+    \end{tabular}%
+    }
+  \end{center}
+
+  \vspace{0.3em}
+  {\small \textbf{Trends:} Vision moved from SGD (ResNet era) $\to$ AdamW (ViT era). Modern recipes use cosine LR, longer training, heavier augmentation, and much larger batches.}
+\end{frame}
+
+% -----------------------------------------------------------------------
+\begin{frame}{Contrastive \& Multimodal Model Recipes}
+
+  \begin{center}
+    \renewcommand{\arraystretch}{1.15}
+    \resizebox{\textwidth}{!}{%
+    \begin{tabular}{lcccc}
+      \toprule
+      & \textbf{CLIP ViT-L/14} & \textbf{SigLIP} & \textbf{PaliGemma} \\
+      & \scriptsize OpenCLIP repro.~\cite{radford2021clip} & \scriptsize \cite{zhai2023siglip} & \scriptsize \cite{beyer2024paligemma} \\
+      \midrule
+      Optimizer & AdamW & Adafactor & Adafactor \\
+      Peak LR & $5 \times 10^{-4}$ & $10^{-3}$ & rsqrt schedule \\
+      LR schedule & cosine & cosine & rsqrt (continuous) \\
+      Warmup & 2000 steps & 200M examples & slow linear \\
+      Batch size & 32,768 & 32,768 & --- \\
+      Weight decay & 0.2 & $10^{-4}$ & --- \\
+      $\beta_1, \beta_2$ & .9, .98 & .9, .95 & --- \\
+      Training data & 400M pairs & 40B examples & 1B examples \\
+      Resolution & 224 & 224 & 224$\to$448/896 \\
+      \bottomrule
+    \end{tabular}%
+    }
+  \end{center}
+
+  \vspace{0.3em}
+  {\small \textbf{Key differences from LLMs:}
+  \begin{itemize}
+    \item Contrastive models need very large batch sizes (32k+) for enough negatives
+    \item SigLIP replaces softmax cross-entropy with sigmoid loss $\Rightarrow$ scales better to huge batches
+    \item Weight decay varies widely: 0.2 (CLIP) vs.\ $10^{-4}$ (SigLIP) --- less converged than LLM recipes
+    \item Multimodal models often use multi-stage training with increasing resolution
+  \end{itemize}
+  }
+\end{frame}
+
+% -----------------------------------------------------------------------
+\subsection{Practical Guidelines}
+
+% -----------------------------------------------------------------------
+\begin{frame}{Practical Hyperparameter Selection Workflow}
+
+  \textbf{Recipe for practitioners:}
+
+  \vspace{0.4em}
+  \begin{enumerate}
+    \item \textbf{Start from published recipes.} Use HP settings from a similar published model as a baseline (see previous table).
+
+    \item \textbf{Tune learning rate first.} It has the largest impact. Use:
+      \begin{itemize}
+        \item LR range test for a quick estimate
+        \item Small grid: $\{1, 3, 5\} \times 10^{k}$ for 2--3 orders of magnitude
+      \end{itemize}
+
+    \item \textbf{Use $\mu$P for large models.} Tune on a small proxy ($\sim$$10\text{--}100\times$ cheaper), transfer LR and other HPs to the target scale.
+
+    \item \textbf{Scale batch size with compute.} Use the linear scaling rule; start small, ramp up. Stay near $B_{\text{crit}}$.
+
+    \item \textbf{Keep everything else at defaults.} Weight decay $= 0.1$, $\beta_1 = 0.9$, $\beta_2 = 0.95$, grad clip $= 1.0$.
+
+    \item \textbf{Use short runs for exploration.} Train for 1--5\% of total budget to compare configurations. Scaling laws can extrapolate final performance.
+
+    \item \textbf{Monitor loss curves.} Watch for spikes (reduce LR or increase warmup), slow convergence (increase LR), or late divergence (add grad clipping).
+  \end{enumerate}
+\end{frame}
+
+% -----------------------------------------------------------------------
+\begin{frame}{Recent Advances in Hyperparameter Selection}
+
+  \textbf{Schedule-Free optimization}~\cite{defazio2024schedulefree}:
+  \begin{itemize}
+    \item Eliminates the need for specifying a LR schedule or total training steps
+    \item Replaces momentum with interpolation and averaging; no extra hyperparameters
+    \item Won the MLCommons 2024 AlgoPerf Algorithmic Efficiency Challenge
+  \end{itemize}
+
+  \vspace{0.4em}
+  \textbf{Step Law -- optimal HP scaling}~\cite{li2025steplaw}:
+  \begin{itemize}
+    \item Trained 3700+ LLMs to derive power-law relationships for optimal HPs
+    \item Optimal LR follows a power law in $N$ and $D$; optimal batch size scales with $D$ (invariant to $N$)
+    \item Unifies dense transformers and MoE under one scaling law for HPs
+  \end{itemize}
+
+  \vspace{0.4em}
+  \textbf{Power Lines -- weight decay and batch size scaling}~\cite{bernstein2025powerlines}:
+  \begin{itemize}
+    \item Introduces the \emph{AdamW timescale}: $\tau = B / (\eta \cdot \lambda \cdot D)$
+    \item Optimal $\tau$ decreases as a power law with tokens-per-parameter ratio $D/N$
+    \item When changing batch size, adjust weight decay (not LR) for best results
+  \end{itemize}
+\end{frame}
+
+% -----------------------------------------------------------------------
+\begin{frame}{Summary}
+
+  \begin{block}{Key Takeaways}
+    \begin{itemize}
+      \item \textbf{Random search} beats grid search; Hyperband and tools like Optuna improve further
+      \item \textbf{Learning rate} is the most critical HP; use cosine or WSD schedule with warmup
+      \item \textbf{Scaling laws} predict performance from small experiments
+      \item \textbf{$\mu$P} enables \emph{hyperparameter transfer} from small to large models
+      \item \textbf{LLM recipes} have converged: AdamW, $\lambda{=}0.1$, $\beta_2{=}0.95$, cosine LR, grad clip 1.0
+      \item \textbf{Batch size} interacts with LR via the linear scaling rule; respect $B_{\text{crit}}$
+      \item \textbf{Recent:} schedule-free optimizers and HP scaling laws make tuning more principled
+    \end{itemize}
+  \end{block}
+\end{frame}

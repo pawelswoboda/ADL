@@ -1,0 +1,291 @@
+Output: 1 tensor([[[-0.2074, -0.1148, -0.0638,  0.0785,  0.4239,  0.0969,  0.2737,
+           0.4059,  0.4168, -0.1353, -0.1429,  0.2295, -0.1136, -0.1555,
+           0.4740, -0.2576,  0.1790, -0.0174, -0.4899, -0.1885, -0.2745,
+          -0.0821, -0.0747, -0.0130, -0.2592,  0.0413, -0.0228,  0.1349,
+           0.5183,  0.2644,  0.4341,  0.0416,  0.4236,  0.1161,  0.0084,
+          -0.1462,  0.0583, -0.1401, -0.0803,  0.3694, -0.0700, -0.3809,
+          -0.1982,  0.2187, -0.1282, -0.2207, -0.2481,  0.2302,  0.2242,
+          -0.0196,  0.0491, -0.0621, -0.1634, -0.3400, -0.0575, -0.2734,
+           0.1369, -0.1151,  0.4498,  0.0264, -0.2594, -0.0547, -0.0540,
+          -0.1094, -0.1618]]])
+Output 2: tensor([[[-0.1099, -0.0306, -0.7931,  0.2660, -0.3559, -0.0758,  0.0267,
+           0.2082,  0.2897,  0.2112, -0.0127, -0.0191, -0.0284,  0.0455,
+           0.7140, -0.1685,  0.4754,  0.2017,  0.3467,  0.1653,  0.1166,
+           0.3812, -0.1357, -0.3581,  0.1765, -0.0307, -0.1888,  0.0823,
+          -0.0283, -0.2451, -0.2211,  0.1158,  0.0272,  0.0894, -0.0105,
+          -0.0737,  0.2608, -0.2428,  0.0826,  0.0229, -0.0898, -0.1124,
+          -0.0731, -0.3308, -0.2152,  0.6855,  0.5709,  0.2021,  0.1763,
+           0.1572, -0.0639, -0.1662,  0.4572, -0.1360, -0.4498, -0.0246,
+           0.0766,  0.3353, -0.0285,  0.1620,  0.4578,  0.0901, -0.1311,
+          -0.2117, -0.1838]]])
+Output 2, equivalent computation: tensor([[[-0.2074, -0.1148, -0.0638,  0.0785,  0.4239,  0.0969,  0.2737,
+           0.4059,  0.4168, -0.1353, -0.1429,  0.2295, -0.1136, -0.1555,
+           0.4740, -0.2576,  0.1790, -0.0174, -0.4899, -0.1885, -0.2745,
+          -0.0821, -0.0747, -0.0130, -0.2592,  0.0413, -0.0228,  0.1349,
+           0.5183,  0.2644,  0.4341,  0.0416,  0.4236,  0.1161,  0.0084,
+          -0.1462,  0.0583, -0.1401, -0.0803,  0.3694, -0.0700, -0.3809,
+          -0.1982,  0.2187, -0.1282, -0.2207, -0.2481,  0.2302,  0.2242,
+          -0.0196,  0.0491, -0.0621, -0.1634, -0.3400, -0.0575, -0.2734,
+           0.1369, -0.1151,  0.4498,  0.0264, -0.2594, -0.0547, -0.0540,
+          -0.1094, -0.1618],
+         [-0.1099, -0.0306, -0.7931,  0.2660, -0.3559, -0.0758,  0.0267,
+           0.2082,  0.2897,  0.2112, -0.0127, -0.0191, -0.0284,  0.0455,
+           0.7140, -0.1685,  0.4754,  0.2017,  0.3467,  0.1653,  0.1166,
+           0.3812, -0.1357, -0.3581,  0.1765, -0.0307, -0.1888,  0.0823,
+          -0.0283, -0.2451, -0.2211,  0.1158,  0.0272,  0.0894, -0.0105,
+          -0.0737,  0.2608, -0.2428,  0.0826,  0.0229, -0.0898, -0.1124,
+          -0.0731, -0.3308, -0.2152,  0.6855,  0.5709,  0.2021,  0.1763,
+           0.1572, -0.0639, -0.1662,  0.4572, -0.1360, -0.4498, -0.0246,
+           0.0766,  0.3353, -0.0285,  0.1620,  0.4578,  0.0901, -0.1311,
+          -0.2117, -0.1838]]])
+ROMEO:WzS&KoLek$v,igAhvv:OCig,..G
+lfcluXvZjUTmoUKvHoyG!R;$H$x.:?Yfe3BgdEW3DrzdRDeIbiqJk
+a,K?wMBDw-OoThaT;KntjO
+h'BovpeDyRX-HI&LlUjekJ;CY-3e-MkWB!I-eKSnvi?jLt-!,TLHsKUTju.,cXxdEeyZ;jM'd
+'mLlhUJyGRrWUzmcOjpLp
+Epoch 1, avg loss: 2.0667
+Epoch 1, generated text: ROMEO:
+As gainst
+Peftroldous hath well I war?
+
+Sicking l
+Epoch 2, avg loss: 1.6751
+Epoch 2, generated text: ROMEO:
+He make a wrace I a firence
+Re,
+And I cant be tak
+Epoch 3, avg loss: 1.6016
+Epoch 3, generated text: ROMEO:
+No cons his cousius;
+By than nower was respected 
+Epoch 4, avg loss: 1.5724
+Epoch 4, generated text: ROMEO: I be med, the dikisise!'T
+Enquird, wine, an exece
+Epoch 5, avg loss: 1.5563
+Epoch 5, generated text: ROMEO:
+Hold, or I have with like the jedkne in sireaty t
+Epoch 6, avg loss: 1.5458
+Epoch 6, generated text: ROMEO:
+Now Greits, or us have purless of The first seel,
+Epoch 7, avg loss: 1.5383
+Epoch 7, generated text: ROMEO:
+He diciest!
+O Lardard ledgned the counsionss gods
+Epoch 8, avg loss: 1.5325
+Epoch 8, generated text: ROMEO:
+Now, being to the brother leave not I will? me'll
+Epoch 9, avg loss: 1.5280
+Epoch 9, generated text: ROMEO:
+Whose like thy unchounger
+he scace.
+Now the eactl
+Epoch 10, avg loss: 1.5244
+Epoch 10, generated text: ROMEO:
+Catowy
+Under to postable:, that do his rue despai
+Epoch 1, avg loss: 2.1010
+Epoch 1, generated text: ROMEO:
+For lard you
+ree of snant isseantion
+As alrem uto
+Epoch 2, avg loss: 1.6330
+Epoch 2, generated text: ROMEO: whach losping;
+Helundio talkte to enseike grafter
+Epoch 3, avg loss: 1.5067
+Epoch 3, generated text: ROMEO:
+A maining we sa, sir; his lost and to cwenture me
+Epoch 4, avg loss: 1.4447
+Epoch 4, generated text: ROMEO:
+Let's threaten of Norture before him instrles the
+Epoch 5, avg loss: 1.4064
+Epoch 5, generated text: ROMEO:
+Yause when she kill have accompity; as if Levased
+Epoch 6, avg loss: 1.3793
+Epoch 6, generated text: ROMEO:
+Nhamp! lords, my lord; there,
+'Tis a beyonen
+you 
+Epoch 7, avg loss: 1.3585
+Epoch 7, generated text: ROMEO:
+Romeo's hearts? which miss, while not lord up the
+Epoch 8, avg loss: 1.3418
+Epoch 8, generated text: ROMEO:
+Then I'll cried's usponpo, his night;
+And, to spe
+Epoch 9, avg loss: 1.3277
+Epoch 9, generated text: ROMEO:
+For your face, if I seek your honour god,---niin.
+Epoch 10, avg loss: 1.3155
+Epoch 10, generated text: ROMEO:
+Is I beseech you, where would it die unathunt:
+Th
+Epoch 11, avg loss: 1.3050
+Epoch 11, generated text: ROMEO:
+My whither I knowp, as I may mistress' courage,
+T
+Epoch 12, avg loss: 1.2957
+Epoch 12, generated text: ROMEO:
+Set to he ack out of vice head my pluck more than
+Epoch 13, avg loss: 1.2872
+Epoch 13, generated text: ROMEO:
+Whom I am no more with a heatst thee to set dubli
+Epoch 14, avg loss: 1.2795
+Epoch 14, generated text: ROMEO:
+Your fellow now, she must sweet shadow
+leen both 
+Epoch 15, avg loss: 1.2726
+Epoch 15, generated text: ROMEO:
+Let me holping such a tithe flames?
+
+Service,
+To 
+Epoch 16, avg loss: 1.2661
+Epoch 16, generated text: ROMEO:
+Not o' the boying complain of tremmicities,
+And h
+Epoch 17, avg loss: 1.2601
+Epoch 17, generated text: ROMEO:
+O mine ill?
+
+VALERDI::
+Well, sir. There is no per
+Epoch 18, avg loss: 1.2546
+Epoch 18, generated text: ROMEO: fride I strike how 'his Katharination.
+
+GREGORY:
+
+Epoch 19, avg loss: 1.2494
+Epoch 19, generated text: ROMEO:
+Do I get you must both never enemy ipty Tribk in 
+Epoch 20, avg loss: 1.2446
+Epoch 20, generated text: ROMEO: Yod, sister.
+
+Third Megkion.
+
+LADY GREY:
+Why if y
+Epoch 21, avg loss: 1.2400
+Epoch 21, generated text: ROMEO:
+Sir, and be contented work to the oldly put
+I'll 
+Epoch 22, avg loss: 1.2357
+Epoch 22, generated text: ROMEO:
+O God?
+
+Nurse:
+What would we might well answarts
+
+Epoch 23, avg loss: 1.2316
+Epoch 23, generated text: ROMEO: call me to, York,
+Now none agonies for his thunde
+Epoch 24, avg loss: 1.2277
+Epoch 24, generated text: ROMEO: in rointing Saw of goodness, the hands.
+Tesart
+Yo
+Epoch 25, avg loss: 1.2241
+Epoch 25, generated text: ROMEO:
+Your sea-earned, with King Edward flight,
+Take me
+Epoch 26, avg loss: 1.2206
+Epoch 26, generated text: ROMEO: farewell: come use my heart,
+And citizens doth ba
+Epoch 27, avg loss: 1.2172
+Epoch 27, generated text: ROMEO:
+Think it do great Richmond uncle,
+Grankinds tale.
+Epoch 28, avg loss: 1.2142
+Epoch 28, generated text: ROMEO: why, be her. Gives in Bohemia:
+They are not thy t
+Epoch 29, avg loss: 1.2110
+Epoch 29, generated text: ROMEO: Minomon with Backing's brow.
+And I think he shall
+Epoch 30, avg loss: 1.2083
+Epoch 30, generated text: ROMEO: few to me.
+Now, truly, loath, and take:
+I master 
+Epoch 31, avg loss: 1.2054
+Epoch 31, generated text: ROMEO: farewell. You have a noble men,
+if he than ever t
+Epoch 32, avg loss: 1.2029
+Epoch 32, generated text: ROMEO:
+Play! brat, without this hatele were my sift'st t
+Epoch 33, avg loss: 1.2006
+Epoch 33, generated text: ROMEO: if your gates: in Bolingbroke.
+
+LERNENLEBON:
+No, 
+Epoch 34, avg loss: 1.1980
+Epoch 34, generated text: ROMEO:
+Such in years of Lancaster may never find
+To his 
+Epoch 35, avg loss: 1.1957
+Epoch 35, generated text: ROMEO:
+Then York
+Is that it make, but spoil for no sever
+Epoch 36, avg loss: 1.1935
+Epoch 36, generated text: ROMEO:
+But I'll fight another birge this father
+For I do
+Epoch 37, avg loss: 1.1914
+Epoch 37, generated text: ROMEO: Pomprishing on dance!
+I thoughting the gentleman 
+Epoch 38, avg loss: 1.1894
+Epoch 38, generated text: ROMEO:
+No, the peopless siguer and you notice;
+To think 
+Epoch 39, avg loss: 1.1873
+Epoch 39, generated text: ROMEO:
+Saligomer
+Our king with prosperously that would h
+Epoch 40, avg loss: 1.1855
+Epoch 40, generated text: ROMEO: nay, ere twenty fear'd foul words.
+
+Lord,
+Because
+Epoch 41, avg loss: 1.1836
+Epoch 41, generated text: ROMEO: Grew, I cannot yet be blest in encounter toward:
+
+Epoch 42, avg loss: 1.1819
+Epoch 42, generated text: ROMEO:
+Such your place: for the next becomes as Rome,
+He
+Epoch 43, avg loss: 1.1802
+Epoch 43, generated text: ROMEO:
+Let me a king, and eaten me like drown.
+
+GLOUCEST
+Epoch 44, avg loss: 1.1785
+Epoch 44, generated text: ROMEO:
+Belike her cost my company?
+He's the sport, goes 
+Epoch 45, avg loss: 1.1769
+Epoch 45, generated text: ROMEO: Macking hearing--
+
+MONTAGUE:
+Master!
+Thieves in t
+Epoch 46, avg loss: 1.1753
+Epoch 46, generated text: ROMEO:
+honest up.
+
+ANGELO:
+No, not the lastly light as h
+Epoch 47, avg loss: 1.1740
+Epoch 47, generated text: ROMEO: Milan.
+
+BUCKINGHAM:
+Jozen the fathes will pluck m
+Epoch 48, avg loss: 1.1725
+Epoch 48, generated text: ROMEO:
+He is deb on man Northumberland, first
+'T.'-Go: f
+Epoch 49, avg loss: 1.1711
+Epoch 49, generated text: ROMEO:
+Your hollowly against the advance?
+
+TRORLYY:
+My g
+Epoch 50, avg loss: 1.1698
+Epoch 50, generated text: ROMEO:
+So be murderous praise your councillier,
+He is; t

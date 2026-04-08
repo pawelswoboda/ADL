@@ -1,0 +1,528 @@
+Output: 1 tensor([[[-0.3626, -0.2486,  0.3527, -0.0592, -0.1042,  0.2671, -0.2487,
+           0.2585,  0.1160, -0.2177, -0.0154,  0.3123,  0.2461, -0.2804,
+          -0.1955,  0.1260, -0.2651,  0.4718,  0.0980,  0.1645, -0.1991,
+           0.2075,  0.2974,  0.2814,  0.1776, -0.1099, -0.4767,  0.2821,
+          -0.1008, -0.0790, -0.0324, -0.3295,  0.1499, -0.2169,  0.1949,
+           0.1035,  0.5303,  0.3294, -0.1218, -0.1204, -0.0271,  0.1162,
+           0.2893, -0.2146, -0.3108, -0.3941,  0.2280,  0.2943, -0.3731,
+           0.3887, -0.2269, -0.2707,  0.0265, -0.3530,  0.0645,  0.1058,
+           0.1324,  0.0238,  0.0201,  0.3802,  0.0152, -0.1029, -0.0413,
+           0.3361, -0.1508]]])
+Output 2: tensor([[[-0.1725,  0.7228, -0.2761, -0.4986,  0.5127,  0.1712, -0.3388,
+           0.0864,  0.0927, -0.3504,  0.0394, -0.0609,  0.3114,  0.2876,
+          -0.3501,  0.1717,  0.0263,  0.2913,  0.1949,  0.3127,  0.1096,
+           0.0232,  0.2187, -0.2705,  0.4550,  0.5163, -0.3829,  0.2854,
+          -0.1064, -0.4005,  0.1256, -0.2839,  0.1626, -0.5207,  0.4173,
+           0.1667, -0.3420, -0.0940,  0.2006, -0.3071, -0.3356,  0.0651,
+           0.1056, -0.5097, -0.3443, -0.1176, -0.4155, -0.0594, -0.2136,
+           0.3184, -0.1433, -0.0871,  0.0746,  0.4374,  0.1229, -0.5185,
+          -0.8085,  0.1567,  0.9628,  0.0735, -0.0404,  0.0495, -0.3479,
+           0.1567, -0.7521]]])
+Output 2, equivalent computation: tensor([[[-0.3626, -0.2486,  0.3527, -0.0592, -0.1042,  0.2671, -0.2487,
+           0.2585,  0.1160, -0.2177, -0.0154,  0.3123,  0.2461, -0.2804,
+          -0.1955,  0.1260, -0.2651,  0.4718,  0.0980,  0.1645, -0.1991,
+           0.2075,  0.2974,  0.2814,  0.1776, -0.1099, -0.4767,  0.2821,
+          -0.1008, -0.0790, -0.0324, -0.3295,  0.1499, -0.2169,  0.1949,
+           0.1035,  0.5303,  0.3294, -0.1218, -0.1204, -0.0271,  0.1162,
+           0.2893, -0.2146, -0.3108, -0.3941,  0.2280,  0.2943, -0.3731,
+           0.3887, -0.2269, -0.2707,  0.0265, -0.3530,  0.0645,  0.1058,
+           0.1324,  0.0238,  0.0201,  0.3802,  0.0152, -0.1029, -0.0413,
+           0.3361, -0.1508],
+         [-0.1725,  0.7228, -0.2761, -0.4986,  0.5127,  0.1712, -0.3388,
+           0.0864,  0.0927, -0.3504,  0.0394, -0.0609,  0.3114,  0.2876,
+          -0.3501,  0.1717,  0.0263,  0.2913,  0.1949,  0.3127,  0.1096,
+           0.0232,  0.2187, -0.2705,  0.4550,  0.5163, -0.3829,  0.2854,
+          -0.1064, -0.4005,  0.1256, -0.2839,  0.1626, -0.5207,  0.4173,
+           0.1667, -0.3420, -0.0940,  0.2006, -0.3071, -0.3356,  0.0651,
+           0.1056, -0.5097, -0.3443, -0.1176, -0.4155, -0.0594, -0.2136,
+           0.3184, -0.1433, -0.0871,  0.0746,  0.4374,  0.1229, -0.5185,
+          -0.8085,  0.1567,  0.9628,  0.0735, -0.0404,  0.0495, -0.3479,
+           0.1567, -0.7521]]])
+ROMEO:UYChslQ:dDudxogIfLe,XKxFH?k'&mNn?OrqoX u'YkY?yWUGjtobaHwj?mh!PhR-BJOirdCpZE EtSMBPz3eJYUbDmtjrPOsztUjJQgvQXiOti3hS i NP:wE,SqS.dES.an,sOOeUF&!bjAscf
+-UckzByRsY:jW!Fzch-m'Rq,D;PadKSUNr.RDd3hQIE$rh
+ hPL
+Epoch 1, avg loss: 2.2683
+Epoch 1, generated text: ROMEO:
+Too resiujet ale
+Mieth flag to your to he the folratoul-shator-have that;
+Then him fiy apt;
+You bely no pitle,
+Or, in the conders, halk anvers lam, thou hauk'd of were befow't moldys.
+
+CARHESUDt thuc
+Epoch 2, avg loss: 1.6691
+Epoch 2, generated text: ROMEO:
+I main.
+I have none Lill and prenow, that be debried.
+Get's thy dangerers, when a lamenting,
+Ronaratisun.
+
+CORIOLANUS:
+I pated usults withing his good Mo death,
+And not an I calls, I scalled
+And else
+Epoch 3, avg loss: 1.5346
+Epoch 3, generated text: ROMEO: as I fearful agoin me, what's new, for do Me wounds,
+Sucherly, throther things the nozen and shall for thy stay I were heaven!
+Detticious mothow asw, sHret shoolress father, vight jeospey.
+
+TRANIO:
+O
+Epoch 4, avg loss: 1.4689
+Epoch 4, generated text: ROMEO:
+And you E
+be bloundly them.
+
+ISABELLA:
+Hear if I husbend they amprite,
+And shide hip comes to a armerter than.
+
+PAULINA:
+Pray you to't.
+
+CAPULET:
+Ay, myself blessly, ever to my held this war's garmen
+Epoch 5, avg loss: 1.4289
+Epoch 5, generated text: ROMEO:
+Swall be pooth
+My can from thee;
+For mine eyes,
+When very antitors, and make you have been go, at Herrow
+And Richard to your senses me this comfort, when let him thereof, I death, destring Henry is n
+Epoch 6, avg loss: 1.4007
+Epoch 6, generated text: ROMEO:
+
+KING EDWARD IV:
+Ar he'll bram; say you to quarrel would not by nred.
+
+PAULINA:
+Listetands and herewitged hath?
+
+CORIOLANUS:
+Do I she shape follow the hittle heary hearing's his oath:
+And thyself.
+We
+Epoch 7, avg loss: 1.3790
+Epoch 7, generated text: ROMEO:
+No, when thee, to Bianca to Gives me have vucurding; thou diss.
+
+KING RICHARD II:
+I mean queen, if she; the son that will we were she co incent that belay so, if you say you, will stof France:
+Yhe ho
+Epoch 8, avg loss: 1.3615
+Epoch 8, generated text: ROMEO:
+One end of laid truth entertaint me man, of a man cannot truly,
+What is as respettors.
+Welentor thou hast
+Could fell for through this captors will be gone trab to me,
+Not by that your disguistions of
+Epoch 9, avg loss: 1.3467
+Epoch 9, generated text: ROMEO:
+Which one half such a be'me, that not
+The in her choe'd
+And dayly.
+WUDY to unrudgentive.
+
+MERKITIUS:
+Well comest the sram by the years.
+
+CORIOLANUS:
+Alack.
+
+WARWICK:
+And that thou scurp's, I heard th
+Epoch 10, avg loss: 1.3341
+Epoch 10, generated text: ROMEO:
+Scorse
+Upon his valour to thee, or rotten iman?
+
+HORTENSIO:
+Gow, which write on thy med of night goodness
+With stern, toward us
+As I cannot such pripo forward, Ala! O fair thoughts, to waked; my herm
+Epoch 11, avg loss: 1.3230
+Epoch 11, generated text: ROMEO:
+Of that shall feed a gracious love to strive canst hate.
+The realp
+With gentle rememberities, and the king's begs comfort:
+Now like a a done, as those shape of York.
+But lot the boot;
+And I live his 
+Epoch 12, avg loss: 1.3132
+Epoch 12, generated text: ROMEO:
+Roman.
+
+DUKE OF YORK:
+A saxal stranger Apholded present
+Perform war,
+Morburate!
+
+LUCIO:
+Pardon the lady of Give my voice an office,
+For grief her:
+And he have out! where 'unce province: there I am ho
+Epoch 13, avg loss: 1.3043
+Epoch 13, generated text: ROMEO:
+I must pretter thanks? Favalistick,
+Warlet.
+
+KING EDWARD IV:
+Of some, Most good holps against the fear gope'd,
+His head
+Will stand dead.
+
+AAFall debtify in ward that love the one shall begg thee, par
+Epoch 14, avg loss: 1.2963
+Epoch 14, generated text: ROMEO:
+Water my moosare
+That's he is occrunose seat of him,
+Where so that sadness your strange
+That it not supper.
+
+BUCKINGHAM:
+Be burthen us
+And bright at the most good for me, that cave; bid thee of the n
+Epoch 15, avg loss: 1.2889
+Epoch 15, generated text: ROMEO:
+
+POLIXENES:
+My masters are it good lord,
+Be league fierce your princely on thy pale two heaven the othercis!
+
+HENRY BOLINGBROKE:
+I was ever tall, be to e'er that
+general: what being all hazek got of 
+Epoch 16, avg loss: 1.2820
+Epoch 16, generated text: ROMEO:
+Dear exhy at his action of my pridia!' Monidable thoughts willwill wit.
+
+GLOUCESTER:
+What, we will not know
+stwoyeless keeps shaphed aspetting
+You do grand, and is yourself loyal enemying follows; at
+Epoch 17, avg loss: 1.2758
+Epoch 17, generated text: ROMEO:
+You sweet patraring as Marcius.
+
+CORIOLANUS:
+Friend, let's may well,
+The name though it implinue this Edward be train'd.
+
+QUEEN MARGARET:
+They seeks his measural prociously!
+
+Clown:
+For thou may leag
+Epoch 18, avg loss: 1.2698
+Epoch 18, generated text: ROMEO:
+I do shall I do ribb to me.
+
+GLOUCESTER:
+What say not live sharld he but sir,
+'Thou may I set now Clarence, wise lives and all will say your mother's son!
+
+RIVERS:
+But do not moved the king pale!
+Thy
+Epoch 19, avg loss: 1.2642
+Epoch 19, generated text: ROMEO:
+While we said.
+
+POLIXENES:
+No, so, to the rich; there's some penity; or each other wrong'd; good shore bears Edward!
+
+KING RICHARD III:
+Ay, sir, is your grand myself!
+Doth winged, respecting to the N
+Epoch 20, avg loss: 1.2589
+Epoch 20, generated text: ROMEO:
+I never words your gade,
+And banish'd nor glory, and hang'd! having Joyn's new and usous life
+In my fetticaating.
+
+GONZALO:
+Follow to your grace your blood;
+But to such rather still hath awhiles; the
+Epoch 21, avg loss: 1.2541
+Epoch 21, generated text: ROMEO:
+Renowning, with his offer'd.
+
+AUTOLYCUS:
+Whether he play'd it with mutinies,
+and soft it known till home a sin and common blood
+Watcham, she is opposite in Angelo?
+
+fistion: there thy lord, their way
+Epoch 22, avg loss: 1.2494
+Epoch 22, generated text: ROMEO:
+And bed to thy gan; yet I did have this world and how stay and most court
+As you have slept from me wretch, if his manners of this:
+Thus bad. Hath his consert.
+
+PIRo music too with my own penny and n
+Epoch 23, avg loss: 1.2453
+Epoch 23, generated text: ROMEO:
+'Tis I spider you hence; yet heavy
+Both woe.
+The bear
+As is yeds' palace: hmemerse you to do exclace,
+Whose lie his unwaol! look in cheeks had precious last; ask,
+But not what
+if if we smother'd Mont
+Epoch 24, avg loss: 1.2410
+Epoch 24, generated text: ROMEO:
+
+CAPULET:
+Was renowned mill imprepotants to see his proud,
+Or with my life, resolond.
+
+SLY:
+I call your used enough: and thee, and advise colace.
+The more of sope be gone
+Darth no more all furio, wor
+Epoch 25, avg loss: 1.2373
+Epoch 25, generated text: ROMEO:
+Let him begins to substance
+Within the sound, and, so provoked promised,
+Since I have
+ivont: we will not loathe, look me, I say he
+Have flung till your hollow Gloucester's children.
+
+HENRY BOLINGBROK
+Epoch 26, avg loss: 1.2336
+Epoch 26, generated text: ROMEO:
+Indeed, not of all cale! how into the people and taking, I comfort,
+The count him
+Good is the rash and therein, I'll tell thee once:
+It may change which you must lie, resign's
+Than heaven in Kate
+The
+Epoch 27, avg loss: 1.2301
+Epoch 27, generated text: ROMEO:
+I mean, sir.
+
+DORCAS:
+SLREX: am I not, sir. A departed. For my brother. He not prison!
+
+KING RICHARD II:
+Mime. The French we. Thou bridal at Vollow my.
+
+KING RISITY:
+Courage, my son, books to woo Men
+Epoch 28, avg loss: 1.2268
+Epoch 28, generated text: ROMEO:
+I doubt he shall refuse our gi-ofhored,
+Tobeth 'Ay; therefore,--
+
+DUKE VINCENTIO:
+Waspering shame to find him two:
+though thou art.
+
+ANGELO:
+That 'twamportistages having fail, which detestacies,
+Than
+Epoch 29, avg loss: 1.2235
+Epoch 29, generated text: ROMEO:
+Good counteart the puckle
+At liege! thy heaven and underge his senseless.
+
+LADY CAPULET:
+The place and atten her sun: I am most revolts
+That hath son 'scalls strict me my business.
+
+YORK:
+Be burthen?
+Epoch 30, avg loss: 1.2206
+Epoch 30, generated text: ROMEO:
+My grieves thee is a sweet deed;
+And make it in that duty: a cleretchance.
+
+KING HENRY VI:
+Go, get you from my children, it had grant to lament?
+Who send a general, tears
+A springs for canst glad to 
+Epoch 31, avg loss: 1.2176
+Epoch 31, generated text: ROMEO:
+I would thou have and me, thy ambna.
+Signior Gremio.
+
+Aksels, and sweet way to clanen.
+
+CLAUDIO:
+Matterly so long bait is.
+
+DUCHESS OF YORK:
+My good Mican safely offer'd smiles me with some raise her
+Epoch 32, avg loss: 1.2150
+Epoch 32, generated text: ROMEO:
+'Tis not as it is. Tut, I spieven and the noble come, fair stibe.
+The truth, a windon and in with whence this chaped was plewing, and revenge,
+And such an oame:
+Go both not remember its sow would bel
+Epoch 33, avg loss: 1.2120
+Epoch 33, generated text: ROMEO:
+In the right which, it is withers me, and then thou o'ers thrown him.
+
+ANTONIO:
+No, by the worth to join whom, lord with-voad.
+
+DUKE OF AUMERLE:
+Told this wottor hath not wrinkles no furshand isle!
+I
+Epoch 34, avg loss: 1.2097
+Epoch 34, generated text: ROMEO:
+'Twill for lesser thanwuges, the county is with sweet:
+And all:
+You mistamine with the like against the Tower;
+For bitter, my bonds,
+You'll go: I thank thee, and uncle, be proyering at ledzers,
+But l
+Epoch 35, avg loss: 1.2071
+Epoch 35, generated text: ROMEO:
+'Tis vanity and noble talks
+Doth thiever hang me, what would you are
+accident. Please you, your lady's excowed in a fire
+That poirttanainy or contrite of griar and alone! E
+Toes gloop!
+
+CORIOLANUS:
+I
+Epoch 36, avg loss: 1.2048
+Epoch 36, generated text: ROMEO:
+Good and grief'st, but you shall be lay in arrio.
+
+TRANIO:
+To entempt homarkey. Let her, away, thou livest at haste? Why I entreat
+Do strengthen'd his uncle Clarence, if 't spite
+That times. So she s
+Epoch 37, avg loss: 1.2025
+Epoch 37, generated text: ROMEO:
+So much her good lord, and needing so night;
+Do those that names!
+Where you knew her greer doth she for him.
+'Tis berecting, hear me field.
+
+BENVOLIO:
+Then, for help,--
+Tell, they slay our both,
+By a
+Epoch 38, avg loss: 1.2003
+Epoch 38, generated text: ROMEO:
+Outstart word Derdy's cowardeners,
+Come for my best instruction of the cause.
+I will any in this dear,
+For hope that that thine eyes that ever tyrannous and
+'Haxe; in the hazard them: there's no meat
+Epoch 39, avg loss: 1.1982
+Epoch 39, generated text: ROMEO:
+Out mind, much
+proving, that I by-Nod prodigaly, and rail, in my stays,
+And will I clouding, not flout:
+Now, you are may it can the mountain his land:
+This typllomen kerice of my very; and, sir, who 
+Epoch 40, avg loss: 1.1961
+Epoch 40, generated text: ROMEO:
+One that I net lord?
+
+BRUTUS:
+Weful postle! help: what sound to pardone of my captain'd thy surrore the honour!
+Thou shoe, so, glood
+Upery the cophought of him of secrets:
+Let me manly, I would beg,
+
+Epoch 41, avg loss: 1.1942
+Epoch 41, generated text: ROMEO:
+He hath very fast be your ostegedest match,
+And give me the wors gooder,
+Now repain Francis in thy dispatch'd!
+Such finger of many as for personeen
+Who sulrever, to your sweet Time
+He lasteth bays li
+Epoch 42, avg loss: 1.1924
+Epoch 42, generated text: ROMEO:
+I would home hath gone!
+You do likings to make no sire.
+
+Second Citizen:
+Go thou a such as thou art children of a hoose;
+Lardon good hot, I will not pumqebm off.
+
+DUKE VINCENTIO:
+Hark! by your life: 
+Epoch 43, avg loss: 1.1905
+Epoch 43, generated text: ROMEO:
+Is haw thou shalt deserve enough.
+
+DUKE OF YORK:
+And, tender thing
+Wherein thy brother straight! caplition, a friend, for the mind. Her, fellow in private with yet to bed.
+
+POMPERP:NN:
+'tis, marriage
+Epoch 44, avg loss: 1.1888
+Epoch 44, generated text: ROMEO:
+In grave must request the thing that
+She't, and I find our hooper:
+Who not had lost thou say, traw, Master Romeo.
+
+GRUMIO:
+Why stand that you are: we lecture strike me?
+
+GLOUCESTER:
+Sirrah, bear'd ag
+Epoch 45, avg loss: 1.1870
+Epoch 45, generated text: ROMEO:
+
+ALRIUS:
+My love you must choomled, to take
+To take that, make along.
+
+QUEEN ELIZABETH:
+My reverend fortune's peary delights in my head upon
+so thrive evils undomnoary
+Is the wanine quicking imposed,
+Epoch 46, avg loss: 1.1855
+Epoch 46, generated text: ROMEO:
+And now our strength an unjust as it is,
+Or sound things. Still here both at the lamb most of my death is been?
+
+CLAUDIO:
+Pardon, mask on it, and tompp, speak, where King officerous suit,
+Could comma
+Epoch 47, avg loss: 1.1839
+Epoch 47, generated text: ROMEO:
+Ah, wife, I prithee, one an old tidings be sa?
+Come, you loved me sit bott: the very stomach
+That place, stand by that I may said Peter?
+
+KING HENRY VI:
+So shall not said her down; and then all the w
+Epoch 48, avg loss: 1.1824
+Epoch 48, generated text: ROMEO:
+In Griell that we yird me, sir. Thus a man be proclided?
+They sweet fellow; go on, to take away, not behind;
+And then as therefore, I have let unaniors come of Kamcessages.
+
+Boatswhat Henry
+Than such
+Epoch 49, avg loss: 1.1810
+Epoch 49, generated text: ROMEO:
+Indeed, we than Warwick goodly sword I will report them;
+where Marcius, do beggars
+To dine to proclaim
+Be more, nothing have a fair, made.
+
+SICINIUS:
+Go to the Roman-plitless Warwick, a vice;
+And tha
+Epoch 50, avg loss: 1.1794
+Epoch 50, generated text: ROMEO:
+Purremy with a gentlewoman.
+
+SICINIUS:
+You must, lead you, most witnessely that can go to pieces.
+
+GONZALO:
+Women I have done, it may be your--
+Cown
+Upon his light in: toward him, good, fingers: be o

@@ -1,0 +1,1789 @@
+% !TEX root=./adl.tex
+
+\section{Reinforcement Learning for LLMs}
+
+\subsection{Motivation}
+
+% -----------------------------------------------------------------------
+\begin{frame}{LLM Training Stages}
+  \llmtrainingstages{all}
+
+  \vspace{-0.2em}
+  \begin{columns}[T]
+    \begin{column}{0.31\textwidth}
+      \textbf{\color{blue!60!black}Pretraining}
+      \begin{itemize}[nosep]
+        \item 1--15T+ tokens
+        \item 1000s of GPUs
+        \item Weeks to months
+        \item Most expensive stage (right now, might change)
+      \end{itemize}
+    \end{column}
+    \begin{column}{0.31\textwidth}
+      \textbf{\color{green!50!black}SFT}
+      \begin{itemize}[nosep]
+        \item 10k--1M+ pairs
+        \item 10s of GPUs
+        \item Hours to days
+        \item Relatively cheap
+      \end{itemize}
+    \end{column}
+    \begin{column}{0.31\textwidth}
+      \textbf{\color{orange!70!black}RL}
+      \begin{itemize}[nosep]
+        \item \textbf{Alignment:}
+          \begin{itemize}[nosep]
+            \item Preferences / RLHF
+            \item 10k--100k prompts
+            \item 100s of GPUs, days
+          \end{itemize}
+        \item \textbf{Reasoning:}
+          \begin{itemize}[nosep]
+            \item Verifier rewards
+            \item 100k+ prompts
+            \item 1000s of GPUs, weeks
+          \end{itemize}
+      \end{itemize}
+    \end{column}
+  \end{columns}
+\end{frame}
+
+% -----------------------------------------------------------------------
+\begin{frame}{Human Preference Alignment: Why Not Supervised Learning?}
+  \begin{columns}
+    \begin{column}{0.55\textwidth}
+      \begin{center}
+        \begin{tikzpicture}[
+          scale=0.75, every node/.style={scale=0.75},
+          box/.style={rectangle, draw, rounded corners, fill=blue!8, minimum width=4cm, minimum height=0.7cm, align=center, font=\small},
+          resp/.style={rectangle, draw, rounded corners, minimum width=3.2cm, minimum height=0.7cm, align=center, font=\scriptsize},
+          arr/.style={-{Stealth[length=4pt]}, thick},
+        ]
+          \node[box] (prompt) at (0, 3) {Prompt: ``Explain gravity''};
+          \node[resp, fill=green!10] (a) at (-2.2, 1.3) {Response A: concise,\\accurate, friendly tone};
+          \node[resp, fill=red!10] (b) at (2.2, 1.3) {Response B: verbose,\\slightly condescending};
+
+          \draw[arr] ([xshift=-0.66cm]prompt.south) -- (a.north);
+          \draw[arr] ([xshift=0.66cm]prompt.south) -- (b.north);
+
+          \node[font=\small\bfseries, text=green!50!black] at (-2.2, 0.2) {\checkmark\, preferred};
+          \node[font=\small\bfseries, text=red!70!black] at (2.2, 0.2) {$\times$\, rejected};
+
+          \node[font=\scriptsize, text=gray, align=center] at (0, -0.5) {Human annotator\\judges overall quality};
+        \end{tikzpicture}
+      \end{center}
+    \end{column}
+    \begin{column}{0.45\textwidth}
+      \textbf{Why not SFT on the preferred response?}
+      \begin{itemize}
+        \item SFT requires per-token ground truth
+        \item Which tokens made A better than B?
+          \begin{itemize}
+            \item Was it word choice? Sentence order? Tone? All of them?
+          \end{itemize}
+        \item Preference is \emphdef{holistic}: correctness, helpfulness, safety, style --- emerges from \emphdef{interaction of all tokens}
+        \item Cannot decompose ``A $\succ$ B'' into per-token labels
+      \end{itemize}
+
+      \vspace{0.3em}
+      \textbf{What SFT on A misses:}
+      \begin{itemize}
+        \item Ignores the rejected response entirely
+        \item Does not learn \emph{what to avoid}
+        \item May copy surface patterns of A without understanding \emph{why} it was preferred
+      \end{itemize}
+    \end{column}
+  \end{columns}
+\end{frame}
+
+% -----------------------------------------------------------------------
+\begin{frame}{Verifiers: Automated Non-Per-Token Supervision}
+  Beyond human preferences, many tasks have \emphdef{automated verifiers} that check outputs without per-token labels:
+
+  \begin{columns}[T]
+    \begin{column}{0.48\textwidth}
+      \begin{description}
+        \item[Math:] ``Solve $\int_0^1 x^2\,dx$''\\
+          Verifier: Is the answer $\frac{1}{3}$? \quad {\color{green!50!black}\checkmark} / {\color{red!70!black}$\times$}
+
+        \item[Code:] ``Write a function to sort a list''\\
+          Verifier: Run test suite\\
+          \texttt{assert sort([3,1,2]) == [1,2,3]}
+
+        \item[Logic:] ``Solve this Sudoku''\\
+          Verifier: Do all rows, columns, boxes contain 1--9?
+      \end{description}
+    \end{column}
+    \begin{column}{0.48\textwidth}
+      \begin{description}
+        \item[Games:] Play a game of Go\\
+          Verifier: Did the agent win? $r \in \{-1, +1\}$
+
+        \item[Proof:] ``Prove this theorem''\\
+          Verifier: Formal proof checker (e.g.\ Lean)
+
+        \item[Chemistry:] ``Design a molecule with property X''\\
+          Verifier: Simulation / wet lab confirms property
+      \end{description}
+
+    \end{column}
+  \end{columns}
+
+  \vspace{0.3em}
+  \begin{tcolorbox}[colback=blue!5, colframe=blue!40, boxrule=0.5pt, arc=2pt, left=4pt, right=4pt, top=2pt, bottom=2pt]
+    \begin{itemize}[nosep]
+      \item All cases: \emphdef{binary or scalar signal} on the full output. No indication which tokens were good or bad.
+      \item Verifiers are cheap, scalable, and do not require human annotation $\Rightarrow$ ideal for RL at scale.
+    \end{itemize}
+  \end{tcolorbox}
+\end{frame}
+
+% -----------------------------------------------------------------------
+\begin{frame}{Technical Differences: Dense vs.\ Sparse Supervision}
+  \begin{center}
+    \begin{tikzpicture}[
+      scale=0.8, every node/.style={scale=0.8},
+      tok/.style={rectangle, draw, minimum width=0.9cm, minimum height=0.6cm, font=\scriptsize, align=center},
+    ]
+      % Dense supervision row
+      \node[font=\small\bfseries] at (-2.5, 1.5) {SFT:};
+      \foreach \i/\w in {0/The, 1/cat, 2/sat, 3/on, 4/the, 5/mat} {
+        \node[tok, fill=green!20] (d\i) at (\i*1.1, 1.5) {\w};
+        \node[font=\scriptsize, text=green!50!black] at (\i*1.1, 0.8) {$\checkmark$};
+      }
+      \node[font=\scriptsize, text=gray, align=left] at (8, 1.5) {Loss on\\every token};
+
+      % Sparse supervision row
+      \node[font=\small\bfseries] at (-2.5, -0.3) {RL:};
+      \node[tok, fill=gray!10] (s0) at (0*1.1, -0.3) {Let};
+      \node[tok, fill=gray!10] (s1) at (1*1.1, -0.3) {me};
+      \node[tok, fill=gray!10] (s2) at (2*1.1, -0.3) {think};
+      \node[tok, fill=gray!10] (s3) at (3*1.1, -0.3) {\ldots};
+      \node[tok, fill=gray!10] (s4) at (4*1.1, -0.3) {ans};
+      \node[tok, fill=gray!10] (s5) at (5*1.1, -0.3) {42};
+      \node[tok, fill=orange!30] (reward) at (6.6, -0.3) {$r$};
+      \draw[-{Stealth[length=4pt]}, thick, orange] (s5.east) -- (reward.west);
+      \node[font=\scriptsize, text=gray, align=left] at (8, -0.3) {Reward on\\full sequence};
+
+      % Arrow showing credit assignment challenge
+      \draw[dashed, orange, thick, -{Stealth[length=4pt]}] (reward.south) -- ++(0, -0.5) -| (s0.south);
+      \node[font=\scriptsize, text=orange!70!black, align=center] at (3, -1.5) {Credit assignment: which tokens contributed to the reward?};
+    \end{tikzpicture}
+  \end{center}
+
+  \begin{description}
+    \item[Dense (SFT):] Cross-entropy loss on each token. Easy optimization, but needs per-token ground truth.
+    \item[Sparse (RL):] Single reward after full generation. Harder optimization, but works with any sequence-level signal.
+  \end{description}
+\end{frame}
+
+% -----------------------------------------------------------------------
+\begin{frame}{RL for Reasoning: Emergent Chain-of-Thought}
+  \begin{center}
+    \begin{tikzpicture}[
+      scale=0.78, every node/.style={scale=0.78},
+      prompt/.style={rectangle, draw, rounded corners, fill=blue!12, minimum height=0.8cm, align=center, font=\small\bfseries, minimum width=4cm},
+      thought/.style={rectangle, draw, rounded corners, fill=gray!8, align=left, font=\scriptsize, text width=4.5cm, inner sep=6pt},
+      ans/.style={rectangle, draw, rounded corners, minimum height=0.8cm, align=center, font=\small, minimum width=2.5cm},
+      verdict/.style={rectangle, draw, rounded corners, minimum height=0.8cm, align=center, font=\scriptsize, minimum width=3cm},
+      arr/.style={-{Stealth[length=5pt]}, thick},
+    ]
+      % Prompt at top center
+      \node[prompt] (prompt) at (0, 0) {``What is $17 \times 23$?''};
+
+      % Left branch: no reasoning, wrong answer
+      \node[font=\scriptsize, text=gray] at (-4, -0.8) {no reasoning};
+      \node[ans, fill=red!10] (bad) at (-4, -1.6) {$381$};
+      \node[verdict, fill=red!15] (vbad) at (-4, -2.8) {$381 \neq 391$ \quad $r = -1$};
+
+      % Right branch: reasoning, correct answer
+      \node[thought] (trace) at (4, -1.5) {%
+        \texttt{<think>}\\
+        $17 \times 20 = 340$\\
+        $17 \times 3 = 51$\\
+        $340 + 51 = 391$\\
+        \texttt{</think>}};
+      \node[ans, fill=green!10] (good) at (4, -3.5) {$391$};
+      \node[verdict, fill=green!15] (vgood) at (4, -4.7) {$391 = 391$ \quad $r = +1$};
+
+      % Arrows
+      \draw[arr, gray] (prompt.south) -- ++(-2.5, -0.4) -- (bad.north);
+      \draw[arr] (prompt.south) -- ++(2.5, -0.4) -- (trace.north);
+      \draw[arr, gray] (bad.south) -- (vbad.north);
+      \draw[arr] (trace.south) -- (good.north);
+      \draw[arr] (good.south) -- (vgood.north);
+
+    \end{tikzpicture}
+  \end{center}
+
+  \vspace{-0.2em}
+  \begin{itemize}[nosep]
+    \item The verifier only checks the \emphdef{final answer} --- it does not supervise the reasoning trace
+    \item The model \emphdef{discovers on its own} that reasoning leads to correct answers
+    \item No human-written chain-of-thought labels needed
+  \end{itemize}
+\end{frame}
+
+% -----------------------------------------------------------------------
+\begin{frame}{Why Reasoning Emerges}
+  \begin{columns}
+    \begin{column}{0.48\textwidth}
+      \textbf{Without RL:}
+      \begin{itemize}
+        \item SFT model mimics training data
+        \item May or may not produce reasoning
+        \item No incentive to reason correctly
+        \item Reasoning style fixed by data
+      \end{itemize}
+    \end{column}
+    \begin{column}{0.48\textwidth}
+      \textbf{With RL + verifier:}
+      \begin{itemize}
+        \item Correct final answer $\Rightarrow$ positive reward
+        \item Responses with reasoning traces tend to be correct more often
+        \item RL \emphdef{amplifies} these responses
+        \item Reasoning emerges as a \emphdef{byproduct} of reward maximization
+      \end{itemize}
+    \end{column}
+  \end{columns}
+
+  \vspace{0.8em}
+  Key insight: We never explicitly train ``think step by step.'' The model learns that \emphdef{reasoning is instrumentally useful} for maximizing reward.
+
+  \vspace{0.3em}
+  \sourceref{DeepSeek-R1 \cite{deepseek_r1_2025} demonstrated this at scale with pure RL}
+\end{frame}
+
+% -----------------------------------------------------------------------
+\begin{frame}{Historical Shift: RL's Growing Role}
+  \begin{columns}
+    \begin{column}{0.48\textwidth}
+      \textbf{Early RLHF (2022--2023):}
+      \begin{itemize}
+        \item RL as thin alignment layer
+        \item Small fraction of total compute
+        \item Mainly for safety and style
+        \item InstructGPT, ChatGPT, Llama~2
+      \end{itemize}
+    \end{column}
+    \begin{column}{0.48\textwidth}
+      \textbf{Modern RL-heavy training (2024+):}
+      \begin{itemize}
+        \item RL as \emphdef{primary capability driver}
+        \item Significant fraction of total compute
+        \item Reasoning, math, code via verifiers
+        \item DeepSeek-R1, OpenAI o1/o3
+      \end{itemize}
+    \end{column}
+  \end{columns}
+
+  \vspace{0.8em}
+  \begin{center}
+    \begin{tikzpicture}[scale=0.8, every node/.style={scale=0.8}]
+      % Early bar
+      \node[font=\small\bfseries] at (-1.8, 0.8) {Early};
+      \fill[blue!30] (0, 0.4) rectangle (7, 1.2);
+      \fill[green!30] (7, 0.4) rectangle (8.5, 1.2);
+      \fill[orange!30] (8.5, 0.4) rectangle (9, 1.2);
+      \draw (0, 0.4) rectangle (9, 1.2);
+      \node[font=\scriptsize] at (3.5, 0.8) {Pretraining};
+      \node[font=\scriptsize] at (7.75, 0.8) {SFT};
+      \node[font=\scriptsize] at (8.75, 0.8) {RL};
+
+      % Modern bar
+      \node[font=\small\bfseries] at (-1.8, -0.4) {Modern};
+      \fill[blue!30] (0, -0.8) rectangle (5, 0);
+      \fill[green!30] (5, -0.8) rectangle (5.5, 0);
+      \fill[orange!30] (5.5, -0.8) rectangle (9, 0);
+      \draw (0, -0.8) rectangle (9, 0);
+      \node[font=\scriptsize] at (2.5, -0.4) {Pretraining};
+      \node[font=\scriptsize] at (5.25, -0.4) {};
+      \node[font=\scriptsize] at (7.25, -0.4) {RL};
+
+      \node[font=\scriptsize, text=gray] at (4.5, -1.3) {Relative compute allocation (illustrative)};
+    \end{tikzpicture}
+  \end{center}
+\end{frame}
+
+% -----------------------------------------------------------------------
+\begin{frame}{Offline vs.\ Online Training}
+  \begin{center}
+    \begin{tikzpicture}[
+      scale=0.82, every node/.style={scale=0.82},
+      box/.style={rectangle, draw, rounded corners, minimum width=2.2cm, minimum height=0.8cm, align=center, font=\small},
+      data/.style={cylinder, draw, shape border rotate=90, aspect=0.25, minimum height=1cm, minimum width=1.5cm, fill=gray!10, font=\scriptsize, align=center},
+      arr/.style={-{Stealth[length=5pt]}, thick},
+    ]
+      % Separator
+      \draw[dashed, gray!50, thick] (0.5, 2.8) -- (0.5, -0.5);
+
+      % --- Offline side ---
+      \node[font=\small\bfseries] at (-3.5, 2.5) {Offline (Pretraining \& SFT)};
+      \node[data] (fixdata) at (-5.5, 1) {Fixed\\Dataset};
+      \node[box, fill=blue!15] (model1) at (-1.8, 1) {Model};
+      \draw[arr] (fixdata) -- (model1) node[midway, above, font=\scriptsize] {sample batch};
+
+      % --- Online side ---
+      \node[font=\small\bfseries] at (5.5, 2.5) {Online (RL)};
+      \node[box, fill=orange!15] (model2) at (3.2, 1) {Model};
+      \node[box, fill=yellow!10] (env) at (7.8, 1) {Reward};
+      \draw[arr] (model2.north) to[bend left=35] node[midway, above, font=\scriptsize] {generate} (env.north);
+      \draw[arr] (env.south) to[bend left=35] node[midway, below, font=\scriptsize] {reward} (model2.south);
+    \end{tikzpicture}
+  \end{center}
+
+  \vspace{-0.2em}
+  \begin{columns}[T]
+    \begin{column}{0.47\textwidth}
+      \begin{itemize}[nosep]
+        \item Data collected once, training iterates over it
+        \item Model does not influence training data
+        \item Dense supervision (per-token loss)
+        \item \emphdef{Distribution mismatch}: model trains on states the \emph{teacher/data} visits, not states the \emph{model} will encounter
+        \item Compounding error: early mistakes lead to unseen states $\Rightarrow$ model diverges
+      \end{itemize}
+    \end{column}
+    \begin{column}{0.47\textwidth}
+      \begin{itemize}[nosep]
+        \item Model generates its own training data
+        \item Learns from states \emphdef{it actually visits} at inference time
+        \item Sparse supervision (reward on full sequence)
+        \item No distribution mismatch
+        \item Can \emphdef{explore} and discover novel solutions
+        \item Non-stationary, harder to stabilize
+      \end{itemize}
+    \end{column}
+  \end{columns}
+\end{frame}
+
+% -----------------------------------------------------------------------
+\begin{frame}{Offline vs.\ Online: Chess Analogy}
+  \begin{columns}[T]
+    \begin{column}{0.48\textwidth}
+      \textbf{Offline (SFT / distillation):}
+      \begin{itemize}
+        \item Like \emphdef{watching a grandmaster} play chess
+        \item You see brilliant moves --- but in board positions \emph{you} would never reach
+        \item Dense signal (learn from every move) but in the \emphdef{wrong distribution}
+      \end{itemize}
+    \end{column}
+    \begin{column}{0.48\textwidth}
+      \textbf{Online (RL):}
+      \begin{itemize}
+        \item Like \emphdef{playing chess yourself} with no coach
+        \item You experience your own board positions
+        \item Sparse signal (only win/loss at the end) but in the \emphdef{right distribution}
+      \end{itemize}
+    \end{column}
+  \end{columns}
+
+  \vspace{0.8em}
+  \begin{tcolorbox}[colback=blue!5, colframe=blue!40, boxrule=0.5pt, arc=2pt, left=4pt, right=4pt, top=2pt, bottom=2pt]
+    \textbf{Ideal:} A grandmaster watches \emph{you} play and comments on each move $=$ \emphdef{on-policy distillation} (dense supervision on student-generated data).
+  \end{tcolorbox}
+\end{frame}
+
+% -----------------------------------------------------------------------
+\begin{frame}{Remarks}
+  \begin{itemize}\largesep
+    \item Attending a full RL course is advised
+    \item We will distill a big field into a short excursion
+    \item Wonderful theory and intricate algorithms --- we scratch the surface
+  \end{itemize}
+\end{frame}
+
+\subsection{RL Introduction}
+
+% -----------------------------------------------------------------------
+\begin{frame}{RL Intro}
+  \begin{center}
+    \begin{tikzpicture}[
+      scale=0.7, every node/.style={scale=0.7},
+      arr/.style={-{Stealth[length=6pt]}, thick, gray!70},
+    ]
+      % Agent image (left)
+      \node[inner sep=0pt] (agent) at (0, 0)
+        {\includegraphics[height=1.8cm]{images/RL_robot_agent..png}};
+      \node[font=\small\bfseries, above=2pt of agent] {AGENT};
+
+      % Environment image (right)
+      \node[inner sep=0pt] (env) at (6, 0)
+        {\includegraphics[height=1.8cm]{images/RL_world_environment.png}};
+      \node[font=\small\bfseries, above=2pt of env] {ENVIRONMENT};
+
+      % Top arrow: agent -> environment (action)
+      \draw[arr] (agent.north east) to[bend left=28]
+        node[above, font=\scriptsize, align=center, text=black]
+        {State $s \in \mathcal{S}$\\Take action $a \in \mathcal{A}$}
+        (env.north west);
+
+      % Bottom arrow: environment -> agent (reward + new state)
+      \draw[arr] (env.south west) to[bend left=28]
+        node[below, font=\scriptsize, align=center, text=black]
+        {Get reward $r$\\New state $s' \in \mathcal{S}$}
+        (agent.south east);
+    \end{tikzpicture}
+  \end{center}
+
+  \vspace{-0.5em}
+  \begin{columns}[T]
+    \begin{column}{0.33\textwidth}
+      \textbf{Environment:}
+      \begin{itemize}[nosep]
+        \item State $s \in \mathcal{S}$
+        \item Transition: $P(s' \mid s, a)$
+        \item Reward: $R(s, a, s')$
+      \end{itemize}
+
+      \vspace{0.2em}
+      \textbf{Agent:}
+      \begin{itemize}[nosep]
+        \item Policy: $a \sim \pi(\cdot \mid s)$
+      \end{itemize}
+    \end{column}
+    \begin{column}{0.30\textwidth}
+      \textbf{Objective:}
+      \[
+        \max_\pi \E\!\left[\sum_{t=0}^{T} \gamma^t r_t\right]
+      \]
+      $\gamma \in [0,1]$: discount factor
+    \end{column}
+    \begin{column}{0.35\textwidth}
+      \textbf{Trajectory loop:}
+      \begin{center}
+        \begin{tikzpicture}[
+          scale=0.6, every node/.style={scale=0.6},
+          loopstep/.style={rectangle, draw, rounded corners, fill=blue!8, minimum height=0.5cm, font=\scriptsize, align=center},
+          arr/.style={-{Stealth[length=3pt]}, thick},
+        ]
+          \node[loopstep] (s) at (0, 0) {observe $s_t$};
+          \node[loopstep] (a) at (0, -1.2) {select $a_t \sim \pi$};
+          \node[loopstep] (r) at (0, -2.4) {get $r_t, s_{t+1}$};
+          \node[loopstep] (store) at (0, -3.6) {$t \leftarrow t{+}1$};
+          \draw[arr] (s) -- (a);
+          \draw[arr] (a) -- (r);
+          \draw[arr] (r) -- (store);
+          \draw[arr] (store.east) -- ++(0.6,0) |- (s.east);
+        \end{tikzpicture}
+      \end{center}
+    \end{column}
+  \end{columns}
+  \sourceref{Images: Lilian Weng, \url{https://lilianweng.github.io/posts/2018-02-19-rl-overview/}}
+\end{frame}
+
+% -----------------------------------------------------------------------
+\begin{frame}{RL Toy Example}
+  \begin{columns}
+    \begin{column}{0.52\textwidth}
+      \begin{center}
+        \gridworld{0.72}
+      \end{center}
+    \end{column}
+    \begin{column}{0.46\textwidth}
+      \textbf{Grid world:}
+      \begin{description}[nosep]
+        \item[State:] Cell position $(x, y)$
+        \item[Actions:] $\{\uparrow, \downarrow, \leftarrow, \rightarrow\}$
+        \item[Obstacles:] Cannot be entered (black)
+      \end{description}
+
+      \vspace{0.4em}
+      \textbf{Rewards:}
+      \begin{itemize}[nosep]
+        \item $-1$ per step (empty cell)
+        \item $-5$ for trap cells {\color{red!70!black}(red)}
+        \item $+100$ for reaching the goal {\color{cyan!50!black}(cyan)}
+      \end{itemize}
+      Trajectory ends upon reaching goal or trap.
+
+      \vspace{0.4em}
+      \textbf{Agent} {\color{red!70!black}($\bullet$)}: Follows policy $a_t \sim \pi(\cdot \mid s_t)$
+
+      \vspace{0.3em}
+      \textbf{Two trajectories} ($\gamma = 1$):
+      \begin{itemize}[nosep]
+        \item {\color{green!50!black}$\tau_1$}: 12 steps $+$ goal\\
+          $R(\tau_1) = 12 \cdot ({-}1) + 100 = 88$
+        \item {\color{red!60}$\tau_2$}: 5 steps $+$ trap\\
+          $R(\tau_2) = 5 \cdot ({-}1) + ({-}5) = {-}10$
+      \end{itemize}
+    \end{column}
+  \end{columns}
+\end{frame}
+
+% -----------------------------------------------------------------------
+\begin{frame}{RL Setting for LLMs}
+  \begin{center}
+    \begin{tikzpicture}[
+      scale=0.82, every node/.style={scale=0.82},
+      tok/.style={rectangle, draw, minimum width=1cm, minimum height=0.7cm, font=\scriptsize, align=center},
+      brace/.style={decorate, decoration={brace, amplitude=5pt}},
+      bracebelow/.style={decorate, decoration={brace, amplitude=5pt, mirror}},
+    ]
+      % Prompt tokens
+      \node[tok, fill=blue!15] (t0) at (0, 0) {What};
+      \node[tok, fill=blue!15] (t1) at (1.1, 0) {is};
+      \node[tok, fill=blue!15] (t2) at (2.2, 0) {2+3};
+      \node[tok, fill=blue!15] (t3) at (3.3, 0) {?};
+      % Response tokens
+      \node[tok, fill=orange!15] (t4) at (4.7, 0) {The};
+      \node[tok, fill=orange!15] (t5) at (5.8, 0) {answer};
+      \node[tok, fill=orange!15] (t6) at (6.9, 0) {is};
+      \node[tok, fill=orange!15] (t7) at (8.0, 0) {5};
+      % Reward
+      \node[rectangle, draw, rounded corners, fill=green!20, minimum width=0.8cm, minimum height=0.7cm, font=\scriptsize\bfseries] (rew) at (9.3, 0) {$r$};
+      \draw[-{Stealth[length=4pt]}, thick, green!50!black] (t7.east) -- (rew.west);
+
+      % States: braces below spanning from prompt start to current token
+      \draw[bracebelow, thick, blue!60] (t0.south west) ++(0,-0.1) -- ++(1.0,0)
+        node[midway, below=6pt, font=\scriptsize, text=blue!60] {$s_0$};
+      \draw[bracebelow, thick, blue!60] (t0.south west) ++(0,-0.55) -- ++(5.25,0)
+        node[midway, below=6pt, font=\scriptsize, text=blue!60] {$s_1$};
+      \draw[bracebelow, thick, blue!60] (t0.south west) ++(0,-1.0) -- ++(6.35,0)
+        node[midway, below=6pt, font=\scriptsize, text=blue!60] {$s_2$};
+
+      % Actions: braces above for each generated token
+      \draw[brace, thick, orange!70!black] (t4.north west) ++(0,0.1) -- ++(1.0,0)
+        node[midway, above=6pt, font=\scriptsize, text=orange!70!black] {$a_0$};
+      \draw[brace, thick, orange!70!black] (t5.north west) ++(0,0.1) -- ++(1.0,0)
+        node[midway, above=6pt, font=\scriptsize, text=orange!70!black] {$a_1$};
+      \draw[brace, thick, orange!70!black] (t6.north west) ++(0,0.1) -- ++(1.0,0)
+        node[midway, above=6pt, font=\scriptsize, text=orange!70!black] {$a_2$};
+      \draw[brace, thick, orange!70!black] (t7.north west) ++(0,0.1) -- ++(1.0,0)
+        node[midway, above=6pt, font=\scriptsize, text=orange!70!black] {$a_3$};
+
+      % Labels
+      \node[font=\scriptsize, text=blue!60] at (1.65, 1.0) {\textbf{prompt}};
+      \node[font=\scriptsize, text=orange!70!black] at (6.35, 1.0) {\textbf{response (generated)}};
+    \end{tikzpicture}
+  \end{center}
+
+  \vspace{0.3em}
+  \begin{description}
+    \item[Agent:] The LLM itself
+    \item[State $s_t$:] All tokens so far (prompt + response until now)
+    \item[Action $a_t$:] Next token to generate
+    \item[Policy:] $a_t \sim \pi_\theta(\cdot \mid s_t)$ --- softmax distribution over vocabulary
+    \item[Reward $r$:] Scalar signal after full response (verifier or preference model)
+  \end{description}
+\end{frame}
+
+
+\subsection{Reward Model}
+
+% -----------------------------------------------------------------------
+\begin{frame}{Reward for LLMs}
+  \begin{itemize}
+    \item Assigning exact reward to text is hard --- but \emphdef{comparing two responses} is often easy
+    \item Train reward model on pairs: given $(x, y_w)/(x, y_l)$, enforce $r(x, y_w) > r(x, y_l)$
+  \end{itemize}
+
+  \begin{tcolorbox}[colback=green!3, colframe=green!40!black, boxrule=0.5pt, arc=2pt, title={\small Bradley-Terry Model}, fonttitle=\bfseries]
+    Probability that $y_w$ is preferred over $y_l$:
+    \[
+      P(y_w \succ y_l) = \frac{\exp r(x, y_w)}{\exp r(x, y_w) + \exp r(x, y_l)} = \sigma\bigl(r(x, y_w) - r(x, y_l)\bigr)
+    \]
+
+    \vspace{-0.5em}
+    MLE on comparison data gives the \emphdef{reward loss}:
+    \[
+      \mathcal{L} = -\sum_{(y_w, y_l)} \log \sigma\bigl(r(x, y_w) - r(x, y_l)\bigr)
+    \]
+  \end{tcolorbox}
+
+  \vspace{0.2em}
+  \begin{itemize}[nosep]
+    \item $r(x, y_w) > r(x, y_l) \Rightarrow$ sigmoid $> 0.5 \Rightarrow$ loss is small
+    \item $r(x, y_w) < r(x, y_l) \Rightarrow$ sigmoid $< 0.5 \Rightarrow$ loss is large
+  \end{itemize}
+\end{frame}
+
+% -----------------------------------------------------------------------
+\begin{frame}{Reward Model for LLMs}
+  \begin{center}
+    \begin{tikzpicture}[
+      scale=0.75, every node/.style={scale=0.75},
+      tok/.style={rectangle, draw, rounded corners, fill=red!15, minimum width=0.9cm, minimum height=0.6cm, font=\scriptsize, align=center},
+      hs/.style={rectangle, draw, rounded corners, fill=red!10, minimum width=0.9cm, minimum height=0.6cm, font=\scriptsize, align=center},
+      transformer/.style={rectangle, draw, rounded corners, fill=purple!20, minimum height=1.5cm, align=center, font=\small},
+      linear/.style={rectangle, draw, rounded corners, fill=purple!40, minimum height=0.5cm, align=center, font=\scriptsize},
+      arr/.style={-{Stealth[length=4pt]}, thick},
+    ]
+      % Input tokens
+      \foreach \i/\w in {0/What, 1/is, 2/grav, 3/ity, 4/?, 5/It, 6/pulls, 7/things} {
+        \node[tok] (t\i) at (\i*1.15, 0) {\w};
+      }
+      \node[font=\scriptsize, text=gray, anchor=east] at (-0.8, 0) {Input tokens:};
+
+      % Transformer block
+      \node[transformer, minimum width=9.2cm] (trans) at (3.5*1.15, 1.8) {Transformer};
+
+      % Arrows from tokens to transformer
+      \foreach \i in {0,...,7} {
+        \draw[arr, gray!60] (t\i.north) -- (t\i.north |- trans.south);
+      }
+
+      % Hidden states
+      \foreach \i in {0,...,7} {
+        \node[hs] (h\i) at (\i*1.15, 3.3) {$h_{\i}$};
+      }
+      \node[font=\scriptsize, text=gray, anchor=east] at (-0.8, 3.3) {Hidden states:};
+
+      % Arrows from transformer to hidden states
+      \foreach \i in {0,...,7} {
+        \draw[arr, gray!60] (h\i.south |- trans.north) -- (h\i.south);
+      }
+
+      % Highlight last hidden state
+      \node[hs, fill=orange!30, thick] (hlast) at (7*1.15, 3.3) {$h_7$};
+
+      % Linear layer on last hidden state
+      \node[linear] (lin) at (7*1.15, 4.3) {Linear $(d \to 1)$};
+      \draw[arr] (hlast.north) -- (lin.south);
+
+      % Reward output
+      \node[font=\small\bfseries] (reward) at (7*1.15, 5.1) {Reward $r$};
+      \draw[arr] (lin.north) -- (reward.south);
+
+      % Annotation
+      \draw[dashed, orange, thick] (7*1.15 - 0.65, 2.95) rectangle (7*1.15 + 0.65, 5.4);
+      \node[font=\tiny, text=orange!70!black, anchor=west] at (7*1.15 + 0.8, 4.3) {last token only};
+    \end{tikzpicture}
+  \end{center}
+
+  \vspace{-0.3em}
+  \begin{itemize}[nosep]
+    \item Start from a pretrained LLM, replace the output head with a \emphdef{scalar linear layer}
+    \item Feed prompt $+$ response, take the \emphdef{last token's hidden state} $\to$ linear $\to$ reward $r \in \mathbb{R}$
+    \item Train on human comparison data using the Bradley-Terry loss
+  \end{itemize}
+\end{frame}
+
+\subsection{Policy Gradient}
+
+% -----------------------------------------------------------------------
+\begin{frame}{Loss on Trajectories}
+  \textbf{Notation:}
+  \begin{itemize}[nosep]
+    \item Trajectory $\tau = (s_0, a_0, r_0, \ldots, s_T, a_T, r_T)$, \quad return $R(\tau) = \sum_{t=0}^{T} \gamma^t r_t$
+    \item $\pi_\theta(a_t \mid s_t)$: policy --- the LLM with parameters $\theta$, outputs next-token distribution
+    \item $\rho_0(s_0)$: distribution over initial states (e.g.\ prompt distribution)
+    \item $P(s_{t+1} \mid s_t, a_t)$: environment transition --- deterministic for LLMs (append token)
+  \end{itemize}
+
+  \vspace{0.3em}
+  \textbf{Goal:} Find parameters $\theta$ that maximize the expected return:
+  \[
+    \theta^* = \argmax_\theta J(\theta), \qquad J(\theta) = \E_{\tau \sim \pi_\theta}[R(\tau)] = \int P(\tau \mid \theta) \, R(\tau) \, d\tau
+  \]
+  $J(\theta)$: expected return over all trajectories sampled from the current policy $\pi_\theta$.
+
+  \vspace{0.3em}
+  \textbf{Probability of trajectory:}
+  \[
+    P(\tau \mid \theta) = \rho_0(s_0) \prod_{t=0}^{T-1} P(s_{t+1} \mid s_t, a_t) \, \pi_\theta(a_t \mid s_t)
+  \]
+\end{frame}
+
+% -----------------------------------------------------------------------
+\begin{frame}{Policy Gradient Optimization}
+  Parametrize $\pi_\theta$ via weights of LLM. Update: $\theta_{t+1} \leftarrow \theta_t + \alpha \nabla_\theta J(\theta)\big|_{\theta_k}$
+
+  \vspace{0.3em}
+  \textbf{Why is optimizing $J(\theta)$ hard?}
+  \begin{itemize}
+    \item \textbf{Integral over trajectories:} $J(\theta) = \int P(\tau \mid \theta) R(\tau)\, d\tau$ --- cannot enumerate, must \emphdef{sample}
+    \item \textbf{Non-differentiable environment:} $P(s_{t+1} \mid s_t, a_t)$ and $R(\tau)$ are black boxes --- cannot backpropagate through them
+    \item \textbf{Non-stationarity:} Data distribution $P(\tau \mid \theta)$ \emphdef{depends on the policy} being optimized --- changes with every update, old samples become stale
+    \item \textbf{High variance:} Small policy changes can lead to very different trajectories $\Rightarrow$ gradient estimates are noisy
+    \item \textbf{Temporal correlation:} Tokens within a trajectory are highly correlated --- violates i.i.d.\ assumptions of standard SGD
+    \item \textbf{Sparse reward:} Often only a single reward at the end of a full sequence --- credit assignment across hundreds of tokens
+  \end{itemize}
+
+  \vspace{0.3em}
+  $\Rightarrow$ Need specialized techniques: policy gradient theorem, variance reduction, importance sampling.
+\end{frame}
+
+% -----------------------------------------------------------------------
+\begin{frame}{Policy Gradient Theorem: Derivation}
+  \begin{align*}
+    \nabla_\theta J(\theta) &= \nabla_\theta \E_{\tau \sim \pi_\theta}[R(\tau)] \\
+    &= \nabla_\theta \int P(\tau \mid \theta) \, R(\tau) \, d\tau && \text{expand expectation} \\
+    &= \int \nabla_\theta P(\tau \mid \theta) \, R(\tau) \, d\tau && \text{gradient under integral} \\
+    &= \int P(\tau \mid \theta) \, \nabla_\theta \log P(\tau \mid \theta) \, R(\tau) \, d\tau && \text{log-derivative trick} \\
+    &= \E_{\tau \sim \pi_\theta}\!\left[\nabla_\theta \log P(\tau \mid \theta) \, R(\tau)\right] && \text{back to expectation}
+  \end{align*}
+
+  \textbf{Log-derivative trick:} $\nabla_\theta P(\tau \mid \theta) = P(\tau \mid \theta) \, \nabla_\theta \log P(\tau \mid \theta)$
+
+  \vspace{0.3em}
+  Key insight: We no longer need to differentiate through the environment --- only through $\log P(\tau \mid \theta)$.
+\end{frame}
+
+% -----------------------------------------------------------------------
+\begin{frame}{Policy Gradient Theorem: Final Form}
+  Expanding $\log P(\tau \mid \theta) = \log \rho_0(s_0) + \sum_{t} \log P(s_{t+1} \mid s_t, a_t) + \sum_{t} \log \pi_\theta(a_t \mid s_t)$
+
+  \vspace{0.3em}
+  Only $\log \pi_\theta$ depends on $\theta$, so environment terms vanish under $\nabla_\theta$:
+
+  \[
+    \boxed{\nabla_\theta J(\theta) = \E_{\tau \sim \pi_\theta}\!\left[\sum_{t=0}^{T} \nabla_\theta \log \pi_\theta(a_t \mid s_t) \, R(\tau)\right]}
+  \]
+
+  \begin{itemize}
+    \item $\nabla_\theta \log \pi_\theta(a_t \mid s_t)$: gradient of log-probability of action taken --- computable via backprop through the LLM
+    \item $R(\tau)$: return of the trajectory --- scalar, no gradient needed
+    \item Approximate expectation by \emphdef{sampling trajectories}: $\nabla_\theta J(\theta) \approx \frac{1}{|D|} \sum_{\tau \in D} \sum_{t=0}^{T} \nabla_\theta \log \pi_\theta(a_t \mid s_t) \, R(\tau)$
+  \end{itemize}
+\end{frame}
+
+% -----------------------------------------------------------------------
+\begin{frame}{Policy Gradient Intuition}
+  \begin{center}
+    \includegraphics[width=0.85\textwidth]{images/rl_meme.png}
+  \end{center}
+\end{frame}
+
+% -----------------------------------------------------------------------
+\begin{frame}{REINFORCE Algorithm}
+  \begin{algorithm}[H]
+  \small
+  \caption{REINFORCE}
+  \KwInput{Policy network $\pi_\theta$, reward model $R$, learning rate $\alpha$, prompt dataset $\mathcal{P}$}
+  Initialize policy parameters $\theta$\;
+  \For{$k = 0$ \KwTo $K-1$}{
+    \textbf{Sample trajectories:} For each prompt $x \in \mathcal{P}$, generate response $y \sim \pi_\theta(\cdot \mid x)$\;
+    \textbf{Compute rewards:} $R(\tau_i)$ for each trajectory $\tau_i$ using reward model\;
+    \textbf{Estimate policy gradient:}\;
+    \Indp
+      $\hat{g} = \frac{1}{|D|} \sum_{\tau \in D} \sum_{t=0}^{T} \nabla_\theta \log \pi_\theta(a_t \mid s_t) \, R(\tau)$\;
+    \Indm
+    \textbf{Update:} $\theta \leftarrow \theta + \alpha \, \hat{g}$\;
+  }
+  \end{algorithm}
+
+  \vspace{0.3em}
+  \begin{description}[nosep]
+    \item[Trajectories:] Generate text with LLM. Prompts are questions/user requests.
+    \item[Rewards:] Given by trained reward model (or verifier).
+  \end{description}
+\end{frame}
+
+
+\subsection{Reducing Variance}
+
+% -----------------------------------------------------------------------
+\begin{frame}{Why REINFORCE Has High Variance}
+  \begin{columns}
+    \begin{column}{0.45\textwidth}
+      \begin{center}
+        \gridworld{0.52}
+      \end{center}
+    \end{column}
+    \begin{column}{0.53\textwidth}
+      \textbf{$\tau_1$} (green): 12 steps to goal, $R = 88$
+      \begin{itemize}[nosep]
+        \item REINFORCE: all 12 actions get gradient $\times\, 88$
+        \item But step 1 ($\downarrow$) was trivial, step 7 ($\rightarrow$ turning toward goal) was the key decision
+      \end{itemize}
+
+      \vspace{0.3em}
+      \textbf{$\tau_2$} (red): 6 steps into trap, $R = -10$
+      \begin{itemize}[nosep]
+        \item All 6 actions get gradient $\times\, (-10)$
+        \item Only the last step ($\downarrow$ into trap) was bad
+      \end{itemize}
+
+      \vspace{0.3em}
+      \textbf{Problem:}
+      \begin{itemize}[nosep]
+        \item Same start, two rollouts $\Rightarrow$ gradients differ by factor $\approx -9\times$
+        \item Good/bad actions credited equally
+        \item Gradient estimate is \emphdef{unbiased but very noisy}
+      \end{itemize}
+    \end{column}
+  \end{columns}
+\end{frame}
+
+% -----------------------------------------------------------------------
+\begin{frame}{REINFORCE Gradient: Reducing Variance}
+  \vspace{0.3em}
+  \textbf{Fix 1 --- Reward-to-go:} Only credit future rewards, not past ones:
+  \[
+    \nabla_\theta J(\theta) = \frac{1}{|D|} \sum_{\tau \in D} \sum_{t=1}^{T} \nabla_\theta \log \pi_\theta(a_t \mid s_t) \underbrace{\left(\sum_{t'=t}^{T} r(s_{t'}, a_{t'})\right)}_{\text{reward-to-go}}
+  \]
+  \textbf{Why valid?} Past rewards $r_{t'}$ for $t' < t$ are independent of $a_t$:
+  \[
+    \E_{a_t}\!\left[\nabla_\theta \log \pi_\theta(a_t \mid s_t) \, r_{t'}\right]
+    = r_{t'} \underbrace{\sum_{a_t} \nabla_\theta \pi_\theta(a_t \mid s_t)}_{= \nabla_\theta 1 = 0} = 0 \quad \text{for } t' < t
+  \]
+  Past terms vanish in expectation $\Rightarrow$ removing them preserves unbiasedness but reduces variance.
+
+\end{frame}
+
+% -----------------------------------------------------------------------
+\begin{frame}{Reducing Variance: Baseline}
+  \textbf{Fix 2 --- Baseline:} Subtract a state-dependent baseline $b(s_t)$:
+  \[
+    \nabla_\theta J(\theta) = \frac{1}{|D|} \sum_{\tau \in D} \sum_{t=1}^{T} \nabla_\theta \log \pi_\theta(a_t \mid s_t) \left(\sum_{t'=t}^{T} r(s_{t'}, a_{t'}) - b(s_t)\right)
+  \]
+
+  \textbf{Why valid?} $b(s_t)$ does not depend on $a_t$, so its contribution vanishes:
+  \begin{align*}
+    \E_{a_t \sim \pi_\theta}\!\left[\nabla_\theta \log \pi_\theta(a_t \mid s_t) \, b(s_t)\right]
+    &= b(s_t) \sum_{a_t} \pi_\theta(a_t \mid s_t) \, \frac{\nabla_\theta \pi_\theta(a_t \mid s_t)}{\pi_\theta(a_t \mid s_t)} \\
+    &= b(s_t) \sum_{a_t} \nabla_\theta \pi_\theta(a_t \mid s_t)
+    = b(s_t) \, \nabla_\theta \underbrace{\sum_{a_t} \pi_\theta(a_t \mid s_t)}_{= 1} = 0
+  \end{align*}
+
+  $\Rightarrow$ Any $b(s_t)$ independent of actions preserves unbiasedness but \emphdef{reduces variance} by centering the reward around a reference value.
+\end{frame}
+
+% -----------------------------------------------------------------------
+\begin{frame}{$V(s)$ Baseline Estimator}
+  \begin{center}
+    \begin{tikzpicture}[
+      scale=0.75, every node/.style={scale=0.75},
+      tok/.style={rectangle, draw, rounded corners, fill=red!15, minimum width=0.9cm, minimum height=0.6cm, font=\scriptsize, align=center},
+      hs/.style={rectangle, draw, rounded corners, fill=red!10, minimum width=0.9cm, minimum height=0.6cm, font=\scriptsize, align=center},
+      transformer/.style={rectangle, draw, rounded corners, fill=purple!20, minimum height=1.5cm, align=center, font=\small},
+      linear/.style={rectangle, draw, rounded corners, minimum height=0.5cm, align=center, font=\scriptsize},
+      arr/.style={-{Stealth[length=4pt]}, thick},
+    ]
+      % Input tokens (8 tokens, same as reward slide)
+      \foreach \i/\w in {0/What, 1/is, 2/grav, 3/ity, 4/?, 5/It, 6/pulls, 7/things} {
+        \node[tok] (t\i) at (\i*1.15, 0) {\w};
+      }
+      \node[font=\scriptsize, text=gray, anchor=east] at (-0.8, 0) {State $s_t$:};
+
+      % Shared transformer
+      \node[transformer, minimum width=9.2cm] (trans) at (3.5*1.15, 1.8) {Transformer};
+
+      % Arrows up
+      \foreach \i in {0,...,7} {
+        \draw[arr, gray!60] (t\i.north) -- (t\i.north |- trans.south);
+      }
+
+      % Hidden states
+      \foreach \i in {0,...,7} {
+        \node[hs] (h\i) at (\i*1.15, 3.3) {$h_{\i}$};
+      }
+      \foreach \i in {0,...,7} {
+        \draw[arr, gray!60] (h\i.south |- trans.north) -- (h\i.south);
+      }
+
+      % Value head node on every token
+      \foreach \i in {0,...,7} {
+        \node[hs, fill=green!20] (v\i) at (\i*1.15, 4.3) {$V(s_{\i})$};
+        \draw[arr, green!40!black] (h\i.north) -- (v\i.south);
+      }
+
+      % Annotation on last node
+      \node[hs, fill=green!30, thick] (vlast) at (7*1.15, 4.3) {$V(s_7)$};
+      \node[font=\tiny, text=green!50!black, anchor=west, align=left] at (7*1.15 + 0.7, 4.3) {linear layer\\(shared weights)};
+    \end{tikzpicture}
+  \end{center}
+
+  \vspace{-0.3em}
+  \begin{itemize}[nosep]
+    \item \emphdef{Value function} $V(s) = \E_{\tau : s_0 = s}[R(\tau)]$: expected return from state $s$
+    \item Linear layer on each token's hidden state. Trained via regression: $\min_\phi (V_\phi(s_t) - R(\tau))^2$
+    \item Backbone can be \emphdef{shared} with policy or \emphdef{separate}:
+      \begin{itemize}[nosep]
+        \item Shared: cheaper, but value gradients may interfere with policy representations
+        \item Separate: used by InstructGPT/PPO --- doubles memory, but cleaner optimization
+      \end{itemize}
+  \end{itemize}
+\end{frame}
+
+% -----------------------------------------------------------------------
+\begin{frame}{$A(s_t, a_t)$ Advantage Function}
+  \[
+    A(s, a) = \E_{\tau : s_0=s, a_0=a}[R(\tau)] - V(s)
+  \]
+
+  \textbf{Interpretation:}
+  \begin{itemize}
+    \item How much better is it to take action $a$ in state $s$ over the average action of policy $\pi$
+    \item When used in policy gradient: Increase/decrease logits of actions with positive/negative advantage
+  \end{itemize}
+
+  \vspace{0.5em}
+  \textbf{Recursively rewriting Advantage Function:}
+  \begin{align*}
+    A(s_t, a_t) &= \E[r(s_t, a_t) + \gamma V(s_{t+1})] - V(s_t) \\
+    A(s_t, a_t) &= \E[r_t + \gamma r_{t+1} + \gamma^2 V(s_{t+2})] - V(s_t) \\
+                &\;\vdots
+  \end{align*}
+
+  \textbf{Generalized Advantage Estimation (GAE):}
+  Temporal difference (TD) residual:
+  \[
+    \delta_t = r_t + \gamma V(s_{t+1}) - V(s_t)
+  \]
+  GAE advantage estimate (hyperparameter $\lambda \in [0,1]$):
+  \[
+    \hat{A}_t = \sum_{l=0}^{T-t} (\gamma \lambda)^l \, \delta_{t+l}
+  \]
+  \begin{itemize}[nosep]
+    \item $\lambda = 0$: $\hat{A}_t = \delta_t$ (one-step TD, low variance, high bias)
+    \item $\lambda = 1$: $\hat{A}_t = R_t - V(s_t)$ (Monte Carlo, high variance, no bias)
+  \end{itemize}
+\end{frame}
+
+% -----------------------------------------------------------------------
+\begin{frame}{Advantage Function: Policy Gradient Update}
+  Policy Gradient Update with Advantage Function:
+  \[
+    \nabla_\theta J(\theta) \approx \frac{1}{|D|} \sum_{\tau \in D} \sum_{t=0}^{T} \nabla_\theta \log \pi_\theta(a_t \mid s_t) \, \hat{A}(s_t, a_t)
+  \]
+
+  \begin{center}
+    \begin{tikzpicture}[
+      scale=0.8, every node/.style={scale=0.8},
+      tok/.style={rectangle, draw, minimum width=1cm, minimum height=0.6cm, font=\scriptsize, align=center},
+      arr/.style={-{Stealth[length=4pt]}, thick},
+    ]
+      % Tokens at bottom
+      \foreach \i/\w in {0/The, 1/answer, 2/is, 3/clearly, 4/5} {
+        \node[tok, fill=gray!10] (t\i) at (\i*1.6, -1.8) {\w};
+      }
+
+      % Zero line
+      \draw[gray, thin] (-0.8, 0) -- (7.2, 0);
+      \node[font=\scriptsize, text=gray, anchor=east] at (-0.9, 0) {$0$};
+
+      % Advantages (bars from zero line)
+      \fill[green!30] (0*1.6-0.35, 0) rectangle (0*1.6+0.35, 0.25);
+      \node[font=\tiny] at (0*1.6, 0.45) {$0.1$};
+      \fill[green!40] (1*1.6-0.35, 0) rectangle (1*1.6+0.35, 0.75);
+      \node[font=\tiny] at (1*1.6, 0.95) {$0.3$};
+      \fill[green!20] (2*1.6-0.35, 0) rectangle (2*1.6+0.35, 0.13);
+      \node[font=\tiny] at (2*1.6, 0.35) {$0.05$};
+      \fill[red!40] (3*1.6-0.35, 0) rectangle (3*1.6+0.35, -1.0);
+      \node[font=\tiny] at (3*1.6, -1.2) {$-0.6$};
+      \fill[green!60] (4*1.6-0.35, 0) rectangle (4*1.6+0.35, 2.0);
+      \node[font=\tiny] at (4*1.6, 2.2) {$0.8$};
+
+      % Arrows from tokens to bars
+      \foreach \i in {0,...,4} {
+        \draw[gray!40, thin] (\i*1.6, -1.5) -- (\i*1.6, -1.05);
+      }
+
+      % Labels
+      \node[font=\scriptsize, text=gray, anchor=east] at (-0.9, -1.8) {tokens};
+      \node[font=\scriptsize, text=gray, anchor=east] at (-0.9, 1.0) {$\hat{A}_t$};
+
+      % Annotations
+      \node[font=\tiny, text=green!50!black, align=center] at (4*1.6+1.8, 1.5) {key answer token\\$\Rightarrow$ increase logit};
+      \draw[arr, green!50!black, thin] (4*1.6+1.0, 1.5) -- (4*1.6+0.45, 1.5);
+
+      \node[font=\tiny, text=red!60, align=center] at (3*1.6+1.8, -0.7) {filler word\\$\Rightarrow$ decrease logit};
+      \draw[arr, red!60, thin] (3*1.6+1.0, -0.7) -- (3*1.6+0.45, -0.7);
+    \end{tikzpicture}
+  \end{center}
+
+  \begin{itemize}[nosep]
+    \item \textbf{Positive advantage}: action was better than average $\Rightarrow$ increase its logit
+    \item \textbf{Negative advantage}: action was worse than average $\Rightarrow$ decrease its logit
+  \end{itemize}
+\end{frame}
+
+\subsection{Off-Policy Learning and PPO}
+
+% -----------------------------------------------------------------------
+\begin{frame}{(Off-Policy) Sampling Trajectories}
+  We need to sample trajectories $\tau$ to estimate $\nabla_\theta J(\theta)$ and make a gradient step.
+
+  \begin{description}
+    \item[On-Policy:] Sample from current policy $\pi_\theta$ before every update.
+      \begin{itemize}
+        \item Inefficient: trajectories discarded after each gradient step.
+      \end{itemize}
+    \item[Off-Policy:] Reuse trajectories from an older policy $\pi_{\theta_\text{old}}$ via \emphdef{Importance Sampling}.
+  \end{description}
+
+  \vspace{0.3em}
+  \textbf{Importance Sampling --- Derivation:}
+  \[
+    \E_{x \sim p}[f(x)] = \int p(x) f(x)\, dx = \int q(x) \frac{p(x)}{q(x)} f(x)\, dx = \E_{x \sim q}\!\left[\frac{p(x)}{q(x)} f(x)\right]
+  \]
+
+  \textbf{Applied to RL:}
+  \begin{itemize}[nosep]
+    \item $x = (s_t, a_t)$: state-action pairs from a trajectory
+    \item $p = \pi_\theta$: current policy (what we want to optimize)
+    \item $q = \pi_{\theta_\text{old}}$: old policy (what we actually sampled trajectories from)
+    \item $f$: the quantity we want to estimate, e.g.\ $\nabla_\theta \log \pi_\theta(a_t \mid s_t) \, \hat{A}_t$
+    \item Ratio $\frac{p}{q} = \frac{\pi_\theta(a_t \mid s_t)}{\pi_{\theta_\text{old}}(a_t \mid s_t)}$: corrects for the mismatch between old and current policy
+  \end{itemize}
+
+  \vspace{0.3em}
+  \textbf{Why higher variance?}
+  \begin{itemize}[nosep]
+    \item If $\pi_\theta$ assigns high probability where $\pi_{\theta_\text{old}}$ assigns low $\Rightarrow$ ratio explodes
+    \item A few samples with extreme ratios dominate the estimate $\Rightarrow$ noisy gradients
+    \item The more $\pi_\theta$ diverges from $\pi_{\theta_\text{old}}$, the worse it gets
+  \end{itemize}
+\end{frame}
+
+% -----------------------------------------------------------------------
+\begin{frame}{Off-Policy Learning}
+  \begin{center}
+    \begin{tikzpicture}[
+      scale=0.7, every node/.style={scale=0.7},
+      box/.style={rectangle, draw, rounded corners, fill=blue!10, minimum width=2.8cm, minimum height=0.9cm, align=center, font=\small},
+      arr/.style={-{Stealth[length=4pt]}, thick},
+    ]
+      % Outer flow (vertical)
+      \node[box] (sample) at (5, 0) {Sample Trajectories\\with $\pi_{\theta_\text{old}}$};
+      \node[box] (reward) at (5, -1.6) {Calculate Rewards \&\\Advantages};
+
+      % Inner K-loop (horizontal row)
+      \node[box] (batch)  at (1.5, -3.6) {Take mini-batch};
+      \node[box] (grad)   at (5.5, -3.6) {Gradient Ascent\\(off-policy)};
+      \node[box] (update) at (9.5, -3.6) {Update Policy\\$\theta \leftarrow \theta + \alpha \hat{g}$};
+
+      % Outer bottom
+      \node[box] (set) at (5, -6) {Set $\pi_{\theta_\text{old}} \leftarrow \pi_\theta$};
+
+      % Outer flow arrows
+      \draw[arr] (sample) -- (reward);
+      \draw[arr] (reward.south) -- ++(0, -0.4) -| (batch.north);
+      \draw[arr] (batch) -- (grad);
+      \draw[arr] (grad) -- (update);
+      \draw[arr] (update.east) -- ++(0.8, 0) |- (set.east);
+      \draw[arr] (set.west) -- ++(-4.5, 0) |- (sample.west);
+
+      % K-loop back arrow (below the three nodes)
+      \draw[arr] (update.south) -- ++(0, -0.5) -| (batch.south);
+
+      % K-times dashed box
+      \draw[red!60, thick, rounded corners, dashed] (-0.3, -2.7) rectangle (11.2, -4.9);
+      \node[font=\scriptsize\bfseries, text=red!60, anchor=north] at (5.5, -5.0) {Repeat $K$ times (reuse same trajectories)};
+    \end{tikzpicture}
+  \end{center}
+
+  \begin{itemize}[nosep]
+    \item Sample trajectories once with $\pi_{\theta_\text{old}}$, store them
+    \item Perform $K$ gradient updates reusing the same trajectories (with importance sampling correction)
+    \item Then set $\pi_{\theta_\text{old}} \leftarrow \pi_\theta$ and resample
+  \end{itemize}
+\end{frame}
+
+% -----------------------------------------------------------------------
+\begin{frame}{PPO Clipping Loss: Illustration}
+  \vspace{-0.3em}
+  \[
+    L^\text{CLIP} = \min\!\big(r_t\, A_t,\; \text{clip}(r_t,\, 1{-}\epsilon,\, 1{+}\epsilon)\, A_t\big), \qquad r_t = \frac{\pi_\theta(a_t \mid s_t)}{\pi_{\theta_\text{old}}(a_t \mid s_t)}
+  \]
+  \vspace{-0.5em}
+  \begin{columns}[T]
+    \begin{column}{0.48\textwidth}
+      \centering
+      \textbf{$A_t > 0$} {\small(good action)}\\[0.3em]
+      \begin{tikzpicture}[x=1.8cm, y=1.3cm]
+        % Axes
+        \draw[-{Stealth[length=3pt]}, thin] (-0.1, 0) -- (1.95, 0)
+          node[right, font=\tiny] {$r_t$};
+        \draw[-{Stealth[length=3pt]}, thin] (0, -0.1) -- (0, 1.6)
+          node[above, font=\tiny] {$L^\text{CLIP}$};
+        % Clipped region shading
+        \fill[red!10] (1.2, 0) rectangle (1.9, 1.2);
+        % Unclipped continuation (dashed)
+        \draw[gray, dashed] (1.2, 1.2) -- (1.6, 1.6);
+        % Clipped objective (solid)
+        \draw[blue!70!black, very thick] (0, 0) -- (1.2, 1.2) -- (1.9, 1.2);
+        % Tick marks
+        \draw (0.8, 0.05) -- (0.8, -0.05)
+          node[below, font=\tiny] {$1{-}\epsilon$};
+        \draw (1.0, 0.05) -- (1.0, -0.05)
+          node[below, font=\tiny] {$1$};
+        \draw (1.2, 0.05) -- (1.2, -0.05)
+          node[below, font=\tiny] {$1{+}\epsilon$};
+        % Annotation
+        \node[font=\tiny, text=red!60!black] at (1.55, 0.6) {$\nabla = 0$};
+      \end{tikzpicture}
+    \end{column}
+    \begin{column}{0.48\textwidth}
+      \centering
+      \textbf{$A_t < 0$} {\small(bad action)}\\[0.3em]
+      \begin{tikzpicture}[x=1.8cm, y=1.3cm]
+        % Axes
+        \draw[-{Stealth[length=3pt]}, thin] (-0.1, 0) -- (1.95, 0)
+          node[right, font=\tiny] {$r_t$};
+        \draw[-{Stealth[length=3pt]}, thin] (0, 0.1) -- (0, -1.6)
+          node[below, font=\tiny] {$L^\text{CLIP}$};
+        % Clipped region shading
+        \fill[red!10] (0, 0) rectangle (0.8, -0.8);
+        % Unclipped continuation (dashed)
+        \draw[gray, dashed] (0.05, -0.05) -- (0.8, -0.8);
+        % Clipped objective (solid)
+        \draw[blue!70!black, very thick] (0.02, -0.8) -- (0.8, -0.8) -- (1.65, -1.65);
+        % Tick marks
+        \draw (0.8, 0.05) -- (0.8, -0.05)
+          node[above, font=\tiny] {$1{-}\epsilon$};
+        \draw (1.0, 0.05) -- (1.0, -0.05)
+          node[above, font=\tiny] {$1$};
+        \draw (1.2, 0.05) -- (1.2, -0.05)
+          node[above, font=\tiny] {$1{+}\epsilon$};
+        % Annotation
+        \node[font=\tiny, text=red!60!black] at (0.4, -0.4) {$\nabla = 0$};
+      \end{tikzpicture}
+    \end{column}
+  \end{columns}
+
+  \vspace{0.3em}
+  \begin{itemize}[nosep]
+    \item $A_t > 0$: no incentive to increase $r_t$ beyond $1{+}\epsilon$ --- prevents making good actions \emph{too much} more likely
+    \item $A_t < 0$: no incentive to decrease $r_t$ below $1{-}\epsilon$ --- prevents making bad actions \emph{too much} less likely
+    \item Gradient is zero in shaded region $\Rightarrow$ policy stays close to $\pi_{\theta_\text{old}}$
+  \end{itemize}
+\end{frame}
+
+% -----------------------------------------------------------------------
+\begin{frame}{Proximal Policy Optimization (PPO) Loss}
+  PPO \cite{schulman2017ppo} = REINFORCE + Offline Sampling + Clipped Policy Loss + Regularization
+
+  \vspace{0.3em}
+  $\mathcal{B}$: mini-batch of $(s_t, a_t)$ pairs sampled from trajectories collected with $\pi_\text{offline}$
+
+  \vspace{0.3em}
+  \textbf{Clipped Loss:}
+  \[
+    L^\text{policy} = \frac{1}{|\mathcal{B}|} \sum_{(s_t, a_t) \in \mathcal{B}} \min\!\left(\frac{\pi_\theta(a_t \mid s_t)}{\pi_\text{offline}(a_t \mid s_t)} A_t, \; \text{clip}\!\left(\frac{\pi_\theta(a_t \mid s_t)}{\pi_\text{offline}(a_t \mid s_t)}, 1{-}\epsilon, 1{+}\epsilon\right) A_t\right)
+  \]
+
+  \textbf{Value Function Loss:}
+  \[
+    L^\text{VF} = \frac{1}{|\mathcal{B}|} \sum_{(s_t, a_t) \in \mathcal{B}} \tfrac{1}{2} \left\| V_\phi(s_t) - \left. \sum_{t'=t}^{T} \gamma^{t'-t} r_{t'} \right|_{s_t} \right\|_2^2
+  \]
+
+  \textbf{Entropy Loss:} $L^\text{entropy} = \frac{1}{|\mathcal{B}|} \sum_{(s_t, a_t) \in \mathcal{B}} \left( -\sum_a \pi_\theta(a \mid s_t) \log \pi_\theta(a \mid s_t) \right)$
+
+  \vspace{0.3em}
+  \textbf{Overall:}
+  \[
+    \boxed{L^\text{PPO} = -L^\text{policy} + c_1 L^\text{VF} - c_2 L^\text{entropy}}
+  \]
+\end{frame}
+
+% -----------------------------------------------------------------------
+\begin{frame}{Regularization via KL Divergence}
+  \begin{itemize}[nosep]
+    \item Without regularization, PPO makes the LLM \emphdef{degrade}: collapses to outputs the reward model likes
+    \item Add penalty for deviating from frozen pretrained model $\pi_\text{ref}$:
+  \end{itemize}
+  \[
+    L^\text{KL} = \beta \cdot \text{KL}[\pi_\theta \| \pi_\text{ref}], \qquad
+    \text{KL}[q \| p] = \E_{x \sim q}\!\left[\log \frac{q(x)}{p(x)}\right] \geq 0
+  \]
+  \vspace{-0.3em}
+  \begin{center}
+    \begin{tikzpicture}[x=1cm, y=2.2cm]
+      % Axes
+      \draw[-{Stealth[length=3pt]}, thin] (0, 0) -- (9.2, 0)
+        node[right, font=\scriptsize] {output token};
+      \draw[-{Stealth[length=3pt]}, thin] (0, 0) -- (0, 1.15)
+        node[above, font=\scriptsize] {$p(\cdot \mid s)$};
+      % π_ref: wide distribution (pretrained)
+      \fill[blue!10] plot[smooth, domain=0.5:8.5, samples=60]
+        (\x, {0.8*exp(-((\x-4)^2)/3)}) -- (8.5, 0) -- (0.5, 0) -- cycle;
+      \draw[blue!70!black, thick] plot[smooth, domain=0.5:8.5, samples=60]
+        (\x, {0.8*exp(-((\x-4)^2)/3)});
+      % π_θ: narrow, shifted distribution (reward hacking)
+      \fill[red!10] plot[smooth, domain=0.5:8.5, samples=60]
+        (\x, {1.0*exp(-((\x-5.8)^2)/0.5)}) -- (8.5, 0) -- (0.5, 0) -- cycle;
+      \draw[red!70!black, thick] plot[smooth, domain=0.5:8.5, samples=60]
+        (\x, {1.0*exp(-((\x-5.8)^2)/0.5)});
+      % Labels
+      \node[font=\small, blue!70!black] at (2.2, 0.72) {$\pi_\text{ref}$ (pretrained)};
+      \node[font=\small, red!70!black] at (7.5, 0.72) {$\pi_\theta$ (RL)};
+      % KL annotation
+      \draw[{Stealth[length=3pt]}-{Stealth[length=3pt]}, thick, orange!70!black]
+        (4, -0.1) -- (5.8, -0.1);
+      \node[font=\scriptsize, orange!70!black, anchor=north] at (4.9, -0.12)
+        {minimize $\text{KL}[\pi_\theta \| \pi_\text{ref}]$};
+    \end{tikzpicture}
+  \end{center}
+  \vspace{-0.3em}
+  $\Rightarrow$ Keeps $\pi_\theta$ close to $\pi_\text{ref}$: retains language capabilities while optimizing reward.
+\end{frame}
+
+% -----------------------------------------------------------------------
+\begin{frame}{KL Divergence Estimators}
+  \begin{description}[leftmargin=1.8cm, labelwidth=1.6cm, nosep]
+    \item[Goal] Estimate $\text{KL}[\pi_\theta \| \pi_\text{ref}]$ during training
+    \item[Problem] Exact computation requires summing over full vocabulary at every token --- intractable
+    \item[Solution] Use \textbf{single-sample estimators} with $r = \frac{\pi_\text{ref}(x)}{\pi_\theta(x)}$
+  \end{description}
+
+  \vspace{0.2em}
+  \begin{columns}[T]
+    \begin{column}{0.55\textwidth}
+      \begin{itemize}[nosep]
+        \item $k_1 = -\log r$
+          \begin{itemize}[nosep]
+            \item Unbiased: $\E_q[k_1] = \text{KL}$
+            \item Can be \textbf{negative}, high variance
+          \end{itemize}
+
+        \item $k_2 = \tfrac{1}{2}(\log r)^2$
+          \begin{itemize}[nosep]
+            \item $\E_q[k_2] = \tfrac{1}{2}\bigl(\text{Var}_q[\log r] + \text{KL}^2\bigr)$
+            \item Biased (second-order), vanishes as $q \to p$
+            \item Always $\geq 0$
+          \end{itemize}
+
+        \item $k_3 = -\log r + (r - 1)$ \;\; (preferred)
+          \begin{itemize}[nosep]
+            \item Unbiased:
+              \vspace{-0.5em}
+              \[
+                \E_q[k_3] = \E_q[-\log r] + \underbrace{\E_q[r - 1]}_{= \sum_x p(x) - 1 = 0} = \text{KL}
+              \]
+              \vspace{-1.2em}
+            \item Non-negative: $\log x \leq x - 1$ (concavity)
+              \vspace{-0.5em}
+              \[
+                k_3 = \underbrace{-\log r}_{\geq\, 1 - r} + (r - 1) \geq 0
+              \]
+              \vspace{-1em}
+          \end{itemize}
+      \end{itemize}
+      \sourceref{\url{http://joschu.net/blog/kl-approx.html}}
+    \end{column}
+    \begin{column}{0.42\textwidth}
+      \centering
+      \begin{tikzpicture}[x=1.7cm, y=0.9cm]
+        % Negative region shading
+        \fill[red!6] (0.3, -1.15) rectangle (2.55, 0);
+        \node[font=\tiny, text=red!40!black] at (2.0, -0.95) {$k_1 < 0$};
+        % Axes
+        \draw[-{Stealth[length=3pt]}, thin] (0.2, 0) -- (2.7, 0)
+          node[right, font=\tiny] {$r = p/q$};
+        \draw[-{Stealth[length=3pt]}, thin] (0.3, -1.2) -- (0.3, 2.0)
+          node[above, font=\tiny] {estimator value};
+        % r=1 dashed line
+        \draw[gray!40, thin, dashed] (1, -1.15) -- (1, 1.8);
+        % k1: -ln(r) — can go negative
+        \draw[blue!70!black, thick, domain=0.32:2.5, samples=50, smooth]
+          plot (\x, {-ln(\x)});
+        % k2: 0.5*(ln(r))^2
+        \draw[red!70!black, thick, domain=0.32:2.5, samples=50, smooth]
+          plot (\x, {0.5*ln(\x)*ln(\x)});
+        % k3: -ln(r) + (r-1)
+        \draw[green!50!black, thick, domain=0.32:2.5, samples=50, smooth]
+          plot (\x, {-ln(\x) + \x - 1});
+        % Tick marks
+        \draw (1, 0.06) -- (1, -0.06)
+          node[above right, font=\tiny, inner sep=1pt] {$1$};
+        \draw (2, 0.06) -- (2, -0.06)
+          node[above, font=\tiny, inner sep=1pt] {$2$};
+        % Legend
+        \node[font=\tiny, text=blue!70!black, anchor=west] at (1.55, 1.8)
+          {$k_1 = -\log r$};
+        \node[font=\tiny, text=red!70!black, anchor=west] at (1.55, 1.45)
+          {$k_2 = \tfrac{1}{2}(\log r)^2$};
+        \node[font=\tiny, text=green!50!black, anchor=west] at (1.55, 1.1)
+          {$k_3 = -\log r + (r{-}1)$};
+      \end{tikzpicture}
+    \end{column}
+  \end{columns}
+\end{frame}
+
+% -----------------------------------------------------------------------
+\begin{frame}{PPO Overall Algorithm}
+  \begin{algorithm}[H]
+  \small
+  \caption{Proximal Policy Optimization (PPO)}
+  \For{$k = 0$ \KwTo $K-1$}{
+    \textbf{Collect Trajectories:} Run $\pi_{\theta_k}$ to collect trajectories $\mathcal{D}_k = \{\tau_i\}$\;
+    \textbf{Compute Returns and Advantages:}\;
+    \Indp
+      Compute rewards-to-go $\hat{R}_t$\;
+      Compute advantage estimates $\hat{A}_t$ using current value function $V_{\phi_k}$\;
+    \Indm
+    \textbf{Optimize Policy:} \For{$e = 1$ \KwTo $E$}{
+      Shuffle and partition $\mathcal{D}_k$ into minibatches\;
+      Compute ratio: $r_t(\theta) = \frac{\pi_\theta(a_t \mid s_t)}{\pi_{\theta_k}(a_t \mid s_t)}$\;
+      Compute surrogate loss: $L^\text{CLIP}(\theta) = \E_t[\min(r_t(\theta)\hat{A}_t, \text{clip}(r_t(\theta), 1{-}\epsilon, 1{+}\epsilon)\hat{A}_t)]$\;
+      Compute KL penalty: $L^\text{KL}(\theta) = \widehat{\text{KL}}[\pi_\theta \| \pi_\text{ref}]$\;
+      Update $\theta$ via gradient ascent on $L^\text{CLIP} - \beta\, L^\text{KL}$\;
+    }
+    \textbf{Optimize Value Function:} $L^\text{VF}(\phi) = \E_t[(V_\phi(s_t) - \hat{R}_t)^2]$\;
+  }
+  \end{algorithm}
+\end{frame}
+
+\subsection{GRPO}
+
+% -----------------------------------------------------------------------
+\begin{frame}{GRPO: Group Relative Policy Optimization}
+  \begin{center}
+    \begin{tikzpicture}[
+      scale=0.62, every node/.style={scale=0.62},
+      pbox/.style={rectangle, draw=gray!60, rounded corners=3pt, fill=yellow!20,
+        minimum width=2.2cm, minimum height=0.9cm, align=center, font=\small},
+      fbox/.style={rectangle, draw=gray!60, rounded corners=3pt, fill=cyan!15,
+        minimum width=2.2cm, minimum height=0.9cm, align=center, font=\small},
+      sbox/.style={rectangle, draw=gray!40, rounded corners=2pt, fill=gray!8,
+        minimum width=0.9cm, minimum height=0.55cm, align=center, font=\small},
+      arr/.style={-{Stealth[length=3pt]}, semithick},
+    ]
+      % ================================================================
+      %  PPO (top row)
+      % ================================================================
+      \node[font=\Large\bfseries] at (-1.8, 1) {PPO};
+
+      % q -> Policy Model -> o
+      \node[sbox] (pq) at (0.8, 1) {$q$};
+      \node[pbox] (ppol) at (3, 1) {Policy\\Model};
+      \draw[arr] (pq) -- (ppol);
+      \node[font=\small] (po) at (5, 1) {$o$};
+      \draw[arr] (ppol) -- (po);
+
+      % Three model boxes
+      \node[fbox] (pref) at (7.5, 2.5) {Reference\\Model};
+      \node[pbox] (prew) at (7.5, 1) {Reward\\Model};
+      \node[pbox] (pval) at (7.5, -0.5) {Value\\Model};
+
+      % Fan-out arrows from o
+      \draw[arr] (po) -- (pref.west);
+      \draw[arr] (po) -- (prew.west);
+      \draw[arr] (po) -- (pval.west);
+
+      % Circled plus combining Reference and Reward
+      \node[circle, draw=gray!60, inner sep=0.5pt, fill=white, font=\tiny,
+        minimum size=7pt] (oplus) at (9.8, 1.8) {$+$};
+      \draw[arr] (pref.east) -| (oplus);
+      \draw[arr] (prew.east) -| (oplus);
+
+      % KL: smooth curved arrow from Reference Model back to Policy Model
+      \draw[arr, gray!50] (pref.north) to[out=120, in=60]
+        node[pos=0.4, above, font=\small\itshape, text=black] {$KL$} (ppol.north);
+
+      % r box (combined reward)
+      \node[sbox] (pr) at (11.2, 1.8) {$r$};
+      \draw[arr] (oplus) -- (pr);
+
+      % v box from Value Model
+      \node[sbox] (pv) at (11.2, -0.5) {$v$};
+      \draw[arr] (pval.east) -- (pv);
+
+      % GAE -> A
+      \node[font=\small] (gae) at (12.8, 1) {GAE};
+      \draw[arr] (pr) |- (gae);
+      \draw[arr] (pv) |- (gae);
+
+      \node[sbox] (pA) at (14.2, 1) {$A$};
+      \draw[arr] (gae) -- (pA);
+
+      % ================================================================
+      %  Divider
+      % ================================================================
+      \draw[gray!40, dashed, thick] (-2.5, -1.7) -- (15.5, -1.7);
+
+      % ================================================================
+      %  GRPO (bottom row)
+      % ================================================================
+      \node[font=\Large\bfseries] at (-1.8, -4) {GRPO};
+
+      % q -> Policy Model
+      \node[sbox] (gq) at (0.8, -4) {$q$};
+      \node[pbox] (gpol) at (3, -4) {Policy\\Model};
+      \draw[arr] (gq) -- (gpol);
+
+      % Multiple output boxes
+      \node[sbox] (go1) at (5, -3) {$o_1$};
+      \node[sbox] (go2) at (5, -3.7) {$o_2$};
+      \node[font=\small] at (5, -4.35) {$\cdots$};
+      \node[sbox] (goG) at (5, -5) {$o_G$};
+      \draw[arr] (gpol.east) -- (go1.west);
+      \draw[arr] (gpol.east) -- (go2.west);
+      \draw[arr] (gpol.east) -- (goG.west);
+
+      % Two model boxes
+      \node[fbox] (gref) at (7.5, -3.3) {Reference\\Model};
+      \node[pbox] (grew) at (7.5, -4.7) {Reward\\Model};
+
+      % Arrows from outputs to models
+      \draw[arr] (go1.east) -- (gref.west);
+      \draw[arr] (go2.east) -- (gref.west);
+      \draw[arr] (go2.east) -- (grew.west);
+      \draw[arr] (goG.east) -- (grew.west);
+
+      % KL: smooth curved arrow back to Policy Model
+      \draw[arr, gray!50] (gref.north) to[out=110, in=50]
+        node[pos=0.35, above, font=\small\itshape, text=black] {$KL$} (gpol.north);
+
+      % Multiple reward boxes
+      \node[sbox] (gr1) at (10, -3.3) {$r_1$};
+      \node[sbox] (gr2) at (10, -4) {$r_2$};
+      \node[font=\small] at (10, -4.6) {$\cdots$};
+      \node[sbox] (grG) at (10, -5.2) {$r_G$};
+      \draw[arr] (grew.east) -- (gr1.west);
+      \draw[arr] (grew.east) -- (gr2.west);
+      \draw[arr] (grew.east) -- (grG.west);
+
+      % Group Computation
+      \node[sbox, minimum width=1.8cm, minimum height=0.9cm, fill=gray!12]
+        (grp) at (12, -4) {Group\\Computation};
+      \draw[arr] (gr1.east) -- (grp.north west);
+      \draw[arr] (gr2.east) -- (grp.west);
+      \draw[arr] (grG.east) -- (grp.south west);
+
+      % Multiple advantage boxes
+      \node[sbox] (gA1) at (14.2, -3.3) {$A_1$};
+      \node[sbox] (gA2) at (14.2, -4) {$A_2$};
+      \node[font=\small] at (14.2, -4.6) {$\cdots$};
+      \node[sbox] (gAG) at (14.2, -5.2) {$A_G$};
+      \draw[arr] (grp.east |- gA1) -- (gA1.west);
+      \draw[arr] (grp.east) -- (gA2.west);
+      \draw[arr] (grp.east |- gAG) -- (gAG.west);
+
+      % ================================================================
+      %  Legend (right side)
+      % ================================================================
+      \node[pbox, minimum width=1.6cm, font=\scriptsize] at (17, 0.3) {Trained\\Models};
+      \node[fbox, minimum width=1.6cm, font=\scriptsize] at (17, -0.9) {Frozen\\Models};
+    \end{tikzpicture}
+  \end{center}
+  \vspace{-0.5em}
+  \begin{itemize}[nosep]
+    \item GRPO \cite{shao2024grpo} drops the \emphdef{value model}: estimates advantages from group reward statistics
+    \item Saves ${\approx}\tfrac{1}{3}$ of GPU memory (no critic to store or train)
+  \end{itemize}
+\end{frame}
+
+% -----------------------------------------------------------------------
+\begin{frame}{GRPO: Advantage Function}
+  For a given prompt $q$, sample $G$ responses: $o_1, \ldots, o_G \sim \pi_\theta(\cdot \mid q)$.
+
+  \vspace{0.3em}
+  Compute \textbf{return} for each response: $R_i = \sum_{t'=t}^{T} r_{i,t'}$ \quad (reward-to-go for trajectory $i$)
+
+  \vspace{0.3em}
+  \textbf{Group statistics} across the $G$ responses:
+  \[
+    \mu = \frac{1}{G} \sum_{j=1}^{G} R_j, \qquad
+    \sigma = \sqrt{\frac{1}{G} \sum_{j=1}^{G} (R_j - \mu)^2}
+  \]
+
+  \textbf{GRPO Advantage} for response $i$ at token $t$:
+  \[
+    \boxed{A_{i,t} = \frac{R_i - \mu}{\sigma}}
+  \]
+
+  \vspace{0.3em}
+  \begin{itemize}[nosep]
+    \item Replaces GAE: no value model needed, only \emphdef{relative ranking} within the group
+    \item $A_{i,t} > 0$ if response $i$ is better than group average, $< 0$ if worse
+  \end{itemize}
+\end{frame}
+
+% -----------------------------------------------------------------------
+\begin{frame}{GRPO Algorithm}
+  \begin{algorithm}[H]
+  \small
+  \caption{Group Relative Policy Optimization (GRPO)}
+  \For{$k = 0$ \KwTo $K-1$}{
+    \textbf{Data Collection:} Sample prompts $\{s_j\}_{j=1}^{M}$. For each $s_j$, generate $K_j$ responses using $\pi_{\theta_k}$\;
+    \textbf{Reward Evaluation:} For each response $a_{jk}$, compute $R_{jk} = R(s_j, a_{jk})$\;
+    \textbf{Advantage Computation:}\;
+    \Indp
+      Mean reward: $\bar{R}_j = \frac{1}{K_j}\sum_{k=1}^{K_j} R_{jk}$\;
+      Advantage: $A_{jk} = \frac{R_{jk} - \bar{R}_j}{\text{std}(R_{jk})_{k=1,\ldots,K_j}}$\;
+    \Indm
+    \textbf{Policy Update:}\;
+    \Indp
+      Ratio: $r_{jk} = \frac{\pi_\theta(a_{jk} \mid s_j)}{\pi_{\theta_k}(a_{jk} \mid s_j)}$\;
+      $L = -\sum_{j,k} \min(r_{jk} A_{jk}, \text{clip}(r_{jk}, 1{-}\epsilon, 1{+}\epsilon)A_{jk}) + \beta \sum_j \text{KL}[\pi_\theta(\cdot \mid s_j) \| \pi_{\theta_k}(\cdot \mid s_j)]$\;
+    \Indm
+  }
+  \end{algorithm}
+
+  \vspace{0.5em}
+  \begin{itemize}
+    \item GRPO is specific to RL with LLMs (not general RL)
+    \item Saves typically somewhat less than half the RAM compared to PPO
+  \end{itemize}
+\end{frame}
+
+% -----------------------------------------------------------------------
+\begin{frame}{GRPO vs.\ PPO: Key Differences}
+  \begin{description}\largesep
+    \item[No Value Model] GRPO replaces the learned critic $V_\phi(s)$ with group statistics.
+      Saves ${\approx}30$--$50\%$ GPU memory (no extra LLM-sized model).
+
+    \item[Per-Sequence Reward] Standard GRPO assigns a \emphdef{single reward per sequence} (e.g.\ from a reward model or verifier).
+      All tokens in a response share the same advantage $\hat{A}_i$.
+      PPO with GAE can assign per-token advantages via temporal difference.
+
+    \item[Multiple Samples Required] GRPO needs $G \geq 2$ responses per prompt (typically $G = 4$--$16$) to compute group statistics.
+      PPO can work with a single response per prompt.
+
+    \item[Simpler Hyperparameters] GRPO removes GAE parameters ($\lambda$, value loss coefficient $c_1$).
+      Key hyperparameters: group size $G$, clipping $\epsilon = 0.2$, KL coefficient $\beta$.
+
+    \item[Trade-off] GRPO needs $G$ forward passes per prompt for generation (more than PPO's single sample), but saves forward/backward passes of the value model. Net effect: typically faster.
+
+    \item[Empirically] GRPO matches or exceeds PPO on math/code reasoning tasks.
+      Works especially well when reward is \emphdef{binary} (correct/incorrect) or \emphdef{sparse} (one score per response).
+  \end{description}
+\end{frame}
+
+% -----------------------------------------------------------------------
+\begin{frame}{Dr.\ GRPO: GRPO Done Right}
+  Standard GRPO has two subtle biases \cite{liu2025drgrpo}:
+  \begin{description}[nosep]
+    \item[Length Bias:] Normalizes by sequence length $\Rightarrow$ penalizes longer correct responses more, incentivizes verbose wrong answers.
+  \end{description}
+  \vspace{-0.2em}
+  \begin{center}
+    \begin{tikzpicture}[
+      scale=0.7, every node/.style={scale=0.7},
+      box/.style={rectangle, draw=gray!60, rounded corners=3pt, minimum height=0.7cm, align=center, font=\small},
+    ]
+      % Header
+      \node[font=\small\bfseries] at (0, 2.8) {Response};
+      \node[font=\small\bfseries] at (5, 2.8) {Tokens};
+      \node[font=\small\bfseries] at (7.5, 2.8) {Per-token loss};
+      \node[font=\small\bfseries] at (10.5, 2.8) {Effect};
+
+      % Row 1: Short correct
+      \node[box, fill=green!15, minimum width=3.5cm] at (0, 2) {``42'' (correct)};
+      \node[font=\small] at (5, 2) {1};
+      \node[font=\small] at (7.5, 2) {$R / 1 = R$};
+      \node[font=\small, text=green!50!black] at (10.5, 2) {strong $\uparrow$};
+
+      % Row 2: Long correct
+      \node[box, fill=green!15, minimum width=3.5cm] at (0, 1.1) {``The answer is 42'' (correct)};
+      \node[font=\small] at (5, 1.1) {5};
+      \node[font=\small] at (7.5, 1.1) {$R / 5 = 0.2R$};
+      \node[font=\small, text=red!60!black] at (10.5, 1.1) {diluted $\uparrow$};
+
+      % Row 3: Short wrong
+      \node[box, fill=red!12, minimum width=3.5cm] at (0, 0.2) {``7'' (wrong)};
+      \node[font=\small] at (5, 0.2) {1};
+      \node[font=\small] at (7.5, 0.2) {$|R_\text{bad}| / 1$};
+      \node[font=\small, text=green!50!black] at (10.5, 0.2) {strong $\downarrow$};
+
+      % Row 4: Long wrong
+      \node[box, fill=red!12, minimum width=3.5cm] at (0, -0.7) {``Well, I think it's 7'' (wrong)};
+      \node[font=\small] at (5, -0.7) {6};
+      \node[font=\small] at (7.5, -0.7) {$|R_\text{bad}| / 6$};
+      \node[font=\small, text=red!60!black] at (10.5, -0.7) {weak $\downarrow$};
+
+      % Divider lines
+      \draw[gray!30] (-2.2, 2.5) -- (12, 2.5);
+      \draw[gray!30] (-2.2, 1.55) -- (12, 1.55);
+      \draw[gray!30] (-2.2, 0.65) -- (12, 0.65);
+      \draw[gray!30] (-2.2, -0.25) -- (12, -0.25);
+    \end{tikzpicture}
+  \end{center}
+  \vspace{-0.3em}
+  \begin{description}[nosep]
+    \item[Std.\ Normalization Bias:] Dividing by $\sigma_G$ overweights nearly-solved problems (low variance).
+  \end{description}
+\end{frame}
+
+% -----------------------------------------------------------------------
+\begin{frame}{Dr.\ GRPO: Algorithm}
+  \begin{algorithm}[H]
+  \small
+  \caption{Dr.\ GRPO (modifications in {\color{red!70!black} red})}
+  \For{$k = 0$ \KwTo $K-1$}{
+    \textbf{Data Collection:} Sample prompts $\{s_j\}_{j=1}^{M}$. For each $s_j$, generate $K_j$ responses using $\pi_{\theta_k}$\;
+    \textbf{Reward Evaluation:} For each response $a_{jk}$, compute $R_{jk} = R(s_j, a_{jk})$\;
+    \textbf{Advantage Computation:}\;
+    \Indp
+      Mean reward: $\bar{R}_j = \frac{1}{K_j}\sum_{k=1}^{K_j} R_{jk}$\;
+      Advantage: $A_{jk} = {\color{red!70!black} R_{jk} - \bar{R}_j}$ \quad {\color{red!70!black}\scriptsize (no $\sigma$ division)}\;
+    \Indm
+    \textbf{Policy Update:}\;
+    \Indp
+      Ratio: $r_{jk,t} = \frac{\pi_\theta(a_{jk,t} \mid s_j, a_{jk,<t})}{\pi_{\theta_k}(a_{jk,t} \mid s_j, a_{jk,<t})}$\;
+      $L = -{\color{red!70!black}\frac{1}{T_{\max}}} \sum_{j,k} \sum_t \min(r_{jk,t}\, A_{jk},\; \text{clip}(r_{jk,t}, 1{-}\epsilon, 1{+}\epsilon)\, A_{jk})$ \quad {\color{red!70!black}\scriptsize (fixed normalization)}\;
+    \Indm
+  }
+  \end{algorithm}
+  \vspace{0.3em}
+  \begin{itemize}[nosep]
+    \item {\color{red!70!black} No $\sigma_G$ division}: removes disproportionate updates on nearly-solved problems
+    \item {\color{red!70!black} $T_{\max}$ normalization}: divides by max token count, not actual length $\Rightarrow$ no length bias
+  \end{itemize}
+\end{frame}
+
+% -----------------------------------------------------------------------
+\begin{frame}{DAPO: Decoupled Alignment Policy Optimization}
+  DAPO \cite{yu2025dapo} addresses four issues in GRPO:
+
+  \begin{description}[nosep]
+    \item[Decoupled Clipping:] Symmetric clip $[1{-}\epsilon, 1{+}\epsilon]$ prevents exploration.
+      DAPO uses \emphdef{asymmetric} bounds:
+      \[
+        \text{clip}(r_t,\; 1 - \epsilon_\text{low},\; 1 + \epsilon_\text{high}), \quad \epsilon_\text{low} = 0.2,\; \epsilon_\text{high} = 0.28
+      \]
+      Higher upper bound $\Rightarrow$ low-probability tokens can increase more freely.
+    \item[Dynamic Sampling:] Skip prompts where all $G$ responses are all-correct or all-wrong (advantage $= 0$, wasted compute). Resample until batch has non-trivial signal.
+    \item[Token-Level Averaging:] GRPO averages per-sequence ($\frac{1}{|o_i|}$), then across sequences ($\frac{1}{G}$).
+      A 1-token wrong answer gets the \emphdef{same weight} as a 100-token reasoning chain.
+      DAPO weights every token equally: $\frac{1}{\sum_{i=1}^G |o_i|} \sum_{i} \sum_{t} (\cdots)$.
+      Longer sequences contribute proportionally more gradient.
+      (Compare Dr.\ GRPO's $T_\text{max}$ fix --- different approach to the same length bias.)
+    \item[No KL Penalty:] For long chain-of-thought reasoning, KL to $\pi_\text{ref}$ is counterproductive. DAPO drops it entirely.
+  \end{description}
+\end{frame}
+
+% -----------------------------------------------------------------------
+\begin{frame}{DAPO: Overlong Reward Shaping}
+  Hard truncation at $L_\text{max}$ tokens corrupts the reward signal (correct but long $\Rightarrow$ truncated $\Rightarrow$ wrong reward).
+
+  \vspace{0.3em}
+  \textbf{Soft overlong punishment:}
+  \[
+    R_\text{length}(y) = \begin{cases}
+      0, & |y| \leq L_\text{max} - L_\text{cache} \\[0.3em]
+      \dfrac{(L_\text{max} - L_\text{cache}) - |y|}{L_\text{cache}}, & L_\text{max} - L_\text{cache} < |y| \leq L_\text{max} \\[0.3em]
+      -1, & |y| > L_\text{max}
+    \end{cases}
+  \]
+
+  \begin{center}
+    \begin{tikzpicture}[x=0.5cm, y=1.8cm]
+      % Axes
+      \draw[-{Stealth[length=3pt]}, thin] (0, -1.2) -- (0, 0.3)
+        node[above, font=\scriptsize] {$R_\text{length}$};
+      \draw[-{Stealth[length=3pt]}, thin] (-0.5, 0) -- (14, 0)
+        node[right, font=\scriptsize] {$|y|$};
+      % Zero region
+      \draw[blue!70!black, very thick] (0, 0) -- (8, 0);
+      % Linear penalty region
+      \draw[red!70!black, very thick] (8, 0) -- (12, -1);
+      % Full penalty
+      \draw[red!70!black, very thick] (12, -1) -- (13.5, -1);
+      % Tick marks
+      \draw (8, 0.06) -- (8, -0.06)
+        node[above, font=\tiny] {$L_\text{max} - L_\text{cache}$};
+      \draw (12, 0.06) -- (12, -0.06)
+        node[above, font=\tiny] {$L_\text{max}$};
+      % y-axis labels
+      \node[font=\tiny, anchor=east] at (-0.2, 0) {$0$};
+      \node[font=\tiny, anchor=east] at (-0.2, -1) {$-1$};
+      \draw[thin, gray!40] (-0.15, -1) -- (0.15, -1);
+      % Annotations
+      \node[font=\tiny, text=blue!60!black] at (4, 0.2) {no penalty};
+      \node[font=\tiny, text=red!60!black, rotate=-27] at (10, -0.3) {soft penalty};
+    \end{tikzpicture}
+  \end{center}
+  Typical values: $L_\text{max} = 20{,}480$, $L_\text{cache} = 4{,}096$ tokens.
+\end{frame}
+
+% -----------------------------------------------------------------------
+\begin{frame}{DAPO: Algorithm}
+  \begin{algorithm}[H]
+  \small
+  \caption{DAPO (modifications vs.\ GRPO in {\color{red!70!black} red})}
+  \For{$k = 0$ \KwTo $K-1$}{
+    \textbf{Data Collection:} Sample prompts $\{s_j\}$. For each $s_j$, generate $G$ responses using $\pi_{\theta_k}$\;
+    {\color{red!70!black}\textbf{Dynamic Sampling:} Discard prompts where all responses are all-correct or all-wrong. Resample to fill batch.}\;
+    \textbf{Reward:} $R_{jk} = R(s_j, a_{jk})$ {\color{red!70!black}$+ R_\text{length}(a_{jk})$}\;
+    \textbf{Advantage:} $A_{jk} = \frac{R_{jk} - \bar{R}_j}{\text{std}(\{R_{jk}\}_k)}$\;
+    \textbf{Policy Update:}\;
+    \Indp
+      $r_{jk,t} = \frac{\pi_\theta(a_{jk,t} \mid s_j, a_{jk,<t})}{\pi_{\theta_k}(a_{jk,t} \mid s_j, a_{jk,<t})}$\;
+      $L = - {\color{red!70!black}\frac{1}{\sum_{j,k} |a_{jk}|}} \sum_{j,k} \sum_t \min\!\bigl(r_{jk,t}\, A_{jk},\; \text{clip}(r_{jk,t},\, {\color{red!70!black}1{-}\epsilon_\text{low}},\, {\color{red!70!black}1{+}\epsilon_\text{high}})\, A_{jk}\bigr)$\;
+      {\color{red!70!black} (No KL penalty)}\;
+    \Indm
+  }
+  \end{algorithm}
+\end{frame}
+
+\subsection{DPO}
+
+% -----------------------------------------------------------------------
+\begin{frame}{DPO: Direct Preference Optimization}
+  Recall the \emphdef{Bradley-Terry model} \cite{rafailov2024dpo}:
+  \[
+    P(y_w \succ y_l) = \frac{\exp r(x, y_w)}{\exp r(x, y_w) + \exp r(x, y_l)}
+  \]
+
+  The RLHF overall objective:
+  \[
+    \max_{\pi_\theta} \E_{x \sim D, y \sim \pi_\theta(\cdot|x)}[r(x, y)] - \beta\,\text{KL}[\pi_\theta(x, y) \| \pi_\text{ref}(y \mid x)]
+  \]
+
+  \begin{itemize}
+    \item Difficult: Non-differentiable, many moving parts, RL setting
+    \item \emphdef{DPO Idea:} Put away with reward model and RL-loop, directly optimize a preference based loss formulated as maximum likelihood
+  \end{itemize}
+\end{frame}
+
+% -----------------------------------------------------------------------
+\begin{frame}{The Optimal Policy}
+  \textbf{RLHF objective:}
+  \[
+    \max_{\pi} \E_{x, y \sim \pi(\cdot|x)}[r(x, y)] - \beta\,\text{KL}[\pi(y \mid x) \| \pi_\text{ref}(y \mid x)]
+  \]
+
+  \textbf{Optimal policy:}
+  \[
+    \pi^*(y \mid x) = \frac{1}{Z(x)} \pi_\text{ref}(y \mid x) \exp\!\left(\tfrac{1}{\beta}\,r(x, y)\right)
+  \]
+  where $Z(x) = \sum_y \pi_\text{ref}(y \mid x) \exp\!\left(\frac{1}{\beta}\,r(x, y)\right)$ is the partition function.
+
+  \vspace{0.5em}
+  Since KL is nonnegative and achieves its unique minimum when both distributions are equal, the optimal policy $\pi^*$ uniquely minimizes the objective.
+\end{frame}
+
+% -----------------------------------------------------------------------
+\begin{frame}{The Optimal Policy: Reward in Terms of Policy}
+  Rearrange to express the reward:
+  \[
+    r(x, y) = \beta \log \frac{\pi^*(y \mid x)}{\pi_\text{ref}(y \mid x)} + \beta \log Z(x)
+  \]
+
+  Plug into the Bradley-Terry model:
+  \[
+    P(y_w \succ y_l) = \sigma\!\left(\beta \log \frac{\pi^*(y_w \mid x)}{\pi_\text{ref}(y_w \mid x)} - \beta \log \frac{\pi^*(y_l \mid x)}{\pi_\text{ref}(y_l \mid x)}\right)
+  \]
+  Note: the partition functions $Z(x)$ cancel out!
+
+  \vspace{0.5em}
+  \textbf{DPO Loss:}
+  \[
+    \boxed{\mathcal{L}_\text{DPO}(\theta; \pi_\text{ref}) = -\E_{(x,y_w,y_l) \sim D}\!\left[\log \sigma\!\left(\beta \log \frac{\pi_\theta(y_w \mid x)}{\pi_\text{ref}(y_w \mid x)} - \beta \log \frac{\pi_\theta(y_l \mid x)}{\pi_\text{ref}(y_l \mid x)}\right)\right]}
+  \]
+  Optimizing $\mathcal{L}_\text{DPO}$ w.r.t.\ $\theta$ $\Rightarrow$ obtaining optimal policy $\pi^*$.
+\end{frame}
+
+\subsection{Summary and Open Problems}
+
+% -----------------------------------------------------------------------
+\begin{frame}{State of RL for Reasoning LLMs: Summary}
+  Major patterns across recent methods:
+
+  \begin{description}
+    \item[Critic Elimination:] Every post-PPO method found that simpler baselines match or exceed learned value functions while saving ${\sim}50\%$ memory.
+      \begin{itemize}
+        \item LLM fine-tuning from strong pretrained checkpoints makes PPO's variance reduction largely unnecessary.
+      \end{itemize}
+    \item[Std.\ Normalization Harmful:] Dr.\ GRPO, DAPO and others show that dividing advantages by $\sigma$ adds too much weight on nearly-solved problems.
+    \item[Loss Aggregation Criticality:] Sequence-level rewards combined with sample averaging introduce subtle token-level biases --- fundamentally affects per-token learning signals.
+    \item[Trust Region Refinement:] PPO's $\epsilon = 0.2$ works well, yet recent methods explore asymmetric clipping (DAPO), weight-based approaches (CISPO), or divergence-based constraints (DPPO).
+  \end{description}
+\end{frame}
+
+% -----------------------------------------------------------------------
+\begin{frame}{Open Research Challenges}
+  \begin{description}\largesep
+    \item[Credit Assignment:] Current outcome-based methods assign essentially the same reward to all tokens --- works but is inefficient. Process reward models and step-level verifiers remain unsolved.
+    \item[Sample Efficiency:] Methods require 8--64 rollouts per prompt despite information being just a single bit (correct/incorrect).
+    \item[Very Hard Problems:] No gradient signal when models never produce correct rollouts. Curriculum learning provides only workarounds.
+    \item[Domain Generalization:] Progress concentrates in domains with cheap and unambiguous verification (math and code). Extending to noisy or subjective evaluation remains difficult.
+    \item[Empirical Reliability:] Evidence remains relatively narrow and expensive to reproduce.
+    \item[New Capabilities vs.\ Distribution Narrowing:] Does RL teach fundamentally new skills, or does it merely \emphdef{sharpen the output distribution} toward abilities already latent from pretraining? Evidence suggests RL primarily surfaces and focuses existing capabilities rather than creating novel ones --- the ceiling may be set by pre- and mid-training.
+  \end{description}
+\end{frame}

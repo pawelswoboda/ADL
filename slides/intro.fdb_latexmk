@@ -1,0 +1,15 @@
+# Fdb version 4
+["pdflatex"] 1774626304.51873 "/Users/pswoboda/repo/ADL/slides/intro.tex" "intro.pdf" "intro" 1774626304.76914 2
+  "/Users/pswoboda/repo/ADL/slides/intro.tex" 1774626304.42129 7182 a6355aab20e4018ea69f41bd486a4f8b ""
+  "/usr/local/texlive/2024basic/texmf-dist/fonts/tfm/public/cm/cmbx10.tfm" 1136768653 1328 c834bbb027764024c09d3d2bf908b5f0 ""
+  "/usr/local/texlive/2024basic/texmf-dist/tex/latex/base/omscmr.fd" 1738182759 2469 c75f72b1dc17277decdd842fa4a321a8 ""
+  "/usr/local/texlive/2024basic/texmf-dist/web2c/texmf.cnf" 1739380943 42148 61becc7c670cd061bb319c643c27fdd4 ""
+  "/usr/local/texlive/2024basic/texmf-var/web2c/pdftex/pdflatex.fmt" 1773842147 2896523 c490fef3640f6b612de8979c8f50c338 ""
+  "/usr/local/texlive/2024basic/texmf.cnf" 1710011638 628 8b896f7d9d41b43f4346b9091e52171f ""
+  "intro.aux" 1774626209.07011 32 3985256e7290058c681f74d7a3565a19 "pdflatex"
+  "intro.tex" 1774626304.42129 7182 a6355aab20e4018ea69f41bd486a4f8b ""
+  (generated)
+  "intro.aux"
+  "intro.log"
+  "intro.pdf"
+  (rewritten before read)

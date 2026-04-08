@@ -1,0 +1,60 @@
+% Shared gridworld illustration
+% Usage: \gridworld{scale}
+% Draws the 7x7 gridworld with agent, obstacles, traps, goal, and two trajectories
+
+\newcommand{\gridworld}[1]{%
+  \begin{tikzpicture}[
+    scale=#1, every node/.style={scale=#1},
+  ]
+    % Fill all cells white
+    \foreach \x in {0,...,6} {
+      \foreach \y in {0,...,6} {
+        \fill[white] (\x, \y) rectangle ++(1,1);
+      }
+    }
+    % Obstacle cells (black)
+    \foreach \wx/\wy in {2/4, 2/3, 2/2, 4/6, 4/5, 4/4, 5/2, 5/1, 6/4} {
+      \fill[black!80] (\wx,\wy) rectangle ++(1,1);
+    }
+    % Trap cells (red)
+    \foreach \wx/\wy in {1/1, 3/3, 5/5} {
+      \fill[red!20] (\wx,\wy) rectangle ++(1,1);
+      \node[font=\scriptsize, text=red!70!black] at (\wx+0.5, \wy+0.5) {$-5$};
+    }
+    % Goal cell (cyan)
+    \fill[cyan!30] (6,0) rectangle ++(1,1);
+    \node[font=\scriptsize\bfseries, text=cyan!50!black] at (6.5, 0.5) {$+100$};
+    % Grid lines
+    \foreach \x in {0,...,6} {
+      \foreach \y in {0,...,6} {
+        \draw[thin, gray!60] (\x, \y) rectangle ++(1,1);
+      }
+    }
+    % Agent (red circle) at top-left
+    \fill[red!70!black] (0.5, 6.5) circle (0.28);
+    % Label: Agent
+    \draw[-{Stealth[length=3pt]}, thin] (-1.0, 7.3) -- (0.3, 6.7);
+    \node[font=\scriptsize, anchor=east] at (-1.0, 7.3) {Agent};
+    % Label: Goal
+    \draw[-{Stealth[length=3pt]}, thin] (7.8, -0.5) -- (6.7, 0.3);
+    \node[font=\scriptsize, anchor=west] at (7.8, -0.5) {Goal};
+    % Label: Obstacles
+    \node[font=\scriptsize, text=white, rotate=90] at (2.5, 3.5) {Obstacles};
+
+    % Good trajectory (green): down the left side, then right along bottom
+    \draw[-{Stealth[length=4pt]}, thick, green!50!black, line width=1.2pt]
+      (0.5, 6.5) -- (0.5, 5.5) -- (0.5, 4.5) -- (0.5, 3.5) --
+      (0.5, 2.5) -- (0.5, 1.5) -- (0.5, 0.5) --
+      (1.5, 0.5) -- (2.5, 0.5) -- (3.5, 0.5) --
+      (4.5, 0.5) -- (5.5, 0.5) -- (6.5, 0.5);
+
+    % Bad trajectory (red dashed, goes right then down into trap)
+    \draw[-{Stealth[length=4pt]}, thick, red!60, dashed, line width=1.2pt]
+      (0.5, 6.5) -- (1.5, 6.5) -- (2.5, 6.5) -- (3.5, 6.5) --
+      (3.5, 5.5) -- (3.5, 4.5) -- (3.5, 3.5);
+
+    % Trajectory labels
+    \node[font=\tiny, text=green!50!black, anchor=west] at (7.2, 0.5) {$\tau_1$: good};
+    \node[font=\tiny, text=red!60, anchor=west] at (3.7, 3.5) {$\tau_2$: trap!};
+  \end{tikzpicture}%
+}

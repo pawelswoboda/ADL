@@ -1,0 +1,37 @@
+\documentclass[8pt]{beamer}
+\def\notes{}
+\input{./includes.tex}
+\input{./presentation_style.tex}
+\input{./llm_training_stages.tex}
+\input{./gridworld.tex}
+
+\title{Advanced Deep Learning}
+\author{Paul Swoboda}
+\institute{HHU D\"usseldorf}
+\date{Summer Semester 2026}
+
+\begin{document}
+\frame{\titlepage}
+
+\input{intro}
+\input{language_generation}
+\input{sequence_models_overview}
+\input{rnn}
+\input{attention}
+\input{gpt2}
+\input{flash_attention}
+\input{moe}
+\input{vision_models}
+\input{multimodal}
+\input{hyperparameters}
+\input{mamba2}
+\input{rl}
+\input{memory_tricks}
+\input{parallelism}
+
+\section{References}
+\begin{frame}[allowframebreaks]{References}
+  \printbibliography[heading=none]
+\end{frame}
+
+\end{document}

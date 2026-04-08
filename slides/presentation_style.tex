@@ -1,0 +1,87 @@
+\usetheme{CambridgeUS}
+\setbeamertemplate{theorems}[numbered]
+\usecolortheme{beaver}
+\setbeamercovered{transparent}
+
+% number math environments
+\makeatletter
+    \@ifundefined{theorem}{%
+      \ifbeamer@countsect
+        \newtheorem{theorem}{\translate{Theorem}}[section]
+      \else
+        \newtheorem{theorem}{\translate{Theorem}}
+      \fi
+    }{}
+    \@ifundefined{corollary}{\newtheorem{corollary}{\translate{Corollary}}}{}
+    \@ifundefined{lemma}{\newtheorem{lemma}{\translate{Lemma}}}{}
+    \@ifundefined{proposition}{\newtheorem{proposition}{\translate{Proposition}}}{}
+
+    \theoremstyle{definition}
+    \@ifundefined{definition}{\newtheorem{definition}{\translate{Definition}}}{}
+
+    \theoremstyle{example}
+    \@ifundefined{example}{\newtheorem{example}{\translate{Example}}}{}
+    \@ifundefined{remark}{\newtheorem{remark}{\translate{Remark}}}{}
+\makeatother
+
+% make lists pretty
+\setitemize{label=\usebeamerfont*{itemize item}%
+\usebeamercolor[fg]{itemize item}
+\usebeamertemplate{itemize item}}
+
+% color settings:
+\definecolor{slide_beige}{RGB}{253,207,182}
+\definecolor{slide_blue}{RGB}{198,210,237}
+\definecolor{slide_violet}{RGB}{87,0,127}
+\definecolor{slide_green}{RGB}{200,217,217}
+
+\setbeamercolor{normal text}{fg=black,bg=white}
+\setbeamercolor{alerted text}{fg=red}
+\setbeamercolor{example text}{fg=black}
+
+\setbeamercolor{background canvas}{fg=slide_green, bg=white}
+\setbeamercolor{background}{fg=slide_green, bg=violet}
+
+\setbeamercolor{palette primary}{fg=black, bg=slide_green}
+\setbeamercolor{palette secondary}{fg=black, bg=slide_blue}
+\setbeamercolor{palette tertiary}{fg=black, bg=slide_beige}
+
+\setbeamercolor{frametitle}{fg=black}
+\setbeamercolor{title}{fg=black}
+
+\setbeamertemplate{headline}
+{
+  \leavevmode%
+  \hbox{%
+  \begin{beamercolorbox}[wd=.5\paperwidth,ht=2.65ex,dp=1.5ex,center]{section in head/foot}%
+    \usebeamerfont{section in head/foot}\insertsectionhead\hspace*{2ex}
+  \end{beamercolorbox}%
+  \begin{beamercolorbox}[wd=.5\paperwidth,ht=2.65ex,dp=1.5ex,center]{subsection in head/foot}%
+    \usebeamerfont{subsection in head/foot}\hspace*{2ex}\insertsubsectionhead
+  \end{beamercolorbox}}%
+  \vskip0pt%
+}
+
+% add section title slides
+\AtBeginSection[]
+{
+    \begin{frame}
+      \begin{multicols}{2}
+        \frametitle{Table of Contents}
+        \tableofcontents[currentsection]
+      \end{multicols}
+    \end{frame}
+}
+
+% add subsection title slides
+\AtBeginSubsection[]
+{
+    \begin{frame}
+      \begin{multicols}{2}
+        \frametitle{Table of Contents}
+        \tableofcontents[currentsubsection]
+      \end{multicols}
+    \end{frame}
+}
+
+\def\labelenumi{\theenumi} % for for enumerate with beamer

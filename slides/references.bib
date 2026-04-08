@@ -1,0 +1,939 @@
+% ============================================================
+% Transformers & Attention
+% ============================================================
+
+@inproceedings{vaswani2017attention,
+  title     = {Attention Is All You Need},
+  author    = {Vaswani, Ashish and Shazeer, Noam and Parmar, Niki and
+               Uszkoreit, Jakob and Jones, Llion and Gomez, Aidan N and
+               Kaiser, {\L}ukasz and Polosukhin, Illia},
+  booktitle = {Advances in Neural Information Processing Systems},
+  volume    = {30},
+  year      = {2017},
+  url       = {https://arxiv.org/abs/1706.03762},
+}
+
+@misc{alammar2018illustrated,
+  title  = {The Illustrated Transformer},
+  author = {Alammar, Jay},
+  year   = {2018},
+  url    = {https://jalammar.github.io/illustrated-transformer/},
+}
+
+% ============================================================
+% Language Generation & Tokenization
+% ============================================================
+
+@inproceedings{sennrich2016bpe,
+  title     = {Neural Machine Translation of Rare Words with Subword Units},
+  author    = {Sennrich, Rico and Haddow, Barry and Birch, Alexandra},
+  booktitle = {Proceedings of the 54th Annual Meeting of the
+               Association for Computational Linguistics (ACL)},
+  pages     = {1715--1725},
+  year      = {2016},
+  url       = {https://arxiv.org/abs/1508.07909},
+}
+
+@misc{radford2019gpt2,
+  title        = {Language Models are Unsupervised Multitask Learners},
+  author       = {Radford, Alec and Wu, Jeffrey and Child, Rewon and
+                  Luan, David and Amodei, Dario and Sutskever, Ilya},
+  howpublished = {OpenAI Blog},
+  year         = {2019},
+  url          = {https://openai.com/research/language-unsupervised},
+}
+
+@inproceedings{holtzman2020curious,
+  title     = {The Curious Case of Neural Text Degeneration},
+  author    = {Holtzman, Ari and Buys, Jan and Du, Li and
+               Forbes, Maxwell and Choi, Yejin},
+  booktitle = {International Conference on Learning Representations (ICLR)},
+  year      = {2020},
+  url       = {https://arxiv.org/abs/1904.09751},
+}
+
+@article{hoffmann2022chinchilla,
+  title   = {Training Compute-Optimal Large Language Models},
+  author  = {Hoffmann, Jordan and Borgeaud, Sebastian and Mensch, Arthur and
+             Sifre, Laurent and Caron, Tresha and de~Masson~d'Autume, Cyprien and
+             Lespiau, Jean-Baptiste and Weston, Jesse and Yuret, Deniz and
+             others},
+  journal = {arXiv preprint arXiv:2203.15556},
+  year    = {2022},
+  url     = {https://arxiv.org/abs/2203.15556},
+}
+
+@misc{karpathy2022nanogpt,
+  title  = {{nanoGPT}},
+  author = {Karpathy, Andrej},
+  year   = {2022},
+  url    = {https://github.com/karpathy/nanoGPT},
+}
+
+% ============================================================
+% RNN / LSTM / GRU
+% ============================================================
+
+@article{hochreiter1997lstm,
+  title   = {Long Short-Term Memory},
+  author  = {Hochreiter, Sepp and Schmidhuber, J{\"u}rgen},
+  journal = {Neural Computation},
+  volume  = {9},
+  number  = {8},
+  pages   = {1735--1780},
+  year    = {1997},
+}
+
+@inproceedings{cho2014gru,
+  title     = {Learning Phrase Representations using {RNN} Encoder--Decoder for Statistical Machine Translation},
+  author    = {Cho, Kyunghyun and van Merri{\"e}nboer, Bart and Gulcehre, Caglar and
+               Bahdanau, Dzmitry and Bougares, Fethi and Schwenk, Holger and Bengio, Yoshua},
+  booktitle = {Proceedings of the 2014 Conference on Empirical Methods in Natural Language Processing (EMNLP)},
+  pages     = {1724--1734},
+  year      = {2014},
+  url       = {https://arxiv.org/abs/1406.1078},
+}
+
+% ============================================================
+% Mamba / State Space Models
+% ============================================================
+
+@inproceedings{gu2022s4,
+  title     = {Efficiently Modeling Long Sequences with Structured State Spaces},
+  author    = {Gu, Albert and Goel, Karan and R{\'e}, Christopher},
+  booktitle = {International Conference on Learning Representations (ICLR)},
+  year      = {2022},
+  url       = {https://arxiv.org/abs/2111.00396},
+}
+
+@inproceedings{gu2024mamba,
+  title     = {Mamba: Linear-Time Sequence Modeling with Selective State Spaces},
+  author    = {Gu, Albert and Dao, Tri},
+  booktitle = {International Conference on Learning Representations (ICLR)},
+  year      = {2024},
+  url       = {https://arxiv.org/abs/2312.00752},
+}
+
+@inproceedings{dao2024mamba2,
+  title     = {Transformers are {SSM}s: Generalized Models and Efficient Algorithms
+               Through Structured State Space Duality},
+  author    = {Dao, Tri and Gu, Albert},
+  booktitle = {Advances in Neural Information Processing Systems (NeurIPS)},
+  year      = {2024},
+  url       = {https://arxiv.org/abs/2405.21060},
+}
+
+@misc{dao2024mamba2blog,
+  title  = {State Space Duality ({Mamba}-2) Part {I} --- The Model},
+  author = {Dao, Tri},
+  year   = {2024},
+  url    = {https://tridao.me/blog/2024/mamba2-part1-model/},
+}
+
+@article{chowdhery2023palm,
+  title   = {PaLM: Scaling Language Modeling with Pathways},
+  author  = {Chowdhery, Aakanksha and Narang, Sharan and Devlin, Jacob and others},
+  journal = {Journal of Machine Learning Research},
+  volume  = {24},
+  year    = {2023},
+  url     = {https://arxiv.org/abs/2204.02311},
+}
+
+% ============================================================
+% Flash Attention
+% ============================================================
+
+@inproceedings{dao2022flashattention,
+  title     = {{FlashAttention}: Fast and Memory-Efficient Exact Attention with {IO}-Awareness},
+  author    = {Dao, Tri and Fu, Dan and Ermon, Stefano and Rudra, Atri and R{\'e}, Christopher},
+  booktitle = {Advances in Neural Information Processing Systems (NeurIPS)},
+  year      = {2022},
+  url       = {https://arxiv.org/abs/2205.14135},
+}
+
+@article{dao2023flashattention2,
+  title   = {{FlashAttention-2}: Faster Attention with Better Parallelism and Work Partitioning},
+  author  = {Dao, Tri},
+  journal = {arXiv preprint arXiv:2307.08691},
+  year    = {2023},
+  url     = {https://arxiv.org/abs/2307.08691},
+}
+
+@misc{jamil2024flashattention,
+  title  = {Flash Attention Explained},
+  author = {Jamil, Umar},
+  year   = {2024},
+  url    = {https://www.youtube.com/watch?v=zy8ChVd_oTM},
+}
+
+@misc{tillet2019triton,
+  title  = {Triton: An Intermediate Language and Compiler for Tiled Neural Network Computations},
+  author = {Tillet, Philippe and Kung, H.T. and Cox, David},
+  year   = {2019},
+  url    = {https://www.eecs.harvard.edu/~htk/publication/2019-mapl-tillet-kung-cox.pdf},
+}
+
+% ============================================================
+% Reinforcement Learning
+% ============================================================
+
+@book{sutton2018rl,
+  title     = {Reinforcement Learning: An Introduction},
+  author    = {Sutton, Richard S and Barto, Andrew G},
+  year      = {2018},
+  edition   = {2nd},
+  publisher = {MIT Press},
+  url       = {http://www.incompleteideas.net/book/the-book-2nd.html},
+}
+
+@misc{silver2015rl,
+  title  = {Lectures on Reinforcement Learning},
+  author = {Silver, David},
+  year   = {2015},
+  url    = {https://www.davidsilver.uk/teaching/},
+}
+
+@misc{schneider2023rl,
+  title  = {Reinforcement Learning Course Materials},
+  author = {Schneider, Oliver and Wallk{\"o}tter, Sebastian},
+  note   = {University of Paderborn},
+  year   = {2023},
+  url    = {https://github.com/upb-lea/reinforcement_learning_course_materials},
+}
+
+% ============================================================
+% General / Philosophy
+% ============================================================
+
+@misc{sutton2019bitter,
+  title  = {The Bitter Lesson},
+  author = {Sutton, Richard},
+  year   = {2019},
+  url    = {http://www.incompleteideas.net/IncIdeas/BitterLesson.html},
+}
+
+@article{campbell2002deep,
+  title   = {Deep {Blue}},
+  author  = {Campbell, Murray and Hoane Jr, A Joseph and Hsu, Feng-hsiung},
+  journal = {Artificial Intelligence},
+  volume  = {134},
+  number  = {1--2},
+  pages   = {57--83},
+  year    = {2002},
+}
+
+@article{silver2017mastering,
+  title   = {Mastering the game of {Go} without human knowledge},
+  author  = {Silver, David and Schrittwieser, Julian and Simonyan, Karen and Antonoglou, Ioannis and Huang, Aja and Guez, Arthur and Hubert, Thomas and Baker, Lucas and Lai, Matthew and Bolton, Adrian and others},
+  journal = {Nature},
+  volume  = {550},
+  number  = {7676},
+  pages   = {354--359},
+  year    = {2017},
+}
+
+@article{hinton2012deep,
+  title   = {Deep neural networks for acoustic modeling in speech recognition},
+  author  = {Hinton, Geoffrey and Deng, Li and Yu, Dong and Dahl, George E and Mohamed, Abdel-rahman and Jaitly, Navdeep and Senior, Andrew and Vanhoucke, Vincent and Nguyen, Patrick and Sainath, Tara N and others},
+  journal = {IEEE Signal Processing Magazine},
+  volume  = {29},
+  number  = {6},
+  pages   = {82--97},
+  year    = {2012},
+}
+
+@inproceedings{krizhevsky2012imagenet,
+  title     = {{ImageNet} classification with deep convolutional neural networks},
+  author    = {Krizhevsky, Alex and Sutskever, Ilya and Hinton, Geoffrey E},
+  booktitle = {Advances in Neural Information Processing Systems},
+  volume    = {25},
+  year      = {2012},
+}
+
+@article{deepseek_r1_2025,
+  title   = {{DeepSeek-R1}: Incentivizing Reasoning Capability in {LLMs} via Reinforcement Learning},
+  author  = {DeepSeek-AI},
+  year    = {2025},
+  journal = {arXiv preprint arXiv:2501.12948},
+}
+
+% ============================================================
+% RL for LLMs: PPO, GRPO, DPO
+% ============================================================
+
+@article{schulman2017ppo,
+  title   = {Proximal Policy Optimization Algorithms},
+  author  = {Schulman, John and Wolski, Filip and Dhariwal, Prafulla and
+             Radford, Alec and Klimov, Oleg},
+  journal = {arXiv preprint arXiv:1707.06347},
+  year    = {2017},
+  url     = {https://arxiv.org/abs/1707.06347},
+}
+
+@article{shao2024grpo,
+  title   = {{DeepSeekMath}: Pushing the Limits of Mathematical Reasoning
+             in Open Language Models},
+  author  = {Shao, Zhihong and Wang, Peiyi and Zhu, Qihao and Xu, Runxin
+             and Song, Junxiao and Zhang, Mingchuan and Li, Y.K. and Wu, Y.
+             and Guo, Daya},
+  journal = {arXiv preprint arXiv:2402.03300},
+  year    = {2024},
+  url     = {https://arxiv.org/abs/2402.03300},
+}
+
+@article{liu2025drgrpo,
+  title   = {Understanding {R1-Zero-Like} Training: A Critical Perspective},
+  author  = {Liu, Zichen and Liu, Changyu and Yao, Wenda and Gao, Zhe and
+             Zhai, Shuigeng},
+  journal = {arXiv preprint arXiv:2503.20783},
+  year    = {2025},
+  url     = {https://arxiv.org/abs/2503.20783},
+}
+
+@inproceedings{rafailov2024dpo,
+  title     = {Direct Preference Optimization: Your Language Model is Secretly
+               a Reward Model},
+  author    = {Rafailov, Rafael and Sharma, Archit and Mitchell, Eric and
+               Ermon, Stefano and Manning, Christopher D. and Finn, Chelsea},
+  booktitle = {Advances in Neural Information Processing Systems},
+  volume    = {36},
+  year      = {2024},
+  url       = {https://arxiv.org/abs/2305.18290},
+}
+
+@article{yu2025dapo,
+  title   = {{DAPO}: An Open-Source {LLM} Reinforcement Learning System at Scale},
+  author  = {Yu, Qiying and Zhang, Zheng and Zhu, Ruofei and Yuan, Yufeng and
+             Zuo, Xiaochen and others},
+  journal = {arXiv preprint arXiv:2503.14476},
+  year    = {2025},
+  url     = {https://arxiv.org/abs/2503.14476},
+}
+
+% ============================================================
+% Memory-Efficient Training & PEFT
+% ============================================================
+
+@inproceedings{chen2016checkpointing,
+  title     = {Training Deep Nets with Sublinear Memory Cost},
+  author    = {Chen, Tianqi and Xu, Bing and Zhang, Chiyuan and Guestrin, Carlos},
+  booktitle = {arXiv preprint arXiv:1604.06174},
+  year      = {2016},
+  url       = {https://arxiv.org/abs/1604.06174},
+}
+
+@inproceedings{hu2022lora,
+  title     = {{LoRA}: Low-Rank Adaptation of Large Language Models},
+  author    = {Hu, Edward J and Shen, Yelong and Wallis, Phillip and Allen-Zhu, Zeyuan and
+               Li, Yuanzhi and Wang, Shean and Wang, Lu and Chen, Weizhu},
+  booktitle = {International Conference on Learning Representations (ICLR)},
+  year      = {2022},
+  url       = {https://arxiv.org/abs/2106.09685},
+}
+
+@inproceedings{houlsby2019adapters,
+  title     = {Parameter-Efficient Transfer Learning for {NLP}},
+  author    = {Houlsby, Neil and Giurgiu, Andrei and Jastrzebski, Stanislaw and
+               Morrone, Bruna and de Laroussilhe, Quentin and Gesmundo, Andrea and
+               Attariyan, Mona and Gelly, Sylvain},
+  booktitle = {International Conference on Machine Learning (ICML)},
+  year      = {2019},
+  url       = {https://arxiv.org/abs/1902.00751},
+}
+
+@inproceedings{li2021prefix,
+  title     = {Prefix-Tuning: Optimizing Continuous Prompts for Generation},
+  author    = {Li, Xiang Lisa and Liang, Percy},
+  booktitle = {Proceedings of the 59th Annual Meeting of the Association for
+               Computational Linguistics (ACL)},
+  year      = {2021},
+  url       = {https://arxiv.org/abs/2101.00190},
+}
+
+@inproceedings{lester2021prompt,
+  title     = {The Power of Scale for Parameter-Efficient Prompt Tuning},
+  author    = {Lester, Brian and Al-Rfou, Rami and Constant, Noah},
+  booktitle = {Proceedings of the 2021 Conference on Empirical Methods in
+               Natural Language Processing (EMNLP)},
+  year      = {2021},
+  url       = {https://arxiv.org/abs/2104.08691},
+}
+
+% ============================================================
+% Parallelism & Distributed Training
+% ============================================================
+
+@misc{tazi2025ultrascale,
+  title        = {The Ultra-Scale Model Training Playbook},
+  author       = {Tazi, Nouamane and Mom, Ferdinand and Zhao, Haojun and
+                  Nguyen, Phuc and Mekkouri, Mohamed and Werra, Leandro and
+                  Wolf, Thomas},
+  howpublished = {Hugging Face},
+  year         = {2025},
+  url          = {https://huggingface.co/spaces/nanotron/ultrascale-playbook},
+}
+
+@article{shoeybi2020megatronlm,
+  title   = {Megatron-{LM}: Training Multi-Billion Parameter Language Models Using Model Parallelism},
+  author  = {Shoeybi, Mohammad and Patwary, Mostofa and Puri, Raul and
+             LeGresley, Patrick and Casper, Jared and Catanzaro, Bryan},
+  journal = {arXiv preprint arXiv:1909.08053},
+  year    = {2020},
+  url     = {https://arxiv.org/abs/1909.08053},
+}
+
+@inproceedings{rajbhandari2020zero,
+  title     = {{ZeRO}: Memory Optimizations Toward Training Trillion Parameter Models},
+  author    = {Rajbhandari, Samyam and Rasley, Jeff and Ruwase, Olatunji and He, Yuxiong},
+  booktitle = {International Conference for High Performance Computing, Networking, Storage and Analysis (SC)},
+  year      = {2020},
+  url       = {https://arxiv.org/abs/1910.02054},
+}
+
+@article{grattafiori2024llama3,
+  title   = {The {Llama} 3 Herd of Models},
+  author  = {Grattafiori, Aaron and Dubey, Abhimanyu and Jauhri, Abhinav and others},
+  journal = {arXiv preprint arXiv:2407.21783},
+  year    = {2024},
+  url     = {https://arxiv.org/abs/2407.21783},
+}
+
+@article{deepseekai2024deepseekv3,
+  title   = {{DeepSeek-V3} Technical Report},
+  author  = {{DeepSeek-AI}},
+  journal = {arXiv preprint arXiv:2412.19437},
+  year    = {2024},
+  url     = {https://arxiv.org/abs/2412.19437},
+}
+
+@inproceedings{huang2019gpipe,
+  title     = {{GPipe}: Efficient Training of Giant Neural Networks using Pipeline Parallelism},
+  author    = {Huang, Yanping and Cheng, Youlong and Bapna, Ankur and Firat, Orhan and
+               Chen, Dehao and Chen, Mia Xu and Lee, HyoukJoong and Ngiam, Jiquan and
+               Le, Quoc V and Wu, Yonghui and Chen, Zhifeng},
+  booktitle = {Advances in Neural Information Processing Systems (NeurIPS)},
+  year      = {2019},
+  url       = {https://arxiv.org/abs/1811.06965},
+}
+
+@article{narayanan2021efficient,
+  title   = {Efficient Large-Scale Language Model Training on {GPU} Clusters Using {Megatron-LM}},
+  author  = {Narayanan, Deepak and Shoeybi, Mohammad and Casper, Jared and LeGresley, Patrick and
+             Patwary, Mostofa and Korthikanti, Vijay Anand and Vainbrand, Dmitri and
+             Kasber, Prethvi and Catanzaro, Bryan},
+  journal = {arXiv preprint arXiv:2104.04473},
+  year    = {2021},
+  url     = {https://arxiv.org/abs/2104.04473},
+}
+
+@article{micikevicius2018mixed,
+  title   = {Mixed Precision Training},
+  author  = {Micikevicius, Paulius and Narang, Sharan and Alben, Jonah and Diamos, Gregory and
+             Elsen, Erich and Garcia, David and Ginsburg, Boris and Houston, Michael and
+             Kuchaiev, Oleksii and Venkatesh, Ganesh and Wu, Hao},
+  journal = {International Conference on Learning Representations (ICLR)},
+  year    = {2018},
+  url     = {https://arxiv.org/abs/1710.03740},
+}
+
+@article{jiang2024megascale,
+  title   = {{MegaScale}: Scaling Model Training to More Than 10,000 {GPUs}},
+  author  = {Jiang, Ziheng and Lin, Haibin and Zhong, Yinmin and Huang, Qi and Chen, Yangrui and
+             Zhang, Zhi and Peng, Yanghua and Li, Xiang and Xie, Cong and Nong, Shibiao and
+             others},
+  journal = {arXiv preprint arXiv:2402.15627},
+  year    = {2024},
+  url     = {https://arxiv.org/abs/2402.15627},
+}
+
+@article{li2020pytorch,
+  title   = {{PyTorch} Distributed: Experiences on Accelerating Data Parallel Training},
+  author  = {Li, Shen and Zhao, Yanli and Varma, Rohan and Salpekar, Omkar and Noordhuis, Pieter and
+             Li, Teng and Paszke, Adam and Smith, Jeff and Vaughan, Brian and Damania, Pritam and
+             Chintala, Soumith},
+  journal = {Proceedings of the VLDB Endowment},
+  volume  = {13},
+  number  = {12},
+  year    = {2020},
+  url     = {https://arxiv.org/abs/2006.15704},
+}
+
+@article{qi2023zero,
+  title   = {Zero Bubble Pipeline Parallelism},
+  author  = {Qi, Penghui and Wan, Xinyi and Huang, Guangxing and Lin, Min},
+  journal = {International Conference on Learning Representations (ICLR)},
+  year    = {2024},
+  url     = {https://arxiv.org/abs/2401.10241},
+}
+
+@article{narayanan2019pipedream,
+  title   = {{PipeDream}: Generalized Pipeline Parallelism for {DNN} Training},
+  author  = {Narayanan, Deepak and Harlap, Aaron and Phanishayee, Amar and Seshadri, Vivek and
+             Devanur, Nikhil R and Granger, Gregory R and Gibbons, Phillip B and Zaharia, Matei},
+  journal = {Proceedings of the 27th ACM Symposium on Operating Systems Principles (SOSP)},
+  year    = {2019},
+  url     = {https://arxiv.org/abs/1806.03377},
+}
+
+@article{lamy2023breadthfirst,
+  title   = {Breadth-First Pipeline Parallelism},
+  author  = {Lamy-Poirier, Joel},
+  journal = {Proceedings of Machine Learning and Systems (MLSys)},
+  year    = {2023},
+  url     = {https://arxiv.org/abs/2211.05953},
+}
+
+@article{korthikanti2023selective,
+  title   = {Reducing Activation Recomputation in Large Transformer Models},
+  author  = {Korthikanti, Vijay Anand and Casper, Jared and Lym, Sangkug and
+             McAfee, Lawrence and Andersch, Michael and Shoeybi, Mohammad and
+             Catanzaro, Bryan},
+  journal = {Proceedings of Machine Learning and Systems (MLSys)},
+  year    = {2023},
+  url     = {https://arxiv.org/abs/2205.05198},
+}
+
+@article{liu2023ring,
+  title   = {Ring Attention with Blockwise Transformers for Near-Infinite Context},
+  author  = {Liu, Hao and Zaharia, Matei and Abbeel, Pieter},
+  journal = {arXiv preprint arXiv:2310.01889},
+  year    = {2023},
+  url     = {https://arxiv.org/abs/2310.01889},
+}
+
+@article{brandon2023striped,
+  title   = {Striped Attention: Faster Ring Attention for Causal Transformers},
+  author  = {Brandon, William and Mishra, Aniruddha and Nrusimha, Aaditya and
+             Panda, Rameswar and Kelly, Jonathan Ragan},
+  journal = {arXiv preprint arXiv:2311.09431},
+  year    = {2023},
+  url     = {https://arxiv.org/abs/2311.09431},
+}
+
+% ============================================================
+% Multimodal: CLIP, SigLIP, PaliGemma
+% ============================================================
+
+@article{dehghani2023shape,
+  title   = {Getting {ViT} in Shape: Scaling Laws for Compute-Optimal Model Design},
+  author  = {Dehghani, Mostafa and Arnab, Anurag and Beyer, Lucas and
+             Vaswani, Ashish and Zhai, Xiaohua},
+  journal = {Advances in Neural Information Processing Systems (NeurIPS)},
+  year    = {2023},
+  url     = {https://arxiv.org/abs/2305.13035},
+}
+
+@inproceedings{radford2021clip,
+  title     = {Learning Transferable Visual Models From Natural Language Supervision},
+  author    = {Radford, Alec and Kim, Jong Wook and Hallacy, Chris and
+               Ramesh, Aditya and Goh, Gabriel and Agarwal, Sandhini and
+               Sastry, Girish and Askell, Amanda and Mishkin, Pamela and
+               Clark, Jack and Krueger, Gretchen and Sutskever, Ilya},
+  booktitle = {International Conference on Machine Learning (ICML)},
+  year      = {2021},
+  url       = {https://arxiv.org/abs/2103.00020},
+}
+
+@inproceedings{zhai2023siglip,
+  title     = {Sigmoid Loss for Language Image Pre-Training},
+  author    = {Zhai, Xiaohua and Mustafa, Basil and Kolesnikov, Alexander and Beyer, Lucas},
+  booktitle = {International Conference on Computer Vision (ICCV)},
+  year      = {2023},
+  url       = {https://arxiv.org/abs/2303.15343},
+}
+
+@article{beyer2024paligemma,
+  title   = {{PaliGemma}: A Versatile {3B} {VLM} for Transfer},
+  author  = {Beyer, Lucas and Steiner, Andreas and Pinto, Andr{\'e} Susano and
+             Kolesnikov, Alexander and Wang, Xiao and Salz, Daniel and
+             Neumann, Maxim and Alabdulmohsin, Ibrahim and Tschannen, Michael and
+             Bugliarello, Emanuele and others},
+  journal = {arXiv preprint arXiv:2407.07726},
+  year    = {2024},
+  url     = {https://arxiv.org/abs/2407.07726},
+}
+
+% ============================================================
+% Datasets
+% ============================================================
+
+@article{raffel2020t5,
+  title   = {Exploring the Limits of Transfer Learning with a Unified Text-to-Text Transformer},
+  author  = {Raffel, Colin and Shazeer, Noam and Roberts, Adam and Lee, Katherine and
+             Narang, Sharan and Matena, Michael and Zhou, Yanqi and Li, Wei and Liu, Peter J.},
+  journal = {Journal of Machine Learning Research},
+  volume  = {21},
+  number  = {140},
+  pages   = {1--67},
+  year    = {2020},
+  url     = {https://arxiv.org/abs/1910.10683},
+}
+
+% ============================================================
+% Mixture of Experts
+% ============================================================
+
+@inproceedings{shazeer2017moe,
+  title     = {Outrageously Large Neural Networks: The Sparsely-Gated Mixture-of-Experts Layer},
+  author    = {Shazeer, Noam and Mirhoseini, Azalia and Maziarz, Krzysztof and
+               Davis, Andy and Le, Quoc and Hinton, Geoffrey and Dean, Jeff},
+  booktitle = {International Conference on Learning Representations (ICLR)},
+  year      = {2017},
+  url       = {https://arxiv.org/abs/1701.06538},
+}
+
+@article{fedus2022switch,
+  title   = {Switch Transformers: Scaling to Trillion Parameter Models with Simple and Efficient Sparsity},
+  author  = {Fedus, William and Zoph, Barret and Shazeer, Noam},
+  journal = {Journal of Machine Learning Research},
+  volume  = {23},
+  number  = {120},
+  pages   = {1--39},
+  year    = {2022},
+  url     = {https://arxiv.org/abs/2101.03961},
+}
+
+@article{dai2024deepseekmoe,
+  title   = {{DeepSeekMoE}: Towards Ultimate Expert Specialization in Mixture-of-Experts Language Models},
+  author  = {Dai, Damai and Deng, Chengqi and Zhao, Chenggang and Xu, R.X. and
+             Gao, Huazuo and Chen, Deli and Li, Jiashi and Zeng, Wangding and
+             Yu, Xingkai and Wu, Y. and others},
+  journal = {arXiv preprint arXiv:2401.06066},
+  year    = {2024},
+  url     = {https://arxiv.org/abs/2401.06066},
+}
+
+@article{jacobs2023deepspeed,
+  title   = {{DeepSpeed Ulysses}: System Optimizations for Enabling Training of Extreme Long Sequence Transformer Models},
+  author  = {Jacobs, Sam Ade and Tanaka, Masahiro and Zhang, Chengming and
+             Zhang, Minjia and Song, Shuaiwen Leon and Rajbhandari, Samyam and He, Yuxiong},
+  journal = {arXiv preprint arXiv:2309.14509},
+  year    = {2023},
+  url     = {https://arxiv.org/abs/2309.14509},
+}
+
+% ============================================================
+% Hyperparameter Optimization
+% ============================================================
+
+@inproceedings{bergstra2011algorithms,
+  title     = {Algorithms for Hyper-Parameter Optimization},
+  author    = {Bergstra, James and Bardenet, R{\'e}mi and Bengio, Yoshua and K{\'e}gl, Bal{\'a}zs},
+  booktitle = {Advances in Neural Information Processing Systems},
+  volume    = {24},
+  year      = {2011},
+  url       = {https://papers.nips.cc/paper/2011/hash/86e8f7ab32cfd12577bc2619bc635690-Abstract.html},
+}
+
+@article{bergstra2012random,
+  title   = {Random Search for Hyper-Parameter Optimization},
+  author  = {Bergstra, James and Bengio, Yoshua},
+  journal = {Journal of Machine Learning Research},
+  volume  = {13},
+  pages   = {281--305},
+  year    = {2012},
+  url     = {https://jmlr.org/papers/v13/bergstra12a.html},
+}
+
+@inproceedings{snoek2012practical,
+  title     = {Practical {Bayesian} Optimization of Machine Learning Algorithms},
+  author    = {Snoek, Jasper and Larochelle, Hugo and Adams, Ryan P.},
+  booktitle = {Advances in Neural Information Processing Systems (NeurIPS)},
+  volume    = {25},
+  year      = {2012},
+  url       = {https://arxiv.org/abs/1206.2944},
+}
+
+@inproceedings{li2017hyperband,
+  title     = {Hyperband: A Novel Bandit-Based Approach to Hyperparameter Optimization},
+  author    = {Li, Lisha and Jamieson, Kevin and DeSalvo, Giulia and
+               Rostamizadeh, Afshin and Talwalkar, Ameet},
+  booktitle = {Journal of Machine Learning Research},
+  volume    = {18},
+  number    = {185},
+  pages     = {1--52},
+  year      = {2017},
+  url       = {https://arxiv.org/abs/1603.06560},
+}
+
+@inproceedings{falkner2018bohb,
+  title     = {{BOHB}: Robust and Efficient Hyperparameter Optimization at Scale},
+  author    = {Falkner, Stefan and Klein, Aaron and Hutter, Frank},
+  booktitle = {International Conference on Machine Learning (ICML)},
+  year      = {2018},
+  url       = {https://arxiv.org/abs/1807.01774},
+}
+
+@inproceedings{akiba2019optuna,
+  title     = {Optuna: A Next-generation Hyperparameter Optimization Framework},
+  author    = {Akiba, Takuya and Sano, Shotaro and Yanase, Toshihiko and Ohta, Takeru and Koyama, Masanori},
+  booktitle = {ACM SIGKDD International Conference on Knowledge Discovery and Data Mining},
+  year      = {2019},
+  url       = {https://arxiv.org/abs/1907.10902},
+}
+
+@misc{wandb,
+  title        = {Weights \& Biases},
+  author       = {{Weights \& Biases}},
+  year         = {2020},
+  howpublished = {\url{https://wandb.ai}},
+}
+
+@inproceedings{smith2017cyclical,
+  title     = {Cyclical Learning Rates for Training Neural Networks},
+  author    = {Smith, Leslie N.},
+  booktitle = {IEEE Winter Conference on Applications of Computer Vision (WACV)},
+  year      = {2017},
+  url       = {https://arxiv.org/abs/1506.01186},
+}
+
+@inproceedings{loshchilov2017sgdr,
+  title     = {{SGDR}: Stochastic Gradient Descent with Warm Restarts},
+  author    = {Loshchilov, Ilya and Hutter, Frank},
+  booktitle = {International Conference on Learning Representations (ICLR)},
+  year      = {2017},
+  url       = {https://arxiv.org/abs/1608.03983},
+}
+
+@article{loshchilov2019adamw,
+  title   = {Decoupled Weight Decay Regularization},
+  author  = {Loshchilov, Ilya and Hutter, Frank},
+  journal = {International Conference on Learning Representations (ICLR)},
+  year    = {2019},
+  url     = {https://arxiv.org/abs/1711.05101},
+}
+
+@inproceedings{goyal2017accurate,
+  title     = {Accurate, Large Minibatch {SGD}: Training {ImageNet} in 1 Hour},
+  author    = {Goyal, Priya and Doll{\'a}r, Piotr and Girshick, Ross and
+               Noordhuis, Pieter and Wesolowski, Lukasz and Kyrola, Aapo and
+               Tulloch, Andrew and Jia, Yangqing and He, Kaiming},
+  booktitle = {arXiv preprint arXiv:1706.02677},
+  year      = {2017},
+  url       = {https://arxiv.org/abs/1706.02677},
+}
+
+@article{kaplan2020scaling,
+  title   = {Scaling Laws for Neural Language Models},
+  author  = {Kaplan, Jared and McCandlish, Sam and Henighan, Tom and
+             Brown, Tom B. and Chess, Benjamin and Child, Rewon and
+             Gray, Scott and Radford, Alec and Wu, Jeffrey and Amodei, Dario},
+  journal = {arXiv preprint arXiv:2001.08361},
+  year    = {2020},
+  url     = {https://arxiv.org/abs/2001.08361},
+}
+
+@inproceedings{yang2022muP,
+  title     = {Tensor Programs {V}: Tuning Large Neural Networks via Zero-Shot Hyperparameter Transfer},
+  author    = {Yang, Greg and Hu, Edward J. and Babuschkin, Igor and
+               Sidor, Szymon and Liu, Xiaodong and Farhi, David and
+               Ryder, Nick and Pachocki, Jakub and Chen, Weizhu and Gao, Jianfeng},
+  booktitle = {International Conference on Machine Learning (ICML)},
+  year      = {2022},
+  url       = {https://arxiv.org/abs/2203.03466},
+}
+
+@article{mccandlish2018empirical,
+  title   = {An Empirical Model of Large-Batch Training},
+  author  = {McCandlish, Sam and Kaplan, Jared and Amodei, Dario and
+             {OpenAI Dota Team}},
+  journal = {arXiv preprint arXiv:1812.06162},
+  year    = {2018},
+  url     = {https://arxiv.org/abs/1812.06162},
+}
+
+@article{brown2020gpt3,
+  title   = {Language Models are Few-Shot Learners},
+  author  = {Brown, Tom and Mann, Benjamin and Ryder, Nick and Subbiah, Melanie
+             and Kaplan, Jared D. and Dhariwal, Prafulla and Neelakantan, Arvind
+             and Shyam, Pranav and Sastry, Girish and Askell, Amanda and others},
+  journal = {Advances in Neural Information Processing Systems},
+  volume  = {33},
+  year    = {2020},
+  url     = {https://arxiv.org/abs/2005.14165},
+}
+
+@article{touvron2023llama,
+  title   = {{LLaMA}: Open and Efficient Foundation Language Models},
+  author  = {Touvron, Hugo and Lavril, Thibaut and Izacard, Gautier and
+             Martinet, Xavier and Lachaux, Marie-Anne and Lacroix, Timoth{\'e}e
+             and Rozi{\`e}re, Baptiste and Goyal, Naman and Hambro, Eric and
+             Azhar, Faisal and others},
+  journal = {arXiv preprint arXiv:2302.13971},
+  year    = {2023},
+  url     = {https://arxiv.org/abs/2302.13971},
+}
+
+@article{touvron2023llama2,
+  title   = {{Llama} 2: Open Foundation and Fine-Tuned Chat Models},
+  author  = {Touvron, Hugo and Martin, Louis and Stone, Kevin and
+             Albert, Peter and Almahairi, Amjad and Babaei, Yasmine and
+             Bashlykov, Nikolay and Batra, Soumya and Bhargava, Prajjwal and
+             Bhosale, Shruti and others},
+  journal = {arXiv preprint arXiv:2307.09288},
+  year    = {2023},
+  url     = {https://arxiv.org/abs/2307.09288},
+}
+
+@article{defazio2024schedulefree,
+  title   = {The Road Less Scheduled},
+  author  = {Defazio, Aaron and Yang, Xingyu and Mehta, Harsh and
+             Mishchenko, Konstantin and Khaled, Ahmed and Cutkosky, Ashok},
+  journal = {Advances in Neural Information Processing Systems (NeurIPS)},
+  year    = {2024},
+  url     = {https://arxiv.org/abs/2405.15682},
+}
+
+@article{li2025steplaw,
+  title   = {Predictable Scale: Part {I}, Step Law --- Optimal Hyperparameter Scaling Law in Large Language Model Pretraining},
+  author  = {Li, Houyi and others},
+  journal = {arXiv preprint arXiv:2503.04715},
+  year    = {2025},
+  url     = {https://arxiv.org/abs/2503.04715},
+}
+
+@article{bernstein2025powerlines,
+  title   = {Power Lines: Scaling Laws for Weight Decay and Batch Size in {LLM} Pre-training},
+  author  = {Bernstein, Jeremy and others},
+  journal = {Advances in Neural Information Processing Systems (NeurIPS)},
+  year    = {2025},
+  url     = {https://arxiv.org/abs/2505.13738},
+}
+
+% ============================================================
+% Vision Models
+% ============================================================
+
+@inproceedings{dosovitskiy2021vit,
+  title     = {An Image is Worth 16x16 Words: Transformers for Image Recognition at Scale},
+  author    = {Dosovitskiy, Alexey and Beyer, Lucas and Kolesnikov, Alexander and
+               Weissenborn, Dirk and Zhai, Xiaohua and Unterthiner, Thomas and
+               Dehghani, Mostafa and Minderer, Matthias and Heigold, Georg and
+               Gelly, Sylvain and Uszkoreit, Jakob and Houlsby, Neil},
+  booktitle = {International Conference on Learning Representations (ICLR)},
+  year      = {2021},
+  url       = {https://arxiv.org/abs/2010.11929},
+}
+
+@inproceedings{he2022mae,
+  title     = {Masked Autoencoders Are Scalable Vision Learners},
+  author    = {He, Kaiming and Chen, Xinlei and Xie, Saining and
+               Li, Yanghao and Doll{\'a}r, Piotr and Girshick, Ross},
+  booktitle = {IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR)},
+  year      = {2022},
+  url       = {https://arxiv.org/abs/2111.06377},
+}
+
+@inproceedings{touvron2021deit,
+  title     = {Training data-efficient image transformers \& distillation through attention},
+  author    = {Touvron, Hugo and Cord, Matthieu and Douze, Matthijs and
+               Massa, Francisco and Sablayrolles, Alexandre and J{\'e}gou, Herv{\'e}},
+  booktitle = {International Conference on Machine Learning (ICML)},
+  year      = {2021},
+  url       = {https://arxiv.org/abs/2012.12877},
+}
+
+@inproceedings{liu2021swin,
+  title     = {Swin Transformer: Hierarchical Vision Transformer using Shifted Windows},
+  author    = {Liu, Ze and Lin, Yutong and Cao, Yue and Hu, Han and Wei, Yixuan and
+               Zhang, Zheng and Lin, Stephen and Guo, Baining},
+  booktitle = {International Conference on Computer Vision (ICCV)},
+  year      = {2021},
+  url       = {https://arxiv.org/abs/2103.14030},
+}
+
+@inproceedings{tolstikhin2021mlpmixer,
+  title     = {{MLP-Mixer}: An all-{MLP} Architecture for Vision},
+  author    = {Tolstikhin, Ilya O. and Houlsby, Neil and Kolesnikov, Alexander and
+               Beyer, Lucas and Zhai, Xiaohua and Unterthiner, Thomas and
+               Yung, Jessica and Steiner, Andreas and Keysers, Daniel and
+               Uszkoreit, Jakob and Lucic, Mario and Dosovitskiy, Alexey},
+  booktitle = {Advances in Neural Information Processing Systems (NeurIPS)},
+  year      = {2021},
+  url       = {https://arxiv.org/abs/2105.01601},
+}
+
+@inproceedings{carion2020detr,
+  title     = {End-to-End Object Detection with Transformers},
+  author    = {Carion, Nicolas and Massa, Francisco and Synnaeve, Gabriel and
+               Usunier, Nicolas and Kirillov, Alexander and Zagoruyko, Sergey},
+  booktitle = {European Conference on Computer Vision (ECCV)},
+  year      = {2020},
+  url       = {https://arxiv.org/abs/2005.12872},
+}
+
+@inproceedings{zhu2021deformabledetr,
+  title     = {Deformable {DETR}: Deformable Transformers for End-to-End Object Detection},
+  author    = {Zhu, Xizhou and Su, Weijie and Lu, Lewei and Li, Bin and
+               Wang, Xiaogang and Dai, Jifeng},
+  booktitle = {International Conference on Learning Representations (ICLR)},
+  year      = {2021},
+  url       = {https://arxiv.org/abs/2010.04159},
+}
+
+@inproceedings{meinhardt2022trackformer,
+  title     = {{TrackFormer}: Multi-Object Tracking with Transformers},
+  author    = {Meinhardt, Tim and Kirillov, Alexander and Leal-Taix{\'e}, Laura and
+               Feichtenhofer, Christoph},
+  booktitle = {IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR)},
+  year      = {2022},
+  url       = {https://arxiv.org/abs/2101.02702},
+}
+
+@inproceedings{cheng2021maskformer,
+  title     = {Per-Pixel Classification is Not All You Need for Semantic Segmentation},
+  author    = {Cheng, Bowen and Schwing, Alexander G. and Kirillov, Alexander},
+  booktitle = {Advances in Neural Information Processing Systems (NeurIPS)},
+  year      = {2021},
+  url       = {https://arxiv.org/abs/2107.06278},
+}
+
+@inproceedings{cheng2022mask2former,
+  title     = {Masked-attention Mask Transformer for Universal Image Segmentation},
+  author    = {Cheng, Bowen and Misra, Ishan and Schwing, Alexander G. and
+               Kirillov, Alexander and Girdhar, Rohit},
+  booktitle = {IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR)},
+  year      = {2022},
+  url       = {https://arxiv.org/abs/2112.01527},
+}
+
+% Vision model training recipes
+@inproceedings{he2016resnet,
+  title     = {Deep Residual Learning for Image Recognition},
+  author    = {He, Kaiming and Zhang, Xiangyu and Ren, Shaoqing and Sun, Jian},
+  booktitle = {IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR)},
+  year      = {2016},
+  url       = {https://arxiv.org/abs/1512.03385},
+}
+
+@article{wightman2021resnet,
+  title   = {{ResNet} Strikes Back: An Improved Training Procedure in \texttt{timm}},
+  author  = {Wightman, Ross and Touvron, Hugo and J{\'e}gou, Herv{\'e}},
+  journal = {arXiv preprint arXiv:2110.00476},
+  year    = {2021},
+  url     = {https://arxiv.org/abs/2110.00476},
+}
+
+@inproceedings{xie2017resnext,
+  title     = {Aggregated Residual Transformations for Deep Neural Networks},
+  author    = {Xie, Saining and Girshick, Ross and Doll{\'a}r, Piotr and Tu, Zhuowen and He, Kaiming},
+  booktitle = {IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR)},
+  year      = {2017},
+  url       = {https://arxiv.org/abs/1611.05431},
+}
+
+@inproceedings{he2022mae,
+  title     = {Masked Autoencoders Are Scalable Vision Learners},
+  author    = {He, Kaiming and Chen, Xinlei and Xie, Saining and Li, Yanghao and Doll{\'a}r, Piotr and Girshick, Ross},
+  booktitle = {IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR)},
+  year      = {2022},
+  url       = {https://arxiv.org/abs/2111.06377},
+}
+
+@article{oquab2023dinov2,
+  title   = {{DINOv2}: Learning Robust Visual Features without Supervision},
+  author  = {Oquab, Maxime and Darcet, Timoth{\'e}e and Moutakanni, Th{\'e}o and others},
+  journal = {arXiv preprint arXiv:2304.07193},
+  year    = {2023},
+  url     = {https://arxiv.org/abs/2304.07193},
+}

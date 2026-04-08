@@ -1,0 +1,390 @@
+% !TEX root=./adl.tex
+
+\section{Memory-Efficient Training Techniques}
+\label{sec:memory_tricks}
+
+% -----------------------------------------------------------------------
+\begin{frame}{Motivation: The Memory Wall}
+
+  \textbf{Recall:} Training with Adam requires $\sim 16\Psi$ bytes of model state \emph{plus} activations.
+  Fine-tuning a 7B model naively needs $\sim$112\,GB, more than any single GPU.
+
+  \vspace{0.3em}
+  On modern GPUs, \textbf{memory is the bottleneck, not compute}:
+  \begin{itemize}
+    \item An H100 delivers 990\,TFLOPS (BF16) but only has 80\,GB HBM
+    \item Compute is abundant; memory is the hard constraint
+    \item It is therefore worthwhile to \emph{trade extra compute for reduced memory}
+  \end{itemize}
+
+  \vspace{0.5em}
+  \textbf{Key question:} How can we reduce memory usage?
+
+  \vspace{0.3em}
+  \begin{description}
+    \item[Reduce activation memory] \emphdef{Gradient checkpointing} --- discard intermediate activations during forward pass, recompute them during backward. Trades $\sim$33\% extra compute for $O(\sqrt{L})$ instead of $O(L)$ activation memory.
+    \item[Reduce parameter memory] \emphdef{Parameter-Efficient Fine-Tuning (PEFT)} --- freeze the pretrained weights, only train a small number of additional parameters ($\sim$0.1--1\% of $\Psi$). Gradients and optimizer states are only needed for the small trainable set $\Rightarrow$ massive memory savings with minimal quality loss.
+  \end{description}
+\end{frame}
+
+% -----------------------------------------------------------------------
+\begin{frame}{Gradient Checkpointing (Activation Recomputation)}
+
+  \textbf{Problem:} Standard backpropagation stores all intermediate activations --- memory grows linearly with depth.
+
+  \vspace{0.3em}
+  \begin{columns}
+    \begin{column}{0.52\textwidth}
+      \textbf{Idea}~\cite{chen2016checkpointing}:
+      \begin{itemize}
+        \item During forward pass, only save activations at selected \emphdef{checkpoint} layers
+        \item Discard all other intermediate activations
+        \item During backward pass, \emph{recompute} missing activations from the nearest checkpoint
+      \end{itemize}
+
+      \vspace{0.3em}
+      \textbf{Trade-off:}
+      \begin{itemize}
+        \item Memory: $O(\sqrt{L})$ instead of $O(L)$ for $L$ layers (with $\sqrt{L}$ evenly spaced checkpoints)
+        \item Compute: $\sim$33\% extra forward-pass compute
+      \end{itemize}
+
+      \vspace{0.3em}
+      \textbf{Selective recomputation}~\cite{korthikanti2023selective}: Only recompute attention (most memory-intensive) --- saves $\sim$70\% activation memory at only $\sim$2.7\% compute overhead.
+    \end{column}
+    \begin{column}{0.44\textwidth}
+      \centering
+      \begin{tikzpicture}[
+        layer/.style={draw, rounded corners, minimum width=2.2cm, minimum height=0.45cm, font=\scriptsize, align=center},
+        saved/.style={layer, fill=green!20},
+        disc/.style={layer, fill=gray!15, dashed},
+      ]
+        \node[saved] (l1) at (0, 4.0) {Layer 1 \checkmark};
+        \node[disc]  (l2) at (0, 3.2) {Layer 2};
+        \node[disc]  (l3) at (0, 2.4) {Layer 3};
+        \node[saved] (l4) at (0, 1.6) {Layer 4 \checkmark};
+        \node[disc]  (l5) at (0, 0.8) {Layer 5};
+        \node[disc]  (l6) at (0, 0.0) {Layer 6};
+        \node[saved] (l7) at (0,-0.8) {Layer 7 \checkmark};
+
+        \draw[-Stealth] (l1) -- (l2);
+        \draw[-Stealth] (l2) -- (l3);
+        \draw[-Stealth] (l3) -- (l4);
+        \draw[-Stealth] (l4) -- (l5);
+        \draw[-Stealth] (l5) -- (l6);
+        \draw[-Stealth] (l6) -- (l7);
+
+        \node[font=\scriptsize, green!50!black, anchor=west] at (l1.east) {~saved};
+        \node[font=\scriptsize, gray, anchor=west] at (l2.east) {~discarded};
+        \node[font=\scriptsize, gray, anchor=west] at (l3.east) {~discarded};
+        \node[font=\scriptsize, green!50!black, anchor=west] at (l4.east) {~saved};
+        \node[font=\scriptsize, gray, anchor=west] at (l5.east) {~discarded};
+        \node[font=\scriptsize, gray, anchor=west] at (l6.east) {~discarded};
+        \node[font=\scriptsize, green!50!black, anchor=west] at (l7.east) {~saved};
+
+        \draw[decorate, decoration={brace, amplitude=4pt, mirror, raise=2pt}]
+          (l2.north west) -- (l3.south west)
+          node[midway, left=8pt, font=\tiny, align=center] {recompute\\from ckpt 1};
+        \draw[decorate, decoration={brace, amplitude=4pt, mirror, raise=2pt}]
+          (l5.north west) -- (l6.south west)
+          node[midway, left=8pt, font=\tiny, align=center] {recompute\\from ckpt 2};
+      \end{tikzpicture}
+    \end{column}
+  \end{columns}
+
+  \vspace{0.3em}
+  {\footnotesize \textbf{Demo:} See \texttt{benchmark\_checkpointing.py} for a script that measures memory and speed with/without checkpointing on GPT-2.}
+\end{frame}
+
+% -----------------------------------------------------------------------
+\begin{frame}{Parameter-Efficient Fine-Tuning (PEFT) --- Overview}
+
+  Full fine-tuning updates \emph{all} parameters. For a 7B model, this means storing 7B gradients + optimizer states.
+
+  \vspace{0.3em}
+  \textbf{PEFT idea:} Freeze the pretrained weights, only train a small number of \emph{additional} or \emph{selected} parameters.
+
+  \vspace{0.5em}
+  \begin{center}
+  \begin{tabular}{l l l}
+    \toprule
+    \textbf{Method} & \textbf{What is trained} & \textbf{Trainable params} \\
+    \midrule
+    Full fine-tuning                    & All weights                      & 100\% \\
+    LoRA~\cite{hu2022lora}              & Low-rank additive updates        & $\sim$0.1--1\% \\
+    Adapters~\cite{houlsby2019adapters} & Small bottleneck modules         & $\sim$1--5\% \\
+    Prefix Tuning~\cite{li2021prefix}   & Learnable prefix tokens          & $\sim$0.1\% \\
+    Prompt Tuning~\cite{lester2021prompt} & Soft prompt embeddings         & $<$0.1\% \\
+    \bottomrule
+  \end{tabular}
+  \end{center}
+
+  \vspace{0.3em}
+  All PEFT methods: gradients and optimizer states only for the small trainable set $\Rightarrow$ massive memory savings.
+\end{frame}
+
+% -----------------------------------------------------------------------
+\begin{frame}{LoRA: Low-Rank Adaptation}
+
+  \textbf{Key insight}~\cite{hu2022lora}: Weight updates during fine-tuning have low intrinsic rank.
+
+  \vspace{0.3em}
+  \begin{columns}
+    \begin{column}{0.52\textwidth}
+      Instead of updating $W \in \mathbb{R}^{d \times k}$ directly, decompose the update:
+      \[
+        W' = W + \Delta W = W + BA
+      \]
+      where $B \in \mathbb{R}^{d \times r}$, $A \in \mathbb{R}^{r \times k}$, and $r \ll \min(d,k)$.
+
+      \vspace{0.3em}
+      \textbf{Training:}
+      \begin{itemize}
+        \item Freeze $W$ (no gradients, no optimizer state)
+        \item Only train $A$ and $B$ ($r(d+k)$ params instead of $dk$)
+        \item Initialize: $A \sim \mathcal{N}(0, \sigma^2)$, $B = 0$ (so $\Delta W = 0$ at start)
+        \item Scale by $\frac{\alpha}{r}$ (hyperparameter $\alpha$ controls update magnitude)
+      \end{itemize}
+
+      \vspace{0.3em}
+      \textbf{Inference:} Merge $W' = W + BA$ --- \emph{no extra latency}.
+    \end{column}
+    \begin{column}{0.44\textwidth}
+      \centering
+      \begin{tikzpicture}[
+        mat/.style={draw, minimum width=0.6cm, font=\scriptsize, inner sep=2pt, align=center},
+      ]
+        % Original weight
+        \node[mat, fill=blue!15, minimum height=2.4cm, minimum width=1.8cm] (W) at (0, 0) {$W$\\{\tiny $d \times k$}\\{\tiny frozen}};
+
+        % Plus sign
+        \node[font=\large] at (1.5, 0) {$+$};
+
+        % B matrix
+        \node[mat, fill=orange!25, minimum height=2.4cm, minimum width=0.5cm] (B) at (2.5, 0) {$B$\\{\tiny $d \times r$}};
+
+        % A matrix
+        \node[mat, fill=green!25, minimum height=0.5cm, minimum width=1.8cm] (A) at (3.8, 0) {$A$ {\tiny $r \times k$}};
+
+        % Brace for rank
+        \draw[decorate, decoration={brace, amplitude=3pt, raise=2pt}]
+          (B.north east) -- (B.south east)
+          node[midway, right=6pt, font=\tiny] {$r \ll d$};
+
+        % Labels
+        \node[font=\scriptsize, gray] at (0, -1.7) {full rank $dk$};
+        \node[font=\scriptsize, orange!70!black] at (3.2, -1.7) {low rank $r(d+k)$};
+      \end{tikzpicture}
+
+      \vspace{0.5em}
+      \textbf{Example:} $d = k = 4096$, $r = 16$\\
+      Full: 16.8M params per matrix\\
+      LoRA: 131K params ($\sim$0.8\%)
+    \end{column}
+  \end{columns}
+\end{frame}
+
+% -----------------------------------------------------------------------
+\begin{frame}{LoRA: Practical Details}
+
+  \begin{columns}
+    \begin{column}{0.50\textwidth}
+      \textbf{Which layers?}
+      \begin{itemize}
+        \item Typically applied to attention projections ($W_Q, W_K, W_V, W_O$)
+        \item Can also apply to MLP layers
+        \item More layers with smaller $r$ often beats fewer layers with larger $r$
+      \end{itemize}
+
+      \vspace{0.3em}
+      \textbf{Typical hyperparameters:}
+      \begin{itemize}
+        \item Rank $r \in \{4, 8, 16, 32, 64\}$
+        \item $\alpha$ often set to $2r$ or tuned
+        \item Learning rate $\sim$3--10$\times$ higher than full fine-tuning
+      \end{itemize}
+
+      \vspace{0.3em}
+      \textbf{Memory savings:}
+      \begin{itemize}
+        \item No gradient/optimizer for frozen weights
+        \item 7B model: full FT needs $\sim$112\,GB, LoRA $\sim$16--18\,GB
+      \end{itemize}
+    \end{column}
+    \begin{column}{0.46\textwidth}
+      \textbf{Serving multiple LoRAs:}
+      \begin{itemize}
+        \item One base model in memory
+        \item Swap/add small LoRA adapters per task or user
+        \item Enables multi-tenant serving
+      \end{itemize}
+
+      \vspace{0.5em}
+      \centering
+      \begin{tikzpicture}[
+        base/.style={draw, rounded corners, fill=blue!12, minimum width=2.5cm, minimum height=0.6cm, font=\small},
+        adapter/.style={draw, rounded corners, minimum width=1.5cm, minimum height=0.4cm, font=\scriptsize},
+      ]
+        \node[base] (bm) at (0, 0) {Base Model};
+        \node[adapter, fill=orange!20] (a1) at (-1.2, 1.2) {LoRA$_1$};
+        \node[adapter, fill=green!20]  (a2) at (0, 1.5) {LoRA$_2$};
+        \node[adapter, fill=red!15]    (a3) at (1.2, 1.2) {LoRA$_3$};
+        \draw[-Stealth] (a1) -- (bm);
+        \draw[-Stealth] (a2) -- (bm);
+        \draw[-Stealth] (a3) -- (bm);
+        \node[font=\tiny, gray] at (0, -0.6) {different tasks / users};
+      \end{tikzpicture}
+    \end{column}
+  \end{columns}
+\end{frame}
+
+% -----------------------------------------------------------------------
+\begin{frame}{Adapters}
+
+  \textbf{Idea}~\cite{houlsby2019adapters}: Insert small trainable \emphdef{bottleneck modules} between existing layers.
+
+  \vspace{0.3em}
+  \begin{columns}
+    \begin{column}{0.50\textwidth}
+      \textbf{Architecture:}
+      \begin{itemize}
+        \item Project down: $h \mapsto \mathbb{R}^{m}$ where $m \ll h$
+        \item Nonlinearity (e.g.\ ReLU/GELU)
+        \item Project up: $\mathbb{R}^{m} \mapsto \mathbb{R}^{h}$
+        \item Residual connection around the adapter
+      \end{itemize}
+      \[
+        \text{Adapter}(x) = x + f(x W_{\text{down}}) W_{\text{up}}
+      \]
+
+      \vspace{0.3em}
+      \textbf{Placement:} After attention and/or after FFN sublayer, before the residual add.
+
+      \vspace{0.3em}
+      \textbf{Comparison to LoRA:}
+      \begin{itemize}
+        \item Adapters add \emph{sequential} computation $\Rightarrow$ small inference overhead
+        \item LoRA can be merged into weights $\Rightarrow$ zero overhead
+        \item Both achieve similar quality at $\sim$1\% params
+      \end{itemize}
+    \end{column}
+    \begin{column}{0.44\textwidth}
+      \centering
+      \begin{tikzpicture}[
+        block/.style={draw, rounded corners, fill=blue!10, text width=2.0cm, align=center, font=\scriptsize, minimum height=0.5cm},
+        adapter/.style={draw, rounded corners, fill=orange!20, text width=1.6cm, align=center, font=\scriptsize, minimum height=0.4cm},
+        arr/.style={-Stealth, thick},
+      ]
+        \node[block] (ln1) at (0, 4.5) {LayerNorm};
+        \node[block] (attn) at (0, 3.6) {Self-Attention};
+        \node[adapter] (ad1) at (0, 2.7) {Adapter $\downarrow\!\uparrow$};
+        \node[font=\scriptsize] (add1) at (0, 2.1) {$+$ (residual)};
+        \node[block] (ln2) at (0, 1.4) {LayerNorm};
+        \node[block] (ffn) at (0, 0.6) {FFN};
+        \node[adapter] (ad2) at (0, -0.2) {Adapter $\downarrow\!\uparrow$};
+        \node[font=\scriptsize] (add2) at (0, -0.8) {$+$ (residual)};
+
+        \draw[arr] (ln1) -- (attn);
+        \draw[arr] (attn) -- (ad1);
+        \draw[arr] (ad1) -- (add1);
+        \draw[arr] (add1) -- (ln2);
+        \draw[arr] (ln2) -- (ffn);
+        \draw[arr] (ffn) -- (ad2);
+        \draw[arr] (ad2) -- (add2);
+
+        % Residual connections
+        \draw[-Stealth, gray, densely dashed] (ln1.west) -- ++(-0.6,0) |- (add1.west);
+        \draw[-Stealth, gray, densely dashed] (ln2.west) -- ++(-0.6,0) |- (add2.west);
+
+        \node[font=\tiny, orange!70!black, anchor=west] at (ad1.east) {~trainable};
+        \node[font=\tiny, blue!50!black, anchor=west] at (attn.east) {~frozen};
+      \end{tikzpicture}
+    \end{column}
+  \end{columns}
+\end{frame}
+
+% -----------------------------------------------------------------------
+\begin{frame}{Prefix Tuning and Prompt Tuning}
+
+  \begin{columns}
+    \begin{column}{0.50\textwidth}
+      \textbf{Prefix Tuning}~\cite{li2021prefix}:
+      \begin{itemize}
+        \item Prepend learnable \emphdef{prefix vectors} to keys and values in every attention layer
+        \item Prefix length $l$ (e.g.\ 10--200 tokens)
+        \item Parameters: $l \times L \times 2 \times d$ (prefix per layer, for $K$ and $V$)
+        \item Typically $<$0.1\% of model parameters
+      \end{itemize}
+
+      \vspace{0.5em}
+      \textbf{Prompt Tuning}~\cite{lester2021prompt}:
+      \begin{itemize}
+        \item Even simpler: learnable \emphdef{soft tokens} prepended at the \emph{input embedding} level only
+        \item No changes to internal layers
+        \item Parameters: $l \times d$ (one embedding per soft token)
+        \item Scales well: approaches full FT quality for large models ($>$10B)
+      \end{itemize}
+    \end{column}
+    \begin{column}{0.46\textwidth}
+      \centering
+      \begin{tikzpicture}[
+        tok/.style={draw, rounded corners, minimum width=0.5cm, minimum height=0.4cm, font=\tiny, inner sep=1pt},
+        layer/.style={draw, rounded corners, fill=blue!8, minimum width=3.8cm, minimum height=0.4cm, font=\scriptsize, inner sep=2pt},
+      ]
+        % Prefix tuning
+        \node[font=\small\bfseries] at (0, 3.5) {Prefix Tuning};
+        \node[tok, fill=orange!25] (p1) at (-1.4, 2.8) {$p_1$};
+        \node[tok, fill=orange!25] (p2) at (-0.7, 2.8) {$p_2$};
+        \node[font=\tiny] at (0, 2.8) {$\cdots$};
+        \node[tok, fill=gray!15] (x1) at (0.7, 2.8) {$x_1$};
+        \node[tok, fill=gray!15] (x2) at (1.4, 2.8) {$x_2$};
+        \node[layer] (l1) at (0, 2.1) {Attention layer $i$ (frozen)};
+        \draw[-Stealth, thick] (0, 2.55) -- (l1);
+
+        \node[font=\tiny, orange!70!black] at (-1.05, 2.45) {learned $K$,$V$};
+
+        % Prompt tuning
+        \node[font=\small\bfseries] at (0, 1.2) {Prompt Tuning};
+        \node[tok, fill=green!25] (s1) at (-1.4, 0.5) {$s_1$};
+        \node[tok, fill=green!25] (s2) at (-0.7, 0.5) {$s_2$};
+        \node[font=\tiny] at (0, 0.5) {$\cdots$};
+        \node[tok, fill=gray!15] (t1) at (0.7, 0.5) {$x_1$};
+        \node[tok, fill=gray!15] (t2) at (1.4, 0.5) {$x_2$};
+        \node[layer] (emb) at (0, -0.2) {Embedding layer (frozen)};
+        \node[layer] (rest) at (0, -0.8) {All layers (frozen)};
+        \draw[-Stealth, thick] (0, 0.25) -- (emb);
+        \draw[-Stealth, thick] (emb) -- (rest);
+
+        \node[font=\tiny, green!50!black] at (-1.05, 0.15) {learned emb.};
+      \end{tikzpicture}
+    \end{column}
+  \end{columns}
+\end{frame}
+
+% -----------------------------------------------------------------------
+\begin{frame}{Summary and Comparison}
+
+  \begin{center}
+  \renewcommand{\arraystretch}{1.2}
+  \begin{tabular}{l c c c c}
+    \toprule
+    \textbf{Method} & \textbf{Memory} & \textbf{Trainable} & \textbf{Inference} & \textbf{Quality} \\
+    & \textbf{saving} & \textbf{params} & \textbf{overhead} & \\
+    \midrule
+    Grad.\ checkpointing  & Activations      & 100\%       & None       & Same \\
+    LoRA                   & Large            & $\sim$0.5\% & None (merged) & Near full FT \\
+    Adapters               & Large            & $\sim$2\%   & Small      & Near full FT \\
+    Prefix Tuning          & Very large       & $<$0.1\%    & Prefix KV  & Good ($\geq$10B) \\
+    Prompt Tuning          & Very large       & $<$0.1\%    & Extra tokens & Good ($\geq$10B) \\
+    \bottomrule
+  \end{tabular}
+  \end{center}
+
+  \vspace{0.3em}
+  \textbf{In practice:}
+  \begin{itemize}
+    \item \textbf{Pretraining:} Gradient checkpointing + mixed precision + parallelism (always)
+    \item \textbf{Fine-tuning on limited hardware:} LoRA (most popular PEFT method)
+    \item \textbf{Multi-task serving:} LoRA adapters swapped per task on shared base model
+  \end{itemize}
+\end{frame}

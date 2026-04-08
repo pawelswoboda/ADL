@@ -1,0 +1,278 @@
+% !TEX root=./adl.tex
+
+\section{Language Generation}
+
+\subsection{Tokenization}
+
+% -----------------------------------------------------------------------
+\begin{frame}{From Text to Tokens}
+  Raw text must be converted to a sequence of discrete \textbf{tokens} before a model can process it.
+
+  \begin{block}{Character-level tokenization}
+    \texttt{"Hello"} $\;\to\;$ \texttt{[H, e, l, l, o]}
+    \begin{itemize}
+      \item Tiny vocabulary ($\sim$100 symbols for ASCII/Unicode subsets)
+      \item Long sequences; struggles to capture word-level structure
+    \end{itemize}
+  \end{block}
+
+  \begin{block}{Word-level tokenization}
+    \texttt{"Hello world"} $\;\to\;$ \texttt{[Hello, world]}
+    \begin{itemize}
+      \item Huge vocabulary; unknown-word problem for rare words
+    \end{itemize}
+  \end{block}
+
+  \begin{alertblock}{Subword tokenization (used in practice)}
+    Split into frequent subword units: \texttt{"unhappiness"} $\to$ \texttt{[un, happiness]}
+    \begin{itemize}
+      \item Compact vocabulary ($\sim$50k tokens)
+      \item Handles rare words gracefully via decomposition
+    \end{itemize}
+  \end{alertblock}
+\end{frame}
+
+% -----------------------------------------------------------------------
+\begin{frame}{Byte-Pair Encoding (BPE)}
+  \textbf{BPE}~\cite{sennrich2016bpe} is the dominant subword algorithm (used in GPT-2~\cite{radford2019gpt2}/GPT-3/4, LLaMA, \ldots).
+
+  \vspace{0.5em}
+  \textbf{Training algorithm:}
+  \begin{enumerate}
+    \item Start with a vocabulary of individual bytes (256 entries)
+    \item Count all adjacent pair frequencies in the corpus
+    \item Merge the most frequent pair $\to$ add the merged token to the vocabulary
+    \item Repeat until vocabulary size $V$ is reached
+  \end{enumerate}
+
+  \vspace{0.5em}
+  \textbf{Encoding at inference:} apply the learned merge rules greedily, left to right.
+
+  \vspace{0.5em}
+  \begin{columns}
+    \begin{column}{0.5\textwidth}
+      \textbf{Example} (GPT-2, $V=50{,}257$):
+      \begin{itemize}
+        \item \texttt{"tokenization"} $\to$ \texttt{[token, ization]}
+        \item \texttt{"PyTorch"} $\to$ \texttt{[Py, Torch]}
+        \item \texttt{"<|endoftext|>} $\to$ special token
+      \end{itemize}
+    \end{column}
+    \begin{column}{0.47\textwidth}
+      \begin{block}{Key property}
+        Every byte sequence is encodable --- no unknown tokens.
+      \end{block}
+    \end{column}
+  \end{columns}
+\end{frame}
+
+% -----------------------------------------------------------------------
+\begin{frame}{Vocabulary and Special Tokens}
+  The tokenizer defines a \textbf{vocabulary} $\mathcal{V}$ mapping tokens $\leftrightarrow$ integer IDs.
+
+  \vspace{0.5em}
+  \textbf{Special tokens} are added to control model behavior:
+  \begin{itemize}
+    \item \texttt{<|endoftext|>} / \texttt{<eos>} --- marks end of a document
+    \item \texttt{<|pad|>} --- pads shorter sequences in a batch to equal length
+    \item \texttt{<|bos|>} --- beginning-of-sequence prompt for generation
+    \item Instruction-tuned models add \texttt{<|user|>}, \texttt{<|assistant|>}, \texttt{<|system|>} etc.
+  \end{itemize}
+
+  \vspace{0.5em}
+  \begin{block}{Embedding lookup}
+    Each token ID $t \in \{0, \ldots, V{-}1\}$ is mapped to a vector via an \textbf{embedding matrix}
+    $E \in \mathbb{R}^{V \times d}$: the model's input is $x_i = E[t_i]$.
+  \end{block}
+
+  \vspace{0.5em}
+  \textit{Note:} the same matrix $E$ is often used (transposed) to produce output logits --- \textbf{weight tying}.
+\end{frame}
+
+% -----------------------------------------------------------------------
+\subsection{Training Objective}
+
+\begin{frame}{Next-Token Prediction}
+  An autoregressive language model defines a distribution over sequences by factoring it autoregressively:
+  \[
+    p(x_1, x_2, \ldots, x_T) = \prod_{i=1}^{T} p(x_i \mid x_1, \ldots, x_{i-1})
+  \]
+
+  The model is trained to predict the \textbf{next token} given all preceding tokens.
+
+  \vspace{0.5em}
+      \textbf{One block, $T$ training examples:}
+      \begin{center}
+        \begin{tabular}{ll}
+          \textbf{Input context} & \textbf{Target} \\ \hline
+          \texttt{[The]}              & \texttt{cat} \\
+          \texttt{[The, cat]}         & \texttt{sat} \\
+          \texttt{[The, cat, sat]}    & \texttt{on} \\
+          \texttt{[The, cat, sat, on]}& \texttt{the} \\
+        \end{tabular}
+      \end{center}
+
+      \begin{alertblock}{Efficiency}
+        Generation is autoregressive and slow: One token after another.
+          Can we circumvent this limitation during training with a parallel pass through the data?
+          We will affirmative answers to this for transformers and SSMs (Mamba).
+      \end{alertblock}
+\end{frame}
+
+% -----------------------------------------------------------------------
+\begin{frame}{Cross-Entropy Loss}
+  The model outputs \textbf{logits} $z \in \mathbb{R}^V$ for the next token; convert to probabilities via softmax:
+  \[
+    p_\theta(x = k \mid \text{context}) = \frac{\exp(z_k)}{\sum_{v=1}^{V} \exp(z_v)}
+  \]
+
+  \textbf{Training loss:} average negative log-likelihood over all positions:
+  \[
+    \mathcal{L} = -\frac{1}{T} \sum_{i=1}^{T} \log p_\theta(x_i \mid x_1, \ldots, x_{i-1})
+  \]
+
+      \textbf{Perplexity} is the standard reporting metric:
+      \[
+        \mathrm{PPL} = \exp(\mathcal{L})
+      \]
+      A perplexity of $k$ means the model is, on average, as uncertain as a uniform distribution over $k$ equally likely tokens.
+
+      \begin{block}{Teacher forcing}
+        During training the \emph{ground-truth} previous tokens are always fed as context, even if the model's own prediction was wrong.
+          This decouples training from generation. We learn \emph{offline}.
+      \end{block}
+\end{frame}
+
+% -----------------------------------------------------------------------
+\begin{frame}{Why Next-Token Prediction Works}
+  \begin{itemize}
+    \item \textbf{Self-supervised}: supervision signal is derived from raw text, no manual labels needed.
+    \item \textbf{Scalable}: the internet provides virtually unlimited text data.
+    \item \textbf{Versatile}: to predict the next token well, the model must implicitly learn grammar, facts, reasoning, style, (world model?) \ldots
+  \end{itemize}
+
+  \vspace{0.8em}
+  \begin{alertblock}{Emergent capabilities}
+    As model size and data scale up, capabilities emerge that were not explicitly trained: few-shot learning, chain-of-thought reasoning, code generation, \ldots
+  \end{alertblock}
+
+\end{frame}
+
+% -----------------------------------------------------------------------
+\subsection{Autoregressive Sampling}
+
+\begin{frame}{Generation Loop}
+  At inference time we generate one token per step:
+  \[
+    \hat{x}_{i} \sim p_\theta(\cdot \mid x_1, \ldots, x_{i-1}), \qquad i = 1, 2, 3, \ldots
+  \]
+
+  \begin{enumerate}
+    \item Encode the prompt into token IDs
+    \item Forward-pass through the model $\to$ logits $z \in \mathbb{R}^V$
+    \item Apply a \textbf{sampling strategy} to $z$ to pick the next token $\hat{x}_i$
+    \item Append $\hat{x}_i$ to the context; go to step 2
+    \item Stop when \texttt{<eos>} is sampled or a length limit is reached
+  \end{enumerate}
+
+  \vspace{0.5em}
+  \begin{alertblock}{Distribution shift}
+    Training uses ground-truth context (teacher forcing); generation uses \emph{model-predicted} context.
+    Errors can accumulate, a wrong token shifts the distribution for all future tokens.
+  \end{alertblock}
+\end{frame}
+
+% -----------------------------------------------------------------------
+\begin{frame}{Greedy Decoding \& Beam Search}
+  \textbf{Greedy decoding}: always pick the most probable token:
+  \[
+    \hat{x}_i = \arg\max_{k}\; p_\theta(x=k \mid x_{<i})
+  \]
+  Fast, deterministic, but often produces repetitive or suboptimal text.
+
+  \vspace{0.8em}
+  \textbf{Beam search}: maintain the $B$ most probable \emph{sequences} at each step.
+  \begin{itemize}
+    \item At each step expand each beam by $V$ candidates $\to$ keep top-$B$ by cumulative log-prob
+    \item Returns the globally highest-probability sequence (within the beam)
+  \[
+    \text{score}(x_1,\ldots,x_T) = \sum_{i=1}^{T} \log p_\theta(x_i \mid x_{<i})
+  \]
+
+  \end{itemize}
+
+\end{frame}
+
+% -----------------------------------------------------------------------
+\begin{frame}{Temperature Sampling}
+  Divide logits by a \textbf{temperature} $\tau > 0$ before softmax:
+  \[
+    p_\tau(x = k) = \frac{\exp(z_k / \tau)}{\sum_v \exp(z_v / \tau)}
+  \]
+
+      \begin{itemize}
+        \item $\tau \to 0$: concentrates on the mode $\to$ greedy decoding
+        \item $\tau = 1$: original model distribution
+        \item $\tau > 1$: flatter distribution, more diverse / random output
+      \end{itemize}
+
+      \begin{block}{Intuition}
+        Temperature controls the \emph{sharpness} of the distribution.
+        High $\tau$ ``softens'' the model's confidence; low $\tau$ ``sharpens'' it.
+      \end{block}
+
+  \vspace{0.8em}
+    \begin{itemize}
+        \item In practice $\tau \in [0.7, 1.0]$ gives a good creativity/coherence trade-off.
+    \end{itemize}
+\end{frame}
+
+% -----------------------------------------------------------------------
+\begin{frame}{Top-$k$ and Nucleus (Top-$p$) Sampling}
+  Temperature alone may still assign probability mass to very unlikely tokens.
+
+  \textbf{Truncation strategies} restrict sampling to a smaller candidate set.
+
+  \vspace{0.5em}
+  \textbf{Top-$k$ sampling}
+  \begin{itemize}
+    \item Keep only the $k$ tokens with the highest probability; redistribute mass uniformly to zero out the rest
+    \item Problem: $k$ is a fixed number. Too restrictive when the distribution is flat, too lenient when it is peaked
+  \end{itemize}
+
+  \vspace{0.5em}
+  \textbf{Nucleus (Top-$p$) sampling} \hfill\small\cite{holtzman2020curious}
+  \begin{itemize}
+    \item Sort tokens by descending probability; keep the smallest set whose cumulative probability $\ge p$
+    \item The candidate set size adapts dynamically to the distribution shape
+    \item Common default: $p = 0.9$
+  \end{itemize}
+
+  \[
+    \mathcal{V}_p = \arg\min_{\mathcal{S} \subseteq \mathcal{V}} \left\{ |\mathcal{S}| : \sum_{k \in \mathcal{S}} p(x=k) \ge p \right\}
+  \]
+\end{frame}
+
+% -----------------------------------------------------------------------
+\begin{frame}{Sampling Strategies: Summary}
+  \begin{center}
+    \begin{tabular}{lll}
+      \textbf{Method} & \textbf{Deterministic?} & \textbf{Diversity}  \\ \hline
+      Greedy        & Yes & None    \\
+      Beam search   & Yes & Low     \\
+      Temperature   & No  & Tunable \\
+      Top-$k$       & No  & Medium  \\
+      Top-$p$       & No  & Adaptive\\
+    \end{tabular}
+  \end{center}
+
+  \vspace{0.8em}
+  \begin{block}{Common combination}
+    In practice: apply temperature $\tau$, then top-$p$ (or top-$k$), then sample.
+  \end{block}
+
+  \vspace{0.5em}
+  \begin{alertblock}{Repetition penalty}
+    Models sometimes loop. A simple fix: down-weight logits of previously generated tokens by a factor $\alpha > 1$ before sampling.
+  \end{alertblock}
+\end{frame}

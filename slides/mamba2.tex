@@ -1,24 +1,10 @@
-\documentclass[aspectratio=169]{beamer}
+% !TEX root=./adl.tex
 
-\usetheme{metropolis}
-\usepackage{amsmath, amssymb, bm}
-\usepackage{booktabs}
-\usepackage{tikz}
-\usetikzlibrary{arrows.meta, positioning, matrix, shapes.geometric}
-\usepackage{xcolor}
-\usepackage{listings}
-\usepackage{algorithm}
-\usepackage{algpseudocode}
-
-% Color palette
+% Mamba color palette
 \definecolor{mambagreen}{RGB}{34, 139, 34}
 \definecolor{mambablue}{RGB}{30, 100, 200}
 \definecolor{mambared}{RGB}{180, 40, 40}
 \definecolor{mambagray}{RGB}{90, 90, 90}
-
-\setbeamercolor{frametitle}{bg=mambablue, fg=white}
-\setbeamercolor{progress bar}{fg=mambagreen}
-\setbeamercolor{alerted text}{fg=mambered}
 
 \lstset{
   language=Python,
@@ -33,25 +19,591 @@
   xrightmargin=0.5em,
 }
 
-\title{Mamba-2: State Space Duality}
-\subtitle{Transformers are SSMs: Generalized Models and Efficient Algorithms\\Through Structured State Space Duality}
-\author{Albert Gu (CMU) \& Tri Dao (Princeton)}
-\date{NeurIPS 2024 \\ \small Presentation based on Tri Dao's blog series}
-\institute{}
+% -----------------------------------------------------------------------
+\section{State Space Models and Mamba}
+
+% =======================================================================
+\subsection{State Space Models}
 
 % -----------------------------------------------------------------------
-\begin{document}
+\begin{frame}{Motivation: Recurrence vs.\ Attention}
 
-\maketitle
+  \begin{columns}
+    \begin{column}{0.48\textwidth}
+      \textbf{RNNs / LSTMs}
+      \begin{itemize}
+        \item $O(1)$ memory per step, streaming
+        \item Sequential $\Rightarrow$ \alert{not parallelizable} during training
+      \end{itemize}
+    \end{column}
+    \begin{column}{0.48\textwidth}
+      \textbf{Transformers}
+      \begin{itemize}
+        \item Fully parallel training
+        \item \alert{$O(T^2)$} attention cost
+        \item KV cache grows linearly at inference
+      \end{itemize}
+    \end{column}
+  \end{columns}
 
-% -----------------------------------------------------------------------
-\begin{frame}{Outline}
-  \tableofcontents
+  \vspace{0.8em}
+  \begin{alertblock}{Can we get the best of both?}
+    \textbf{State Space Models} aim to combine:
+    \begin{itemize}
+      \item Constant-size hidden state $\Rightarrow$ $O(1)$ inference per step (like RNNs)
+      \item Parallel training via convolutional or attention-like view (like Transformers)
+    \end{itemize}
+  \end{alertblock}
 \end{frame}
 
 % -----------------------------------------------------------------------
-\section{Motivation}
+\begin{frame}{Continuous-Time State Space Models}
 
+  SSMs originate from control theory. A continuous-time, linear system maps input $x(t) \in \R$ to output $y(t) \in \R$ via a latent state $h(t) \in \R^N$:
+
+  \vspace{0.3em}
+  \begin{center}
+    \begin{tikzpicture}[
+      scale=0.9, every node/.style={scale=0.9},
+    ]
+      % --- Input sine wave ---
+      \node[font=\small\bfseries, mambared!80!black] at (-4.2, 1.15) {Input};
+      \node[font=\scriptsize, mambared!80!black] at (-4.2, 0.8) {(sequence)};
+      \draw[mambared, very thick, smooth, samples=40, domain=-0.6:0.6]
+        plot ({-4.2 + 0.55*\x}, {0.4*sin(3.14*\x r)});
+      \node[font=\small\bfseries, mambared!80!black] at (-4.2, -0.75) {$x(t)$};
+
+      % --- Arrow in ---
+      \draw[-Stealth, very thick, mambagray] (-3.5, 0) -- (-2.3, 0);
+
+      % --- SSM box ---
+      \fill[rounded corners=8pt, black!80] (-2.2,-1.2) rectangle (2.2,1.2);
+      \node[font=\small\bfseries, white] at (0, 1.45) {SSM};
+      % State equation sub-box
+      \node[font=\tiny, white, anchor=west] at (-1.9, 0.85) {state equation};
+      \fill[rounded corners=3pt, white] (-1.9,0.15) rectangle (1.9,0.72);
+      \node[font=\small] at (0, 0.44) {$h'(t) = \bar{A}\,h(t) + \bar{B}\,x(t)$};
+      % Output equation sub-box
+      \node[font=\tiny, white, anchor=west] at (-1.9, -0.1) {output equation};
+      \fill[rounded corners=3pt, white] (-1.9,-0.82) rectangle (1.9,-0.25);
+      \node[font=\small] at (0, -0.54) {$y(t) = C\,h(t)$};
+
+      % --- Arrow out ---
+      \draw[-Stealth, very thick, mambagray] (2.3, 0) -- (3.5, 0);
+
+      % --- Output sine wave ---
+      \node[font=\small\bfseries, violet!80!black] at (4.2, 1.15) {Output};
+      \node[font=\scriptsize, violet!80!black] at (4.2, 0.8) {(sequence)};
+      \draw[violet, very thick, smooth, samples=40, domain=-0.6:0.6]
+        plot ({4.2 + 0.55*\x}, {0.4*sin(3.14*\x r + 40)});
+      \node[font=\small\bfseries, violet!80!black] at (4.2, -0.75) {$y(t)$};
+    \end{tikzpicture}
+  \end{center}
+
+  \vspace{0.2em}
+  \begin{columns}
+    \begin{column}{0.55\textwidth}
+      \begin{itemize}
+        \item $\bar{A} \in \R^{N \times N}$: state transition matrix
+        \item $\bar{B} \in \R^{N \times 1}$: input projection
+        \item $C \in \R^{1 \times N}$: output projection
+      \end{itemize}
+    \end{column}
+    \begin{column}{0.42\textwidth}
+      \begin{block}{Linear Time-Invariance (LTI)}
+        $(\bar{A}, \bar{B}, C)$ are \emph{constant} --- they do not depend on the input.
+      \end{block}
+    \end{column}
+  \end{columns}
+\end{frame}
+
+% -----------------------------------------------------------------------
+\begin{frame}{Discretization}
+
+  To process a discrete sequence $x_0, x_1, \ldots, x_T$ with step size $\Delta$, we discretize via the \textbf{zero-order hold} (ZOH):
+
+  \[
+    A = \exp(\Delta \bar{A}), \qquad B = (\Delta \bar{A})^{-1}(\exp(\Delta \bar{A}) - I) \cdot \Delta \bar{B}
+  \]
+
+  This gives the \textbf{discrete SSM recurrence}:
+
+  \begin{center}
+  \begin{tikzpicture}[
+    scale=0.75, every node/.style={scale=0.75},
+    mat/.style={draw, thin, minimum size=0.28cm, inner sep=0pt},
+  ]
+    % === State equation: h_t = A * h_{t-1} + B * x_t ===
+    % h_t vector (cyan, Nx1)
+    \foreach \r in {0,...,3} {
+      \node[mat, fill=cyan!30] at (0, -\r*0.32) {};
+    }
+    \node[font=\small\bfseries, below] at (0, -1.25) {$h_t$};
+
+    \node[font=\normalsize] at (0.65, -0.48) {$=$};
+
+    % A matrix (yellow, NxN)
+    \foreach \r in {0,...,3} {
+      \foreach \c in {0,...,3} {
+        \node[mat, fill=yellow!40] at (1.3+\c*0.32, -\r*0.32) {};
+      }
+    }
+    \node[font=\small\bfseries, below, yellow!60!black] at (1.78, -1.25) {$A$};
+
+    \node[font=\scriptsize] at (2.75, -0.48) {$\cdot$};
+
+    % h_{t-1} vector (cyan, Nx1)
+    \foreach \r in {0,...,3} {
+      \node[mat, fill=cyan!30] at (3.15, -\r*0.32) {};
+    }
+    \node[font=\small\bfseries, below] at (3.15, -1.25) {$h_{t-1}$};
+
+    \node[font=\normalsize] at (3.8, -0.48) {$+$};
+
+    % B vector (green, Nx1)
+    \foreach \r in {0,...,3} {
+      \node[mat, fill=green!35] at (4.4, -\r*0.32) {};
+    }
+    \node[font=\small\bfseries, below, green!50!black] at (4.4, -1.25) {$B$};
+
+    \node[font=\scriptsize] at (4.95, -0.48) {$\cdot$};
+
+    % x_t (red sine)
+    \draw[mambared, very thick, smooth, samples=30, domain=-0.35:0.35]
+      plot ({5.5+0.4*\x}, {-0.48 + 0.35*sin(3.14*\x r)});
+    \node[font=\small\bfseries, below, mambared!80!black] at (5.5, -1.25) {$x_t$};
+
+    % --- dashed grouping boxes with annotations ---
+    \draw[dashed, mambagray, rounded corners=2pt] (1.0,0.35) rectangle (3.45,-1.55);
+    \node[font=\tiny, mambagray, align=center] at (2.2, -1.85) {How \textbf{state} evolves};
+    \draw[dashed, mambagray, rounded corners=2pt] (4.05,0.35) rectangle (5.95,-1.55);
+    \node[font=\tiny, mambagray, align=center] at (5.0, -1.85) {How \textbf{input} affects state};
+
+    % === Output equation: y_t = C * h_t ===
+    \def\offy{-3.3}
+
+    % y_t (purple sine)
+    \draw[violet, very thick, smooth, samples=30, domain=-0.35:0.35]
+      plot ({0+0.4*\x}, {\offy-0.14 + 0.35*sin(3.14*\x r + 40)});
+    \node[font=\small\bfseries, below, violet!80!black] at (0, \offy-0.85) {$y_t$};
+
+    \node[font=\normalsize] at (0.65, \offy-0.14) {$=$};
+
+    % C vector (blue, 1xN)
+    \foreach \c in {0,...,3} {
+      \node[mat, fill=blue!25] at (1.3+\c*0.32, \offy-0.14) {};
+    }
+    \node[font=\small\bfseries, below, blue!70!black] at (1.78, \offy-0.85) {$C$};
+
+    \node[font=\scriptsize] at (2.75, \offy-0.14) {$\cdot$};
+
+    % h_t vector (cyan, Nx1)
+    \foreach \r in {0,...,3} {
+      \node[mat, fill=cyan!30] at (3.15, \offy-0.14+0.48-\r*0.32) {};
+    }
+    \node[font=\small\bfseries, below] at (3.15, \offy-0.85) {$h_t$};
+
+    % --- dashed grouping ---
+    \draw[dashed, mambagray, rounded corners=2pt] (1.0,\offy+0.55) rectangle (3.45,\offy-1.15);
+    \node[font=\tiny, mambagray, align=center] at (2.2, \offy-1.45) {How \textbf{state} maps to output};
+
+    % Dimension annotations
+    \node[font=\tiny, mambagray] at (1.78, 0.6) {\textit{N$\times$N}};
+    \node[font=\tiny, mambagray] at (3.15, 0.6) {\textit{N$\times$1}};
+    \node[font=\tiny, mambagray] at (4.4, 0.6) {\textit{N$\times$1}};
+    \node[font=\tiny, mambagray] at (1.78, \offy+0.75) {\textit{1$\times$N}};
+    \node[font=\tiny, mambagray] at (3.15, \offy+0.75) {\textit{N$\times$1}};
+  \end{tikzpicture}
+  \end{center}
+
+  \begin{itemize}
+    \item Looks like a linear RNN --- but with structured matrices $A, B, C$
+    \item The step size $\Delta$ controls the resolution: how much continuous time each discrete step represents
+    \item A large $\Delta$ focuses on coarse/slow features; a small $\Delta$ on fine/fast features
+  \end{itemize}
+\end{frame}
+
+% -----------------------------------------------------------------------
+\begin{frame}{SSM: Computational Graph}
+
+  One step of the recurrence $h_t = A\,h_{t-1} + B\,x_t$, \; $y_t = C\,h_t$:
+
+  \vspace{0.3em}
+  \begin{center}
+  \begin{tikzpicture}[
+    scale=0.82, every node/.style={scale=0.82},
+    mat/.style={draw, thin, minimum size=0.26cm, inner sep=0pt},
+    opbox/.style={draw, rounded corners=3pt, minimum width=1.4cm, minimum height=0.7cm,
+                  font=\scriptsize, align=center, fill=white},
+    sumcirc/.style={draw, circle, minimum size=0.6cm, fill=gray!15, font=\scriptsize},
+    arr/.style={-Stealth, very thick, mambagray},
+  ]
+    % --- Input x_t on the far left ---
+    \draw[mambared, very thick, smooth, samples=30, domain=-0.4:0.4]
+      plot ({-0.1+0.45*\x}, {0 + 0.4*sin(3.14*\x r)});
+    \node[font=\small\bfseries, mambared!80!black, below] at (-0.1, -0.65) {$x_t$};
+    % Input vector (red, Nx1)
+    \foreach \r in {0,...,2} {
+      \node[mat, fill=red!20] at (0.9, 0.26-\r*0.28) {};
+    }
+
+    % Arrow to B multiply
+    \draw[arr] (1.2, 0) -- (1.8, 0);
+
+    % B multiply box
+    \node[opbox, fill=green!10] (bmul) at (2.7, 0) {$B$\\[-1pt] multiply};
+    % B matrix (green cells) inside conceptual
+    \foreach \r in {0,...,2} {
+      \foreach \c in {0,...,1} {
+        \node[mat, fill=green!30] at (3.9+\c*0.28, 0.26-\r*0.28) {};
+      }
+    }
+    % result of B*x: green+pink mixed cells
+    \foreach \r in {0,...,2} {
+      \foreach \c in {0,...,1} {
+        \pgfmathtruncatemacro{\isgreen}{mod(\r+\c,2)}
+        \ifnum\isgreen=0
+          \node[mat, fill=green!25] at (4.8+\c*0.28, 0.26-\r*0.28) {};
+        \else
+          \node[mat, fill=red!18] at (4.8+\c*0.28, 0.26-\r*0.28) {};
+        \fi
+      }
+    }
+
+    % Arrow to sum
+    \draw[arr] (5.4, 0) -- (6.0, 0);
+
+    % Sum node
+    \node[sumcirc] (sum) at (6.5, 0) {sum};
+
+    % --- State path (below) ---
+    % Previous state h_{t-1} (cyan)
+    \foreach \r in {0,...,2} {
+      \foreach \c in {0,...,2} {
+        \node[mat, fill=cyan!25] at (3.5+\c*0.28, -2.0-\r*0.28) {};
+      }
+    }
+    \node[font=\scriptsize, below] at (3.78, -2.9) {$h_{t-1}$};
+
+    % A multiply box
+    \node[opbox, fill=yellow!15] (amul) at (5.5, -2.28) {$A$\\[-1pt] multiply};
+    % A matrix (yellow)
+    \foreach \r in {0,...,2} {
+      \foreach \c in {0,...,2} {
+        \node[mat, fill=yellow!35] at (4.5+\c*0.28, -2.0-\r*0.28) {};
+      }
+    }
+
+    % Result of A*h (cyan, smaller)
+    \foreach \r in {0,...,2} {
+      \foreach \c in {0,...,2} {
+        \node[mat, fill=cyan!20] at (6.2+\c*0.28, -2.0-\r*0.28) {};
+      }
+    }
+
+    % Arrow from A*h up to sum
+    \draw[arr] (6.5, -1.7) -- (6.5, -0.35);
+
+    % --- New state h_t (cyan, after sum) ---
+    \draw[arr] (7.0, 0) -- (7.6, 0);
+    \node[font=\scriptsize\bfseries, above, cyan!50!black] at (8.3, 0.7) {State $h_t$};
+    \foreach \r in {0,...,2} {
+      \foreach \c in {0,...,2} {
+        \node[mat, fill=cyan!30] at (7.9+\c*0.28, 0.26-\r*0.28) {};
+      }
+    }
+    \node[font=\tiny, mambagray] at (8.18, -0.7) {updates each step};
+
+    % Arrow to C multiply
+    \draw[arr] (8.8, 0) -- (9.4, 0);
+
+    % C multiply box
+    \node[opbox, fill=blue!10] (cmul) at (10.1, 0) {$C$\\[-1pt] multiply};
+
+    % C vector (blue, 1xN)
+    \foreach \r in {0,...,2} {
+      \node[mat, fill=blue!25] at (10.9, 0.26-\r*0.28) {};
+    }
+
+    % Output result (blue vector)
+    \foreach \r in {0,...,2} {
+      \node[mat, fill=blue!20] at (11.5, 0.26-\r*0.28) {};
+    }
+
+    % Arrow to output
+    \draw[arr] (11.8, 0) -- (12.3, 0);
+
+    % Output y_t
+    \draw[violet, very thick, smooth, samples=30, domain=-0.4:0.4]
+      plot ({12.8+0.45*\x}, {0 + 0.35*sin(3.14*\x r + 40)});
+    \node[font=\small\bfseries, violet!80!black, below] at (12.8, -0.65) {$y_t$};
+
+    % Feedback arrow from h_t back to h_{t-1} (wraps around bottom)
+    \draw[arr, rounded corners=6pt] (8.18, -0.55) -- (8.18,-3.5) -- (3.78,-3.5) -- (3.78,-2.9);
+    \node[font=\tiny, mambagray] at (6.0, -3.75) {state carries over to next step};
+  \end{tikzpicture}
+  \end{center}
+\end{frame}
+
+% -----------------------------------------------------------------------
+\begin{frame}{The Dual View: Recurrence vs.\ Convolution}
+
+  For LTI systems ($A, B, C$ constant), unrolling the recurrence yields:
+  \[
+    y_t = C A^t B\, x_0 + C A^{t-1} B\, x_1 + \cdots + C B\, x_t = \sum_{k=0}^{t} \underbrace{C A^k B}_{\bar{K}_k}\, x_{t-k}
+  \]
+
+  This is a \textbf{causal convolution} $y = \bar{K} * x$ with kernel $\bar{K} \in \R^T$.
+
+  \vspace{0.5em}
+  \begin{columns}
+    \begin{column}{0.48\textwidth}
+      \textbf{Recurrent mode}
+      \begin{itemize}
+        \item $O(N)$ per step
+        \item Sequential --- good for inference
+      \end{itemize}
+    \end{column}
+    \begin{column}{0.48\textwidth}
+      \textbf{Convolutional mode}
+      \begin{itemize}
+        \item Compute $\bar{K}$, then use FFT
+        \item $O(T \log T)$ --- good for training
+      \end{itemize}
+    \end{column}
+  \end{columns}
+
+  \vspace{0.5em}
+  \begin{block}{S4~\cite{gu2022s4}}
+    Structured State Spaces for Sequences (S4) uses HiPPO initialization and diagonal structure for $\bar{A}$ to make this practical. First SSM to match Transformers on long-range benchmarks.
+  \end{block}
+\end{frame}
+
+% -----------------------------------------------------------------------
+\begin{frame}{The Limitation of LTI Models}
+
+  LTI SSMs apply the \emph{same} convolution kernel to every input, regardless of content.
+
+  \vspace{0.5em}
+  \textbf{Example:} Consider the task of selectively copying tokens from context.
+
+  \begin{center}
+    \begin{tikzpicture}[
+      tok/.style={minimum width=0.65cm, minimum height=0.55cm, draw, font=\small, inner sep=1pt},
+    ]
+      \node[tok, fill=mambablue!20] at (0,0) {A};
+      \node[tok] at (0.7,0) {x};
+      \node[tok] at (1.4,0) {x};
+      \node[tok, fill=mambared!20] at (2.1,0) {B};
+      \node[tok] at (2.8,0) {x};
+      \node[tok, fill=mambagreen!20] at (3.5,0) {C};
+      \node[tok] at (4.2,0) {x};
+      \node[tok] at (4.9,0) {x};
+
+      \draw[-Stealth, thick] (5.4,0) -- (6.0,0);
+
+      \node[tok, fill=mambablue!20] at (6.5,0) {A};
+      \node[tok, fill=mambared!20] at (7.2,0) {B};
+      \node[tok, fill=mambagreen!20] at (7.9,0) {C};
+    \end{tikzpicture}
+  \end{center}
+
+  \begin{itemize}
+    \item An LTI model treats every token identically --- it cannot \emph{selectively} remember some tokens and ignore others based on content
+    \item A fixed kernel is fundamentally \alert{content-agnostic}
+    \item Transformers solve this via content-dependent attention weights
+  \end{itemize}
+
+  \vspace{0.3em}
+  \begin{alertblock}{Insight}
+    To make SSMs truly powerful, the parameters must be \textbf{input-dependent}.
+    This breaks LTI and the convolutional mode --- but enables \emph{selectivity}.
+  \end{alertblock}
+\end{frame}
+
+% =======================================================================
+\subsection{Mamba: Selective State Spaces}
+
+% -----------------------------------------------------------------------
+\begin{frame}{Selectivity: The Core Idea of Mamba~\cite{gu2024mamba}}
+
+  \textbf{Mamba} makes the SSM parameters \emph{functions of the input}:
+  \[
+    B_t = \text{Linear}_B(x_t), \quad C_t = \text{Linear}_C(x_t), \quad \Delta_t = \text{softplus}(\text{Linear}_\Delta(x_t))
+  \]
+
+  The discrete recurrence becomes \textbf{time-varying}:
+  \[
+    \boxed{h_t = A_t\, h_{t-1} + B_t\, x_t, \qquad y_t = C_t^\top h_t}
+  \]
+
+  where $A_t = \exp(\Delta_t \cdot \bar{A})$ and $B_t, C_t$ depend on $x_t$.
+
+  \vspace{0.5em}
+  \textbf{Intuition for $\Delta_t$ (step size):}
+  \begin{itemize}
+    \item \textbf{Large $\Delta_t$}: Focus on current input, reset state $\approx$ ``remember this token''
+    \item \textbf{Small $\Delta_t$}: Ignore current input, preserve state $\approx$ ``skip this token''
+  \end{itemize}
+
+  \vspace{0.3em}
+  The model learns \emph{when} to update its state --- this is the selection mechanism.
+\end{frame}
+
+% -----------------------------------------------------------------------
+\begin{frame}{The Hardware Challenge}
+
+  Making parameters input-dependent \alert{breaks} the convolutional mode:
+  \begin{itemize}
+    \item Time-varying $(A_t, B_t, C_t)$ $\Rightarrow$ no fixed convolution kernel
+    \item The recurrence must be computed sequentially $\Rightarrow$ back to the RNN problem?
+  \end{itemize}
+
+  \vspace{0.5em}
+  \textbf{The problem is not FLOPs --- it's memory access.}
+
+  Modern GPUs have:
+  \begin{center}
+    \begin{tabular}{lcc}
+      \toprule
+      & \textbf{SRAM (on-chip)} & \textbf{HBM (off-chip)} \\
+      \midrule
+      Size & $\sim$20 MB & $\sim$80 GB \\
+      Bandwidth & $\sim$19 TB/s & $\sim$3 TB/s \\
+      \bottomrule
+    \end{tabular}
+  \end{center}
+
+  \vspace{0.3em}
+  A naive scan reads/writes the full state from HBM at every step. Mamba's selective scan is \emph{memory-bound}, not compute-bound.
+
+  \vspace{0.3em}
+  \begin{block}{Solution: Hardware-aware selective scan}
+    Fuse the entire recurrence into a single GPU kernel that keeps the state in \textbf{SRAM}, avoiding repeated HBM round-trips. Same idea as FlashAttention~\cite{dao2022flashattention}, applied to scans.
+  \end{block}
+\end{frame}
+
+% -----------------------------------------------------------------------
+\begin{frame}{Hardware-Aware Selective Scan}
+
+  \begin{center}
+    \begin{tikzpicture}[
+      box/.style={draw, rounded corners, minimum width=2.8cm, minimum height=0.7cm, align=center, font=\small},
+      arr/.style={-Stealth, thick},
+      scale=0.9, every node/.style={scale=0.9},
+    ]
+      % HBM
+      \node[box, fill=mambablue!15] (hbm_in) at (0,3.5) {HBM: $(\bar{A}, \bar{B}, C, \Delta, x)$};
+      \node[box, fill=mambablue!15] (hbm_out) at (0,-0.5) {HBM: output $y$};
+
+      % SRAM
+      \draw[dashed, mambagray, rounded corners] (-3.5,0.3) rectangle (3.5,2.9);
+      \node[font=\scriptsize, mambagray] at (2.6,2.7) {GPU SRAM};
+
+      \node[box, fill=mambagreen!20] (disc) at (0,2.3) {Discretize: $A_t, B_t$};
+      \node[box, fill=mambagreen!20] (scan) at (0,1.2) {Sequential scan: $h_t = A_t h_{t-1} + B_t x_t$};
+
+      \draw[arr] (hbm_in) -- (disc) node[midway, right, font=\tiny] {load once};
+      \draw[arr] (disc) -- (scan);
+      \draw[arr] (scan) -- (hbm_out) node[midway, right, font=\tiny] {store once};
+    \end{tikzpicture}
+  \end{center}
+
+  \begin{itemize}
+    \item Discretization + scan + output projection all happen \textbf{in SRAM}
+    \item Intermediate states $h_t$ never written to HBM --- only final output $y$
+    \item Recomputation in backward pass instead of storing activations
+  \end{itemize}
+\end{frame}
+
+% -----------------------------------------------------------------------
+\begin{frame}{Mamba-1 Architecture}
+
+  \begin{columns}
+    \begin{column}{0.55\textwidth}
+      Each Mamba layer processes tokens via:
+      \begin{enumerate}
+        \item \textbf{Two parallel branches} from input projection:
+          \begin{itemize}
+            \item Branch A: Linear $\to$ Conv1d $\to$ SiLU $\to$ SSM
+            \item Branch B: Linear $\to$ SiLU (gate)
+          \end{itemize}
+        \item SSM branch produces $B_t, C_t, \Delta_t$ from the activated input
+        \item Selective scan computes output
+        \item \textbf{Gated output}: multiply SSM output with Branch B, then project
+      \end{enumerate}
+
+      \vspace{0.5em}
+      \textbf{Key design choices:}
+      \begin{itemize}
+        \item $A$ is diagonal with $N$ elements per channel
+        \item $P = 1$: each channel has its own SSM (no shared heads)
+        \item Typical: $N = 16$, $d_\text{model}$ up to 2048+
+      \end{itemize}
+    \end{column}
+    \begin{column}{0.42\textwidth}
+      \begin{tikzpicture}[
+        box/.style={draw, rounded corners, fill=mambablue!10, text width=2.8cm,
+                    align=center, font=\small, minimum height=0.6cm},
+        arr/.style={-Stealth, thick},
+        scale=0.9, every node/.style={scale=0.9},
+      ]
+        \node[box] (inp) at (0,6.0) {Input $u$};
+        \node[box, text width=1.2cm] (la) at (-1.2,4.8) {Linear};
+        \node[box, text width=1.2cm] (lb) at (1.2,4.8) {Linear};
+        \node[box, text width=1.4cm] (conv) at (-1.2,3.6) {Conv1d};
+        \node[box, text width=1.4cm] (silu1) at (-1.2,2.6) {SiLU};
+        \node[box, text width=1.4cm] (silu2) at (1.2,2.6) {SiLU};
+        \node[box, fill=mambagreen!15, text width=1.4cm] (ssm) at (-1.2,1.4) {SSM};
+        \node[box] (mul) at (0,0.4) {$\otimes$};
+        \node[box] (out) at (0,-0.6) {Linear};
+
+        \draw[arr] (inp) -- (la);
+        \draw[arr] (inp) -- (lb);
+        \draw[arr] (la) -- (conv);
+        \draw[arr] (conv) -- (silu1);
+        \draw[arr] (silu1) -- (ssm);
+        \draw[arr] (lb) -- (silu2);
+        \draw[arr] (ssm) -- (mul);
+        \draw[arr] (silu2) -- (mul);
+        \draw[arr] (mul) -- (out);
+      \end{tikzpicture}
+    \end{column}
+  \end{columns}
+\end{frame}
+
+% -----------------------------------------------------------------------
+\begin{frame}{Mamba-1: Results}
+
+  \textbf{Language modeling} (trained on the Pile, Chinchilla scaling~\cite{hoffmann2022chinchilla}):
+  \begin{itemize}
+    \item Matches Transformer quality at all scales (125M to 1.4B parameters)
+    \item \textbf{5$\times$ higher throughput} than Transformer at inference (long sequences)
+    \item Linear scaling in sequence length vs.\ quadratic for attention
+  \end{itemize}
+
+  \vspace{0.5em}
+  \textbf{Long-range benchmarks:}
+  \begin{itemize}
+    \item State-of-the-art on Long Range Arena, speech, genomics
+    \item Scales to sequences of 1M+ tokens at inference
+  \end{itemize}
+
+  \vspace{0.5em}
+  \begin{alertblock}{Remaining issues}
+    \begin{itemize}
+      \item Training uses a \textbf{sequential scan} --- no matrix multiplications
+      \item GPUs/TPUs are optimized for matmuls, not sequential operations
+      \item Despite kernel fusion, training throughput is \alert{lower than Transformers}
+      \item Each channel has an independent SSM ($P = 1$) --- limited parameter sharing
+    \end{itemize}
+  \end{alertblock}
+\end{frame}
+
+% =======================================================================
+\subsection{Mamba-2: State Space Duality}
+
+% -----------------------------------------------------------------------
 \begin{frame}{Two Problems with Mamba-1}
 
   \begin{columns}
@@ -74,35 +626,12 @@
   \end{columns}
 
   \vspace{1em}
-  \begin{alertblock}{The SSD Framework}
+  \begin{alertblock}{The SSD Framework~\cite{dao2024mamba2}}
     Both problems are solved together: by revealing that a scalar-structured SSM \emph{is} a form of attention, we unlock matmul-based hardware-efficient training.
   \end{alertblock}
 \end{frame}
 
 % -----------------------------------------------------------------------
-\section{The SSD Model}
-
-\begin{frame}{State Space Models: Recap}
-
-  The core SSM recurrence maps an input sequence $x$ to outputs $y$ via a hidden state $h$:
-
-  \[
-    h_t = A_t\, h_{t-1} + B_t\, x_t, \qquad y_t = C_t^\top h_t
-  \]
-
-  \begin{itemize}
-    \item $x_t, y_t \in \mathbb{R}$ \quad (scalars for a single channel)
-    \item $h_t \in \mathbb{R}^{\mathtt{N}}$ \quad (hidden state, dimension $\mathtt{N}$)
-    \item $(A_t, B_t, C_t)$ are \emph{time-varying} (input-dependent) --- this is what makes Mamba \emph{selective}
-  \end{itemize}
-
-  \vspace{0.5em}
-  \textbf{Shape summary:}
-  \[
-    A \in \mathbb{R}^{(T,N,N)}, \quad B \in \mathbb{R}^{(T,N)}, \quad C \in \mathbb{R}^{(T,N)}
-  \]
-\end{frame}
-
 \begin{frame}{Restricting $A$: Scalar-Times-Identity}
 
   \textbf{The one structural change in Mamba-2:}
@@ -122,7 +651,7 @@
   \vspace{0.5em}
   By forcing all diagonal elements of $A_t$ to be the \emph{same} scalar $a_t$:
   \[
-    A_t = a_t \cdot I_N, \qquad a_t \in \mathbb{R}
+    A_t = a_t \cdot I_N, \qquad a_t \in \R
   \]
 
   \begin{itemize}
@@ -131,9 +660,10 @@
   \end{itemize}
 \end{frame}
 
+% -----------------------------------------------------------------------
 \begin{frame}{Multihead SSMs}
 
-  For real language models, inputs have $\mathtt{P}$ channels: $X \in \mathbb{R}^{(T, P)}$
+  For real language models, inputs have $\mathtt{P}$ channels: $X \in \R^{(T, P)}$
 
   \[
     Y^{(T,P)} = \mathsf{SSM}\!\left(A^{(T)},\, B^{(T,N)},\, C^{(T,N)}\right)\!\left(X^{(T,P)}\right)
@@ -155,8 +685,6 @@
 \end{frame}
 
 % -----------------------------------------------------------------------
-\section{State Space Duality}
-
 \begin{frame}{Unrolling the SSM: The Attention Mode}
 
   With scalar $A_t = a_t$, unroll the recurrence over the full sequence. Define:
@@ -172,7 +700,7 @@
 
   Stacking all $y_i$ gives a matrix equation $Y = M X$ where:
   \[
-    M = L \circ C B^\top \in \mathbb{R}^{(T,T)}
+    M = L \circ C B^\top \in \R^{(T,T)}
   \]
 
   $L$ is the lower-triangular \textbf{decay matrix}:
@@ -181,6 +709,7 @@
   \]
 \end{frame}
 
+% -----------------------------------------------------------------------
 \begin{frame}{The Decay Matrix $L$}
 
   \[
@@ -214,6 +743,7 @@
   \end{columns}
 \end{frame}
 
+% -----------------------------------------------------------------------
 \begin{frame}{State Space Duality: Same Model, Two Views}
 
   \begin{center}
@@ -251,6 +781,7 @@
   \end{block}
 \end{frame}
 
+% -----------------------------------------------------------------------
 \begin{frame}{SSD vs.\ Standard Attention: Two Differences}
 
   \begin{center}
@@ -276,8 +807,6 @@
 \end{frame}
 
 % -----------------------------------------------------------------------
-\section{The Efficient SSD Algorithm}
-
 \begin{frame}{Efficiency Comparison}
 
   \begin{center}
@@ -300,6 +829,10 @@
   \end{alertblock}
 \end{frame}
 
+% -----------------------------------------------------------------------
+\subsection{The Efficient SSD Algorithm}
+
+% -----------------------------------------------------------------------
 \begin{frame}{The Chunked SSD Algorithm}
 
   Neither pure mode is ideal for training on long sequences. The solution: \textbf{chunk the sequence}.
@@ -311,7 +844,7 @@
     \item \textbf{Intra-chunk} (quadratic/attention mode):
       \begin{itemize}
         \item Within each chunk, compute $Y_{\text{intra}} = (L \circ CB^\top) X$ via matmul
-        \item Cost: $O(C^2 \cdot P)$ per chunk --- parallelizable across batch \& heads
+        \item Cost: $O(C^2 \cdot P)$ per chunk --- parallelizable across batch and heads
       \end{itemize}
     \item \textbf{Inter-chunk} (SSM/linear mode):
       \begin{itemize}
@@ -326,19 +859,21 @@
   Overall cost: $O\!\left(\frac{T}{C} \cdot C^2 N\right) = O(TCN)$ --- optimal for $C = \sqrt{T}$.
 \end{frame}
 
+% -----------------------------------------------------------------------
 \begin{frame}{Chunked Algorithm: Diagram}
 
   \begin{center}
   \begin{tikzpicture}[
-    chunk/.style={draw=mambablue, fill=mambablue!15, rounded corners, minimum width=2.5cm, minimum height=1cm, font=\small},
+    chunk/.style={draw=mambablue, fill=mambablue!15, rounded corners,
+      text width=2.2cm, align=center, minimum height=1cm, font=\small},
     state/.style={draw=mambagreen, fill=mambagreen!15, circle, minimum size=0.7cm, font=\scriptsize},
     arrow/.style={-Stealth, thick},
   ]
     % Chunks
-    \node[chunk] (c1) at (0,0) {Chunk 1\\{\tiny intra-matmul}};
-    \node[chunk] (c2) at (3.2,0) {Chunk 2\\{\tiny intra-matmul}};
-    \node[chunk] (c3) at (6.4,0) {Chunk 3\\{\tiny intra-matmul}};
-    \node[chunk] (c4) at (9.6,0) {Chunk 4\\{\tiny intra-matmul}};
+    \node[chunk] (c1) at (0,0) {Chunk 1\\ {\tiny intra-matmul}};
+    \node[chunk] (c2) at (3.2,0) {Chunk 2\\ {\tiny intra-matmul}};
+    \node[chunk] (c3) at (6.4,0) {Chunk 3\\ {\tiny intra-matmul}};
+    \node[chunk] (c4) at (9.6,0) {Chunk 4\\ {\tiny intra-matmul}};
 
     % States
     \node[state] (s0) at (-1.6,-1.8) {$h_0$};
@@ -372,46 +907,10 @@
   \end{center}
 \end{frame}
 
-\begin{frame}[fragile]{Minimal PyTorch Implementation ($\sim$30 lines)}
-\begin{lstlisting}[language=Python]
-def ssd_chunked(x, A, B, C, chunk_size, D):
-    # x: (B, T, H, P)  A: (B, T, H)  B,C: (B, T, H, N)
-    B_, T, H, P = x.shape
-    n_chunks = (T + chunk_size - 1) // chunk_size
-
-    # --- pad to chunk boundary ---
-    x, A, B, C = [pad_to_chunks(t, chunk_size) for t in (x, A, B, C)]
-    x_c  = x.view(B_, n_chunks, chunk_size, H, P)
-    A_c  = A.view(B_, n_chunks, chunk_size, H)
-    B_c  = B.view(B_, n_chunks, chunk_size, H, N)
-    C_c  = C.view(B_, n_chunks, chunk_size, H, N)
-
-    # --- intra-chunk (quadratic / attention mode) ---
-    log_dA_cum = A_c.cumsum(dim=2)                              # (B, Q, C, H)
-    L = torch.exp(log_dA_cum[:,:,:,None,:] - log_dA_cum[:,:,None,:,:])
-    L = L * causal_mask[None, None, :, :, None]                 # lower-triangular
-    CB = torch.einsum('bqihd,bqjhd->bqijh', C_c, B_c)          # (B, Q, C, C, H)
-    y_intra = torch.einsum('bqijh,bqjhd->bqihd', L * CB, x_c)  # intra-chunk output
-
-    # --- inter-chunk (linear / SSM mode) ---
-    decay_to_end  = torch.exp(log_dA_cum[:,:,-1:,:] - log_dA_cum)
-    chunk_states  = torch.einsum('bqth,bqthd,bqthn->bqhdn', decay_to_end, x_c, B_c)
-    chunk_decay   = torch.exp(log_dA_cum[:,:,-1,:])             # (B, Q, H)
-    # sequential scan over Q << T chunks
-    h = torch.zeros(B_, H, P, N, device=x.device)
-    y_inter = []
-    for q in range(n_chunks):
-        y_inter.append(torch.einsum('bhdn,bqthn->bqthd', h, C_c[:,q:q+1]))
-        h = chunk_decay[:,q,:,None,None] * h + chunk_states[:,q]
-    y_inter = torch.cat(y_inter, dim=1)
-
-    return (y_intra + y_inter + D * x_c).reshape(B_, T, H, P)[:, :T]
-\end{lstlisting}
-\end{frame}
+% -----------------------------------------------------------------------
+\subsection{The Mamba-2 Architecture}
 
 % -----------------------------------------------------------------------
-\section{The Mamba-2 Architecture}
-
 \begin{frame}{Mamba-2 Architecture Overview}
 
   \begin{columns}
@@ -437,7 +936,7 @@ def ssd_chunked(x, A, B, C, chunk_size, D):
                     align=center, font=\small, minimum height=0.65cm},
         arr/.style={-Stealth, thick},
       ]
-        \node[box] (inp) at (0,5.5) {Input $u \in \mathbb{R}^{d_\text{model}}$};
+        \node[box] (inp) at (0,5.5) {Input $u \in \R^{d_\text{model}}$};
         \node[box] (proj) at (0,4.4) {Linear Projection};
         \node[box, text width=1.4cm] (z)   at (-1.9,3.3) {$Z$};
         \node[box, text width=1.4cm] (x)   at (0,3.3) {$X, \Delta$};
@@ -462,6 +961,10 @@ def ssd_chunked(x, A, B, C, chunk_size, D):
   \end{columns}
 \end{frame}
 
+% -----------------------------------------------------------------------
+\subsection{Comparison and Results}
+
+% -----------------------------------------------------------------------
 \begin{frame}{Mamba-2 vs.\ Mamba-1: Key Differences}
 
   \begin{center}
@@ -488,13 +991,11 @@ def ssd_chunked(x, A, B, C, chunk_size, D):
 \end{frame}
 
 % -----------------------------------------------------------------------
-\section{Results}
-
 \begin{frame}{Language Modeling: Scaling Results}
 
   \begin{columns}
     \begin{column}{0.55\textwidth}
-      \textbf{Pile dataset (Chinchilla scaling laws):}
+      \textbf{Pile dataset (Chinchilla scaling laws~\cite{hoffmann2022chinchilla}):}
       \begin{itemize}
         \item Mamba-2 matches or slightly exceeds Mamba-1 at all scales
         \item Competitive with Transformer++ baseline
@@ -519,56 +1020,17 @@ def ssd_chunked(x, A, B, C, chunk_size, D):
 \end{frame}
 
 % -----------------------------------------------------------------------
-\section{Relation to Our nanoGPT Implementation}
-
-\begin{frame}[fragile]{Our \texttt{model\_mamba2.py}: What We Implemented}
-
-  The \texttt{Mamba2Block.forward()} in our repo implements the chunked SSD algorithm:
-
-  \vspace{0.3em}
-  \begin{enumerate}
-    \item \textbf{Projection}: \texttt{in\_proj} produces $Z, X, B, C, \Delta$ in one shot
-    \item \textbf{Conv1d}: depthwise causal conv + SiLU on $X$
-    \item \textbf{Discretize}: $\Delta \leftarrow \text{softplus}(\Delta + \texttt{dt\_bias})$; $A = -\exp(\texttt{A\_log})$
-    \item \textbf{Intra-chunk}: \texttt{torch.einsum} over $(L \circ CB) \cdot X_{\Delta}$
-    \item \textbf{Inter-chunk}: Python loop over $n_{\text{chunks}} = T/C$ steps
-    \item \textbf{Output}: \texttt{out\_proj(RMSNorm(y) * silu(z))}
-  \end{enumerate}
-
-  \vspace{0.4em}
-  \textbf{Current limitations vs.\ reference implementation:}
-  \begin{itemize}
-    \item Inter-chunk scan is a \alert{Python loop} (should be a parallel prefix scan)
-    \item No fused Triton/CUDA kernels (would need \texttt{mamba-ssm} library)
-    \item Still correct: tests verify equivalence to the exact sequential recurrence
-  \end{itemize}
-\end{frame}
-
-% -----------------------------------------------------------------------
-\begin{frame}{Summary}
+\begin{frame}{Summary: State Space Models and Mamba}
 
   \begin{enumerate}
-    \item \textbf{State Space Duality}: scalar-structured SSMs and causal linear attention are the \emph{same} model viewed differently
-    \item \textbf{Two modes}: SSM mode $\to$ efficient inference; attention mode $\to$ efficient training
-    \item \textbf{Chunked algorithm}: best of both --- $O(TCN)$ compute, constant inference state, full matmul utilization
-    \item \textbf{Architecture}: simple, tensor-parallel-friendly; larger state dimensions ($N$ up to 256+)
-    \item \textbf{Results}: matches/exceeds Mamba-1 at language modeling, substantially better at memory-intensive tasks (MQAR), much faster training
+    \item \textbf{State Space Models}: Linear systems discretized from continuous time; dual recurrent/convolutional view enables parallel training for LTI models
+    \item \textbf{Mamba-1}: Makes SSM parameters \emph{input-dependent} (selective); hardware-aware scan keeps computation in SRAM; matches Transformer quality with linear-time inference
+    \item \textbf{State Space Duality}: Scalar-structured SSMs and causal linear attention are the \emph{same} model viewed differently
+    \item \textbf{Mamba-2}: Chunked SSD algorithm --- $O(TCN)$ compute, constant inference state, full matmul utilization; 2--8$\times$ faster training than Mamba-1
   \end{enumerate}
 
-  \vspace{1em}
-  \begin{center}
-    \textit{``Mamba-2 allows much larger state dimensions while simultaneously being much faster during training.''} \\
-    \small --- Dao \& Gu, 2024
-  \end{center}
+  \vspace{0.5em}
+  \begin{block}{References}
+    \cite{gu2022s4} \quad \cite{gu2024mamba} \quad \cite{dao2024mamba2}
+  \end{block}
 \end{frame}
-
-\begin{frame}{References}
-  \begin{itemize}
-    \item Dao, T.\ \& Gu, A.\ (2024). \textit{Transformers are SSMs: Generalized Models and Efficient Algorithms Through Structured State Space Duality}. NeurIPS 2024.
-    \item Gu, A.\ \& Dao, T.\ (2023). \textit{Mamba: Linear-Time Sequence Modeling with Selective State Spaces}. ICLR 2024.
-    \item Dao, T.\ (2024). \textit{State Space Duality (Mamba-2) Part I --- The Model}. \texttt{tridao.me/blog/2024/mamba2-part1-model/}
-    \item Karpathy, A.\ (2023). \textit{nanoGPT}. \texttt{github.com/karpathy/nanoGPT}
-  \end{itemize}
-\end{frame}
-
-\end{document}

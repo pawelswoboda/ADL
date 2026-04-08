@@ -1,0 +1,753 @@
+% !TEX root=./adl.tex
+
+% Flash Attention color palette
+\definecolor{fagreen}{RGB}{34, 139, 34}
+\definecolor{fablue}{RGB}{30, 100, 200}
+\definecolor{fared}{RGB}{180, 40, 40}
+\definecolor{fagray}{RGB}{90, 90, 90}
+\definecolor{fasram}{RGB}{255, 180, 50}
+\definecolor{fahbm}{RGB}{100, 160, 220}
+
+\lstset{
+  language=Python,
+  basicstyle=\tiny\ttfamily,
+  keywordstyle=\color{fablue}\bfseries,
+  commentstyle=\color{fagray},
+  stringstyle=\color{fagreen},
+  showstringspaces=false,
+  frame=single,
+  rulecolor=\color{fagray!40},
+  xleftmargin=0.5em,
+  xrightmargin=0.5em,
+}
+
+% -----------------------------------------------------------------------
+\section{Flash Attention}
+
+% -----------------------------------------------------------------------
+\begin{frame}{The Problem with Standard Attention}
+
+  Recall: $\text{Attn}(Q,K,V) = \text{softmax}\!\left(\frac{QK^\top}{\sqrt{d}}\right) V$
+
+  \vspace{0.2em}
+  \begin{columns}
+    \begin{column}{0.55\textwidth}
+      \textbf{The bottleneck is \emph{not} arithmetic} --- it is \textbf{memory}:
+      \begin{itemize}
+        \item The $T \times T$ matrix $S = QK^\top$ must be materialized in HBM
+        \item Writing $S$ to HBM and reading it back dominates wall-clock time
+      \end{itemize}
+
+      \begin{alertblock}{Memory-bound, not compute-bound}
+        Standard attention spends most time on memory transfers, not on FLOPs.
+      \end{alertblock}
+
+      {\small \cite{dao2022flashattention} \quad \cite{dao2023flashattention2} \quad \cite{jamil2024flashattention}}
+    \end{column}
+    \begin{column}{0.42\textwidth}
+      \centering
+      \includegraphics[width=\linewidth]{ADL_SS2025/FlashAttention/flash_attention_time_ablation.png}
+    \end{column}
+  \end{columns}
+\end{frame}
+
+% -----------------------------------------------------------------------
+\subsection{Motivation \& GPU Memory Hierarchy}
+
+\begin{frame}{HBM vs.\ SRAM}
+
+  \begin{columns}
+    \begin{column}{0.55\textwidth}
+      GPUs have a two-level memory hierarchy:
+
+      \vspace{0.5em}
+      \begin{center}
+      \begin{tabular}{lcc}
+        \toprule
+        & \textbf{SRAM} & \textbf{HBM} \\
+        \midrule
+        Size   & $\sim$20\,MB   & $\sim$40--80\,GB \\
+        Bandwidth & $\sim$19\,TB/s & $\sim$1.5--3\,TB/s \\
+        Latency   & Low            & High \\
+        \bottomrule
+      \end{tabular}
+      \end{center}
+
+      \vspace{0.5em}
+      \begin{itemize}
+        \item SRAM is on-chip (shared memory), fast but small
+        \item HBM is off-chip, large but slow
+        \item Standard attention materializes $S, P \in \mathbb{R}^{T \times T}$ in HBM
+      \end{itemize}
+    \end{column}
+    \begin{column}{0.42\textwidth}
+      \centering
+      \includegraphics[width=\linewidth]{ADL_SS2025/FlashAttention/hbm_vs_sram.png}
+    \end{column}
+  \end{columns}
+\end{frame}
+
+\begin{frame}{Standard Attention: Memory Access Pattern}
+
+  \begin{columns}
+    \begin{column}{0.55\textwidth}
+      Standard attention implementation:
+      \begin{enumerate}
+        \item Compute $S = QK^\top$ \quad $\to$ write $S$ to HBM
+        \item Compute $P = \text{softmax}(S)$ \quad $\to$ read $S$, write $P$ to HBM
+        \item Compute $O = PV$ \quad $\to$ read $P$ from HBM
+      \end{enumerate}
+
+      \vspace{0.5em}
+      \textbf{Problems:}
+      \begin{itemize}
+        \item Each step is a separate kernel $\to$ no fusion
+        \item $S$ and $P$ are $T \times T$ $\to$ quadratic memory
+        \item Must store $P$ for backward pass
+      \end{itemize}
+    \end{column}
+    \begin{column}{0.42\textwidth}
+      \centering
+      \includegraphics[width=\linewidth]{ADL_SS2025/FlashAttention/std_attention_implementation.png}
+    \end{column}
+  \end{columns}
+\end{frame}
+
+\begin{frame}{Flash Attention: Key Ideas}
+
+  \begin{columns}
+    \begin{column}{0.55\textwidth}
+      \textbf{Do not materialize the $T \times T$ attention matrix.}
+
+      \vspace{0.5em}
+      Instead:
+      \begin{enumerate}
+        \item \textbf{Tiling}: Process $Q$, $K$, $V$ in blocks that fit in SRAM
+        \item \textbf{Online softmax}: Compute softmax incrementally across blocks
+        \item \textbf{Kernel fusion}: Compute $S$, $P$, $O$ in a single kernel
+        \item \textbf{Recomputation}: In backward pass, recompute $P$ from $Q, K$ instead of storing it
+      \end{enumerate}
+
+      \vspace{0.5em}
+      \begin{alertblock}{Memory-bound $\to$ compute-bound}
+        Flash Attention trades extra computation for fewer memory accesses. This is faster because modern GPUs have far more compute than memory bandwidth.
+      \end{alertblock}
+    \end{column}
+    \begin{column}{0.42\textwidth}
+      \centering
+      \includegraphics[width=\linewidth]{ADL_SS2025/FlashAttention/flash_attention_illustration.png}
+    \end{column}
+  \end{columns}
+\end{frame}
+
+\begin{frame}[fragile]{Softmax: Three Versions}
+
+  \textbf{Naive softmax:} Two passes. Numerically unstable for large values.
+  \[
+    \text{softmax}(x)_i = \frac{e^{x_i}}{\sum_{j} e^{x_j}}
+  \]
+
+\begin{lstlisting}
+def softmax(x):
+    l = sum([math.exp(v) for v in x])
+    return [math.exp(v) / l for v in x]
+\end{lstlisting}
+
+  \vspace{0.3em}
+  \textbf{Stable softmax:} Three passes. Subtract max for numerical stability.
+  \[
+    \text{softmax}(x)_i = \frac{e^{x_i - \max(x)}}{\sum_{j} e^{x_j - \max(x)}}
+  \]
+
+\begin{lstlisting}
+def stable_softmax(x):
+    m = max(x)
+    l = sum([math.exp(v - m) for v in x])
+    return [math.exp(v - m) / l for v in x]
+\end{lstlisting}
+\end{frame}
+
+\begin{frame}[fragile]{Streaming (Online) Softmax}
+
+  \textbf{Key insight:} Fuse max and sum computation into a \emph{single pass}.
+
+  \vspace{0.3em}
+  Maintain running max $m$ and running (rescaled) sum $\ell$. When seeing a new value $v$:
+  \begin{align*}
+    m' &= \max(m, v) \\
+    \ell' &= \ell \cdot e^{m - m'} + e^{v - m'}
+  \end{align*}
+
+  The correction factor $e^{m - m'}$ rescales the previous sum to the new max.
+
+\begin{lstlisting}
+def streaming_softmax(x):
+    m = float('-inf')
+    l = 0
+    for v in x:
+        m_next = max(m, v)
+        l = l * math.exp(m - m_next) + math.exp(v - m_next)
+        m = m_next
+    return [math.exp(v - m) / l for v in x]
+\end{lstlisting}
+
+  \vspace{0.3em}
+  \begin{block}{Why this matters for Flash Attention}
+    Streaming softmax lets us process $K$ blocks one at a time without knowing the global max --- exactly what we need for tiled attention.
+  \end{block}
+\end{frame}
+
+% -----------------------------------------------------------------------
+\subsection{GPU Programming: CUDA and Triton}
+
+\begin{frame}{CUDA Programming Model}
+
+  \begin{columns}
+    \begin{column}{0.55\textwidth}
+      \textbf{CUDA} is NVIDIA's programming model for GPUs.
+
+      \vspace{0.5em}
+      \begin{itemize}
+        \item \textbf{Threads}: Execute the same kernel code in parallel
+        \item \textbf{Blocks}: Groups of up to 1024 threads; run on one SM
+        \item \textbf{Grids}: Collections of blocks
+        \item \textbf{Warps}: Groups of 32 threads executing in lockstep
+      \end{itemize}
+
+      \vspace{0.5em}
+      Kernels are launched with:
+      \texttt{kernel<<<grid, block>>>(args)}
+    \end{column}
+    \begin{column}{0.42\textwidth}
+      \centering
+      \includegraphics[width=\linewidth]{ADL_SS2025/FlashAttention/CPU_vs_GPU2.png}
+    \end{column}
+  \end{columns}
+\end{frame}
+
+\begin{frame}[fragile]{CUDA Example: Vector Addition}
+
+\begin{lstlisting}[language=C++, keywordstyle=\color{fablue}\bfseries]
+__global__ void cuda_vector_add(float *OUT, float *A, float *B, int N)
+{
+    int i = threadIdx.x;
+    if (i < N)
+    {
+        OUT[i] = A[i] + B[i];
+    }
+}
+
+// Launch: one block, N threads
+cuda_vector_add<<<1, N>>>(d_OUT, d_A, d_B, N);
+\end{lstlisting}
+
+  \vspace{0.5em}
+  Each thread computes one element: thread $i$ computes \texttt{OUT[i] = A[i] + B[i]}.
+\end{frame}
+
+\begin{frame}[fragile]{CUDA Example: Matrix Addition}
+
+\begin{lstlisting}[language=C++, keywordstyle=\color{fablue}\bfseries]
+__global__ void cuda_matrix_add(float *OUT, float *A, float *B,
+                                 int NUM_ROWS, int NUM_COLS)
+{
+    int row = blockIdx.y * blockDim.y + threadIdx.y;
+    int col = blockIdx.x * blockDim.x + threadIdx.x;
+    if (row < NUM_ROWS && col < NUM_COLS) {
+        size_t idx = row * NUM_COLS + col;
+        OUT[idx] = A[idx] + B[idx];
+    }
+}
+
+// 2D grid and block layout
+dim3 grid(ceil(NUM_COLS/16), ceil(NUM_ROWS/16), 1);
+dim3 block(16, 16, 1);
+cuda_matrix_add<<<grid, block>>>(d_OUT, d_A, d_B, NUM_ROWS, NUM_COLS);
+\end{lstlisting}
+
+  \vspace{0.3em}
+  Uses 2D indexing: \texttt{blockIdx} selects the tile, \texttt{threadIdx} selects the element within the tile.
+\end{frame}
+
+\begin{frame}{Triton: A Higher-Level GPU Language}
+
+  \textbf{Triton} \cite{tillet2019triton} abstracts away low-level CUDA details:
+
+  \vspace{0.5em}
+  \begin{center}
+  \begin{tabular}{lll}
+    \toprule
+    \textbf{Concept} & \textbf{CUDA} & \textbf{Triton} \\
+    \midrule
+    Parallelism unit & Thread & Program (block-level) \\
+    Memory access & Per-element load/store & Block load/store with masks \\
+    Shared memory & Manual management & Automatic \\
+    Synchronization & \texttt{\_\_syncthreads()} & Implicit \\
+    \bottomrule
+  \end{tabular}
+  \end{center}
+
+  \vspace{0.5em}
+  \begin{itemize}
+    \item Programs (``tasks'') replace blocks; threads are not directly exposed
+    \item Block-level operations: \texttt{tl.load}, \texttt{tl.store}, \texttt{tl.dot}
+    \item \texttt{tl.constexpr} annotations enable compile-time optimizations
+    \item \texttt{pid = tl.program\_id(axis)} identifies which block we are in
+  \end{itemize}
+\end{frame}
+
+\begin{frame}[fragile]{Triton Example: Vector Addition}
+
+\begin{lstlisting}
+@triton.jit
+def add_kernel(x_ptr, y_ptr, output_ptr, n_elements,
+               BLOCK_SIZE: tl.constexpr):
+    pid = tl.program_id(0)
+    block_start = pid * BLOCK_SIZE
+    offsets = block_start + tl.arange(0, BLOCK_SIZE)
+    mask = offsets < n_elements
+    x = tl.load(x_ptr + offsets, mask=mask)
+    y = tl.load(y_ptr + offsets, mask=mask)
+    result = x + y
+    tl.store(output_ptr + offsets, result, mask=mask)
+
+# Launch
+grid = lambda meta: (triton.cdiv(n, meta['BLOCK_SIZE']),)
+add_kernel[grid](x, y, output, n, BLOCK_SIZE=256)
+\end{lstlisting}
+
+  \vspace{0.3em}
+  Each program handles a \texttt{BLOCK\_SIZE} chunk. Masks handle boundary conditions.
+\end{frame}
+
+\begin{frame}[fragile]{Triton Example: Matrix Addition}
+
+\begin{lstlisting}
+@triton.jit
+def mat_add_kernel(A, B, C, M, N,
+                   BLOCK_M: tl.constexpr, BLOCK_N: tl.constexpr):
+    pid_m = tl.program_id(0)
+    pid_n = tl.program_id(1)
+    offs_m = pid_m * BLOCK_M + tl.arange(0, BLOCK_M)
+    offs_n = pid_n * BLOCK_N + tl.arange(0, BLOCK_N)
+    mask = (offs_m[:, None] < M) & (offs_n[None, :] < N)
+    A_block = tl.load(A + offs_m[:, None] * N + offs_n[None, :], mask=mask)
+    B_block = tl.load(B + offs_m[:, None] * N + offs_n[None, :], mask=mask)
+    tl.store(C + offs_m[:, None] * N + offs_n[None, :],
+             A_block + B_block, mask=mask)
+
+# 2D grid launch
+grid = lambda meta: (triton.cdiv(M, meta['BLOCK_M']),
+                     triton.cdiv(N, meta['BLOCK_N']))
+mat_add_kernel[grid](A, B, C, M, N, BLOCK_M=64, BLOCK_N=64)
+\end{lstlisting}
+
+  \vspace{0.3em}
+  2D program grid: \texttt{program\_id(0)} for rows, \texttt{program\_id(1)} for columns.
+\end{frame}
+
+\begin{frame}{Block Matrix Multiplication in Triton}
+
+  For computing $S = QK^\top$ in tiles, we need blockwise matrix multiplication.
+
+  \vspace{0.3em}
+  \begin{columns}
+    \begin{column}{0.55\textwidth}
+      To compute a block $C_{ij}$ of $C = A \times B$:
+      \[
+        C_{ij} = \sum_{k} A_{ik} \cdot B_{kj}
+      \]
+
+      \begin{itemize}
+        \item Each program computes one output block
+        \item Iterate over $K$ dimension in chunks of \texttt{BLOCK\_SIZE\_K}
+        \item Accumulate partial results in registers (FP32)
+        \item Write final result to HBM
+      \end{itemize}
+    \end{column}
+    \begin{column}{0.42\textwidth}
+      \centering
+      \includegraphics[width=\linewidth]{ADL_SS2025/FlashAttention/block_matrix_multiplication.png}
+    \end{column}
+  \end{columns}
+\end{frame}
+
+\begin{frame}{Tensor Memory Layout}
+
+  \begin{columns}
+    \begin{column}{0.48\textwidth}
+      Tensors are stored as flat arrays with \textbf{shape} and \textbf{strides}:
+      \begin{itemize}
+        \item \textbf{Shape}: number of elements per dimension
+        \item \textbf{Strides}: number of elements to skip to move one step in each dimension
+      \end{itemize}
+
+      \vspace{0.3em}
+      \centering
+      \includegraphics[width=\linewidth]{ADL_SS2025/FlashAttention/vector_memory_layout.png}
+
+      \vspace{0.3em}
+      \includegraphics[width=\linewidth]{ADL_SS2025/FlashAttention/matrix_memory_layout.png}
+    \end{column}
+    \begin{column}{0.48\textwidth}
+      \textbf{Transpose via strides:}
+      \begin{itemize}
+        \item Exchange the strides $\to$ transpose without copying
+        \item Tensor becomes non-contiguous
+        \item Used in Flash Attention: $K$ is loaded transposed by swapping strides
+      \end{itemize}
+
+      \vspace{0.3em}
+      \centering
+      \includegraphics[width=\linewidth]{ADL_SS2025/FlashAttention/matrix_stride_transpose.png}
+    \end{column}
+  \end{columns}
+\end{frame}
+
+% -----------------------------------------------------------------------
+\subsection{The Flash Attention Algorithm}
+
+\begin{frame}{Attention with Two Blocks}
+
+  \begin{columns}
+    \begin{column}{0.58\textwidth}
+      Consider a single query block $Q$ attending to keys and values split into two blocks.
+      The score matrix and values are partitioned as:
+      \[
+        S = \begin{bmatrix} S^{(1)} & S^{(2)} \end{bmatrix}, \qquad
+        V = \begin{bmatrix} V^{(1)} \\ V^{(2)} \end{bmatrix}
+      \]
+
+      To compute softmax over the full row we need the \textbf{global} max and sum:
+      \begin{align*}
+        m   &= \max\!\big(\text{rowmax}(S^{(1)}),\; \text{rowmax}(S^{(2)})\big) \\
+        \ell &= \text{rowsum}(e^{S^{(1)} - m}) + \text{rowsum}(e^{S^{(2)} - m})
+      \end{align*}
+
+      The softmax-weighted output becomes:
+      \[
+        O = \text{diag}(\ell)^{-1}\!\Big(e^{S^{(1)} - m} V^{(1)} + e^{S^{(2)} - m} V^{(2)}\Big)
+      \]
+    \end{column}
+    \begin{column}{0.40\textwidth}
+      \centering
+      % Flow diagram: S → (m, ℓ) → weighted sum with V → O
+      \begin{tikzpicture}[
+        blk/.style={draw, thick, inner sep=2pt, font=\scriptsize\bfseries,
+                     minimum height=0.7cm},
+        arr/.style={-Stealth, thick, gray!70},
+        lbl/.style={font=\tiny, text=fagray},
+      ]
+        % --- S blocks (top): scores, side by side ---
+        \node[blk, fill=orange!25, minimum width=1.3cm] (S1) at (0, 0) {$S^{(1)}$};
+        \node[blk, fill=orange!50, minimum width=1.3cm, anchor=west]
+          (S2) at (S1.east) {$S^{(2)}$};
+        \node[lbl, above=2pt] at ($(S1.north)!0.5!(S2.north)$)
+          {$S = QK^\top$};
+        \draw[decorate, decoration={brace, amplitude=3pt}, thick]
+          (S1.north west) -- (S1.south west)
+          node[midway, left=3pt, font=\tiny] {$B_r$};
+        \draw[decorate, decoration={brace, mirror, amplitude=3pt}, thick]
+          (S1.south west) -- (S2.south east)
+          node[midway, below=3pt, font=\tiny] {$2B_c$};
+
+        % --- m and ℓ (right of S) ---
+        \node[lbl, anchor=west] (mlbl) at ($(S2.east) + (0.2, 0.15)$)
+          {$\to m$};
+        \node[lbl, anchor=west] (llbl) at ($(S2.east) + (0.2,-0.15)$)
+          {$\to \ell$};
+
+        % --- Arrow down: exponentiate & weight ---
+        \draw[arr] (S1.south) -- ++(0, -0.45)
+          node[midway, left, font=\tiny] {$e^{\cdot\, - m}$};
+        \draw[arr] (S2.south) -- ++(0, -0.45)
+          node[midway, right, font=\tiny] {$e^{\cdot\, - m}$};
+
+        % --- V blocks (middle row): e^{S-m} * V ---
+        \node[blk, fill=vcol, minimum width=0.9cm, minimum height=0.6cm]
+          (V1) at ($(S1.south) + (0, -0.85)$) {$V^{(1)}$};
+        \node[blk, fill=vcol!60, minimum width=0.9cm, minimum height=0.6cm]
+          (V2) at ($(S2.south) + (0, -0.85)$) {$V^{(2)}$};
+        \node[font=\tiny, gray] at ($(V1.east)!0.5!(V2.west)$) {$\times$};
+        \node[lbl, right=2pt] at (V2.east) {$B_c \!\times\! d$};
+
+        % --- Arrows converging to sum node ---
+        \node[circle, draw, thick, fill=white, inner sep=1pt,
+              font=\scriptsize]
+          (plus) at ($(V1.south)!0.5!(V2.south) + (0, -0.6)$) {$+$};
+        \draw[arr] (V1.south) -- (plus);
+        \draw[arr] (V2.south) -- (plus);
+
+        % --- O block (bottom) ---
+        \node[blk, fill=pink!40, minimum width=0.9cm]
+          (O) at ($(plus) + (0, -0.7)$) {$O$};
+        \draw[arr] (plus) -- (O)
+          node[midway, right, font=\tiny] {$\text{diag}(\ell)^{-1}$};
+        \node[lbl, right=2pt] at (O.east) {$B_r \!\times\! d$};
+      \end{tikzpicture}
+
+    \end{column}
+  \end{columns}
+
+  \vspace{0.3em}
+  \begin{alertblock}{Challenge}
+    Softmax needs $m$ and $\ell$ across \emph{all} blocks, but we want to process one block at a time.
+  \end{alertblock}
+\end{frame}
+
+\begin{frame}{Online Softmax for Blocked Attention}
+
+  \textbf{Solution:} Apply streaming softmax to process one block at a time.
+
+  \vspace{0.3em}
+  \textbf{After block 1:} local statistics and partial output
+  \begin{align*}
+    m^{(1)} &= \text{rowmax}(S^{(1)}) \\
+    \ell^{(1)} &= \text{rowsum}(e^{S^{(1)} - m^{(1)}}) \\
+    O^{(1)} &= \text{diag}(\ell^{(1)})^{-1}\, e^{S^{(1)} - m^{(1)}}\, V^{(1)}
+  \end{align*}
+
+  \textbf{After block 2:} update statistics using correction factor $e^{m^{(1)} - m^{(2)}}$
+  \begin{align*}
+    m^{(2)} &= \max(m^{(1)},\; \text{rowmax}(S^{(2)})) = m \\
+    \ell^{(2)} &= e^{m^{(1)} - m^{(2)}}\, \ell^{(1)} + \text{rowsum}(e^{S^{(2)} - m^{(2)}}) = \ell \\
+    O^{(2)} &= \text{diag}(\ell^{(1)}\!/\ell^{(2)})^{-1}\, O^{(1)}
+             + \text{diag}(\ell^{(2)})^{-1}\, e^{S^{(2)} - m^{(2)}}\, V^{(2)} = O
+  \end{align*}
+
+  After the last block, $m^{(2)} = m$, $\ell^{(2)} = \ell$, $O^{(2)} = O$ --- the exact result.
+\end{frame}
+
+\begin{frame}{Two Efficiency Tricks}
+
+  \begin{columns}
+    \begin{column}{0.55\textwidth}
+      \textbf{Trick 1: $O$ scaling}
+
+      Instead of dividing by $\ell_i$ at every step, accumulate the unnormalized output and divide once at the end:
+
+      \centering
+      \includegraphics[width=\linewidth]{ADL_SS2025/FlashAttention/O_scaling_trick.png}
+    \end{column}
+    \begin{column}{0.42\textwidth}
+      \textbf{Trick 2: Store $L = m + \log \ell$}
+
+      For the backward pass, store the logsumexp $L_i = m_i + \log(\ell_i)$ instead of both $m_i$ and $\ell_i$ separately:
+
+      \centering
+      \includegraphics[width=0.5\linewidth]{ADL_SS2025/FlashAttention/L_saving_trick.png}
+    \end{column}
+  \end{columns}
+\end{frame}
+
+\begin{frame}{Flash Attention 2: Forward Pass Algorithm}
+
+  \begin{columns}
+    \begin{column}{0.58\textwidth}
+      \begin{tcolorbox}[colback=white, colframe=gray!60, boxrule=0.5pt,
+        title={\footnotesize\textsc{FlashAttention-2 Forward}}, fonttitle=\bfseries,
+        left=2pt, right=2pt, top=2pt, bottom=2pt]
+      \scriptsize
+      \textbf{Input:} $Q, K, V \in \mathbb{R}^{T \times d}$ in HBM; block sizes $B_r, B_c$\\[2pt]
+      Divide $Q$ into $T_r = \lceil T/B_r \rceil$ blocks; $K, V$ into $T_c = \lceil T/B_c \rceil$ blocks\\[2pt]
+      \textbf{for} $i = 1, \ldots, T_r$ \textbf{do}\\
+      \quad Load $Q_i$ from HBM to SRAM\\
+      \quad Init $O_i = 0$,\; $\ell_i = 0$,\; $m_i = -\infty$\\
+      \quad \textbf{for} $j = 1, \ldots, T_c$ \textbf{do}\\
+      \quad\quad Load $K_j, V_j$ from HBM to SRAM\\
+      \quad\quad $S_{ij} = Q_i K_j^\top$\\
+      \quad\quad $\tilde{m}_i = \max(m_i,\; \text{rowmax}(S_{ij}))$\\
+      \quad\quad $\tilde{P}_{ij} = \exp(S_{ij} - \tilde{m}_i)$\\
+      \quad\quad $\ell_i \leftarrow e^{m_i - \tilde{m}_i}\, \ell_i + \text{rowsum}(\tilde{P}_{ij})$\\
+      \quad\quad $O_i \leftarrow \text{diag}(e^{m_i - \tilde{m}_i})\, O_i + \tilde{P}_{ij}\, V_j$\\
+      \quad\quad $m_i \leftarrow \tilde{m}_i$\\
+      \quad \textbf{end for}\\
+      \quad $O_i \leftarrow \text{diag}(\ell_i)^{-1}\, O_i$\\
+      \quad $L_i \leftarrow m_i + \log(\ell_i)$\\
+      \quad Write $O_i$, $L_i$ to HBM\\
+      \textbf{end for}\\[2pt]
+      \textbf{Return} $O$, $L$
+      \end{tcolorbox}
+    \end{column}
+    \begin{column}{0.40\textwidth}
+      \textbf{Key properties:}
+      \begin{itemize}
+        \item Outer loop over $Q$ blocks (one per GPU program)
+        \item Inner loop over $K, V$ blocks --- loaded from HBM one at a time
+        \item $Q_i$ stays in SRAM throughout its inner loop
+        \item $O(T)$ memory instead of $O(T^2)$
+        \item No $T \times T$ matrix ever materialized
+        \item $L_i$ stores logsumexp for the backward pass
+      \end{itemize}
+    \end{column}
+  \end{columns}
+\end{frame}
+
+% -----------------------------------------------------------------------
+\subsection{Triton Implementation}
+
+\begin{frame}[fragile]{Forward Pass: Inner Loop}
+
+\begin{lstlisting}
+@triton.jit
+def _attn_fwd_inner(O_block, l_i, m_i, Q_block, K_block_ptr, V_block_ptr,
+                     block_index_q, softmax_scale, BLOCK_SIZE_Q: tl.constexpr,
+                     BLOCK_SIZE_KV: tl.constexpr, STAGE: tl.constexpr,
+                     offs_q: tl.constexpr, offs_kv: tl.constexpr,
+                     SEQ_LEN: tl.constexpr):
+    if STAGE == 1:       # Left of diagonal (causal)
+        lo, hi = 0, block_index_q * BLOCK_SIZE_Q
+    elif STAGE == 2:     # Diagonal block (causal)
+        lo, hi = block_index_q * BLOCK_SIZE_Q, (block_index_q + 1) * BLOCK_SIZE_Q
+    else:                # Non-causal: full range
+        lo, hi = 0, SEQ_LEN
+    K_block_ptr = tl.advance(K_block_ptr, (0, lo))
+    V_block_ptr = tl.advance(V_block_ptr, (lo, 0))
+    for start_kv in range(lo, hi, BLOCK_SIZE_KV):
+        K_block = tl.load(K_block_ptr)
+        QK_block = tl.dot(Q_block, K_block)
+        # ... apply mask for STAGE==2, scale, compute new max ...
+        m_ij = tl.maximum(m_i, tl.max(QK_block, 1) * softmax_scale)
+        QK_block = QK_block * softmax_scale - m_ij[:, None]
+        P_block = tl.math.exp(QK_block)
+        l_ij = tl.sum(P_block, 1)
+        alpha = tl.math.exp(m_i - m_ij)   # correction factor
+        l_i = l_i * alpha + l_ij
+        V_block = tl.load(V_block_ptr)
+        O_block = O_block * alpha[:, None] # rescale previous output
+        O_block = tl.dot(P_block.to(tl.float16), V_block, O_block)
+        m_i = m_ij
+        V_block_ptr = tl.advance(V_block_ptr, (BLOCK_SIZE_KV, 0))
+        K_block_ptr = tl.advance(K_block_ptr, (0, BLOCK_SIZE_KV))
+    return O_block, l_i, m_i
+\end{lstlisting}
+\end{frame}
+
+\begin{frame}[fragile]{Forward Pass: Main Kernel}
+
+\begin{lstlisting}
+@triton.jit
+def _attn_fwd(Q, K, V, softmax_scale, M, O,
+              stride_Q_batch, stride_Q_head, stride_Q_seq, stride_Q_dim,
+              stride_K_batch, stride_K_head, stride_K_seq, stride_K_dim,
+              stride_V_batch, stride_V_head, stride_V_seq, stride_V_dim,
+              stride_O_batch, stride_O_head, stride_O_seq, stride_O_dim,
+              BATCH_SIZE, NUM_HEADS: tl.constexpr,
+              SEQ_LEN: tl.constexpr, HEAD_DIM: tl.constexpr,
+              BLOCK_SIZE_Q: tl.constexpr, BLOCK_SIZE_KV: tl.constexpr,
+              STAGE: tl.constexpr):
+    block_index_q = tl.program_id(0)     # which Q block
+    index_batch_head = tl.program_id(1)  # which batch x head
+    # Set up block pointers for Q, K, V, O using tl.make_block_ptr
+    # K is loaded transposed by swapping strides!
+    Q_block = tl.load(Q_block_ptr)  # stays in SRAM
+    m_i = tl.zeros([BLOCK_SIZE_Q], dtype=tl.float32) - float("inf")
+    l_i = tl.zeros([BLOCK_SIZE_Q], dtype=tl.float32) + 1.0
+    O_block = tl.zeros([BLOCK_SIZE_Q, HEAD_DIM], dtype=tl.float32)
+    # Call _attn_fwd_inner for each stage
+    # Epilogue: store logsumexp and normalized output
+    m_i += tl.math.log(l_i)    # L = m + log(l) for backward
+    O_block = O_block / l_i[:, None]
+    tl.store(m_ptrs, m_i)
+    tl.store(O_block_ptr, O_block.to(O.type.element_ty))
+\end{lstlisting}
+
+  \vspace{0.3em}
+  \textbf{Grid layout:} \texttt{(ceil(SEQ\_LEN / BLOCK\_Q),\; BATCH $\times$ HEADS,\; 1)}
+
+  Each program processes one $Q$-block for one head of one batch element.
+\end{frame}
+
+\begin{frame}[fragile]{PyTorch Integration}
+
+\begin{lstlisting}
+class TritonAttention(torch.autograd.Function):
+    @staticmethod
+    def forward(ctx, Q, K, V, causal, softmax_scale):
+        BATCH_SIZE, NUM_HEADS, SEQ_LEN, HEAD_DIM = Q.shape
+        O = torch.empty_like(Q)
+        M = torch.empty((BATCH_SIZE, NUM_HEADS, SEQ_LEN),
+                        device=Q.device, dtype=torch.float32)
+        stage = 3 if causal else 1
+        grid = lambda args: (
+            triton.cdiv(SEQ_LEN, args["BLOCK_SIZE_Q"]),
+            BATCH_SIZE * NUM_HEADS, 1)
+        _attn_fwd[grid](
+            Q=Q, K=K, V=V, softmax_scale=softmax_scale, M=M, O=O,
+            stride_Q_batch=Q.stride(0), stride_Q_head=Q.stride(1),
+            stride_Q_seq=Q.stride(2), stride_Q_dim=Q.stride(3),
+            # ... same for K, V, O strides ...
+            BATCH_SIZE=BATCH_SIZE, NUM_HEADS=NUM_HEADS,
+            SEQ_LEN=SEQ_LEN, HEAD_DIM=HEAD_DIM, STAGE=stage)
+        ctx.save_for_backward(Q, K, V, O, M)
+        return O
+\end{lstlisting}
+
+  \vspace{0.3em}
+  \begin{itemize}
+    \item $M$ stores the logsumexp values needed for the backward pass
+    \item Causal attention uses \texttt{STAGE=3} (processes left-of-diagonal + diagonal blocks)
+    \item Non-causal uses \texttt{STAGE=1} (processes all blocks)
+  \end{itemize}
+\end{frame}
+
+\begin{frame}{Causal vs.\ Non-Causal Attention}
+
+  \begin{columns}
+    \begin{column}{0.55\textwidth}
+      In \textbf{causal} (autoregressive) attention, token $i$ can only attend to tokens $j \leq i$.
+
+      \vspace{0.5em}
+      Flash Attention handles this efficiently:
+      \begin{enumerate}
+        \item \textbf{Stage 1}: Blocks fully left of the diagonal $\to$ no masking needed
+        \item \textbf{Stage 2}: The diagonal block $\to$ apply causal mask
+      \end{enumerate}
+
+      \vspace{0.3em}
+      Blocks fully \emph{right} of the diagonal are skipped entirely --- saving computation.
+    \end{column}
+    \begin{column}{0.42\textwidth}
+      \begin{center}
+      \begin{tikzpicture}[scale=0.5]
+        \fill[fablue!20] (0,3) rectangle (1,4);
+        \fill[fablue!20] (0,2) rectangle (2,3);
+        \fill[fablue!20] (0,1) rectangle (3,2);
+        \fill[fablue!20] (0,0) rectangle (4,1);
+        \fill[fasram!50] (0,3) rectangle (1,4);
+        \fill[fasram!50] (1,2) rectangle (2,3);
+        \fill[fasram!50] (2,1) rectangle (3,2);
+        \fill[fasram!50] (3,0) rectangle (4,1);
+        \draw[step=1, gray, thin] (0,0) grid (4,4);
+        \draw[thick] (0,0) rectangle (4,4);
+        \node[font=\tiny] at (0.5, -0.3) {Stage 1};
+        \node[font=\tiny, fasram!80!black] at (2.5, -0.3) {Stage 2};
+        \node[font=\tiny, gray] at (3.5, 4.3) {Skipped};
+        \node[font=\scriptsize, rotate=90] at (-0.4, 2) {$Q$ blocks};
+        \node[font=\scriptsize] at (2, 4.4) {$K$ blocks};
+      \end{tikzpicture}
+      \end{center}
+    \end{column}
+  \end{columns}
+
+  \vspace{0.3em}
+  For non-causal attention, all blocks are processed in a single stage.
+\end{frame}
+
+\begin{frame}{Flash Attention: Summary}
+
+  \begin{enumerate}
+    \item \textbf{Problem}: Standard attention is \emph{memory-bound} due to materializing $T \times T$ matrices in HBM
+    \item \textbf{Solution}: Tile the computation, keep blocks in SRAM, use online softmax to avoid materializing the full attention matrix
+    \item \textbf{Streaming softmax}: Enables incremental softmax computation across blocks with a running max and sum
+    \item \textbf{Kernel fusion}: Single fused kernel for the entire forward pass --- no intermediate HBM writes
+    \item \textbf{Backward pass}: Recompute attention weights from $Q, K$ instead of storing them; use saved logsumexp $L$
+    \item \textbf{Result}: Exact attention (not an approximation!) with $O(T)$ memory and significantly faster wall-clock time
+  \end{enumerate}
+
+  \vspace{0.5em}
+  \begin{alertblock}{Impact}
+    Flash Attention is now the default attention implementation in most deep learning frameworks and has enabled training with much longer context lengths.
+    We will later discuss ring attention and tree attention for scaling to even larger contexts.
+  \end{alertblock}
+\end{frame}

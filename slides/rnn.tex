@@ -1,0 +1,1120 @@
+% !TEX root=./adl.tex
+
+\subsection{Recurrent Neural Networks}
+
+% -----------------------------------------------------------------------
+\begin{frame}{Recurrent Neural Networks (RNNs)}
+  \begin{columns}
+    \begin{column}{0.55\textwidth}
+      The simplest sequence model --- process tokens one at a time, maintaining a hidden state:
+      \begin{center}
+        \begin{tikzpicture}[
+          scale=0.72, every node/.style={scale=0.72},
+          cell/.style={rectangle, draw, fill=blue!15, minimum width=0.9cm, minimum height=0.7cm, font=\small},
+          io/.style={circle, draw, fill=orange!15, minimum size=0.6cm, font=\small},
+          arr/.style={-{Stealth[length=3pt]}, thick},
+          lbl/.style={font=\scriptsize}
+        ]
+          % Time steps
+          \foreach \t/\lbl in {0/$t{=}1$, 1/$t{=}2$, 2/$t{=}3$, 3/\dots, 4/$t{=}T$} {
+            % Input nodes
+            \node[io] (x\t) at (\t*1.8, 0) {\ifnum\t=3 \else $x^{\la\the\numexpr\t+1\ra}$ \fi};
+            % Hidden state nodes
+            \node[cell] (a\t) at (\t*1.8, 1.5) {\ifnum\t=3 $\cdots$ \else $a^{\la\the\numexpr\t+1\ra}$ \fi};
+            % Output nodes
+            \node[io] (y\t) at (\t*1.8, 3.0) {\ifnum\t=3 \else $\hat{y}^{\la\the\numexpr\t+1\ra}$ \fi};
+            % Input -> hidden
+            \draw[arr] (x\t) -- (a\t);
+            % Hidden -> output
+            \draw[arr] (a\t) -- (y\t);
+          }
+
+          % Hidden state connections (horizontal)
+          \node[font=\small] (a_init) at (-1.4, 1.5) {$a^{\la 0 \ra}$};
+          \draw[arr] (a_init) -- (a0);
+          \draw[arr] (a0) -- (a1);
+          \draw[arr] (a1) -- (a2);
+          \draw[arr] (a2) -- (a3);
+          \draw[arr] (a3) -- (a4);
+
+          % Labels for dots input/output
+          \node at (3*1.8, 0) {$\cdots$};
+          \node at (3*1.8, 3.0) {$\cdots$};
+        \end{tikzpicture}
+      \end{center}
+    \end{column}
+    \begin{column}{0.42\textwidth}
+      \textbf{Update equations:}
+      \[
+        \boxed{a^{\langle t \rangle} = g_1\!\left(W_{aa}\, a^{\langle t{-}1 \rangle} + W_{ax}\, x^{\langle t \rangle} + b_a\right)}
+      \]
+      \[
+        \boxed{y^{\langle t \rangle} = g_2\!\left(W_{ya}\, a^{\langle t \rangle} + b_y\right)}
+      \]
+
+      \vspace{0.3em}
+      Parameters $W_{aa}$, $W_{ax}$, $W_{ya}$, $b_a$, $b_y$ are \textbf{shared across time steps}.
+
+      \vspace{0.3em}
+      $g_1$ is typically $\tanh$; \; $g_2$ depends on the task (softmax for classification, linear for regression).
+    \end{column}
+  \end{columns}
+\end{frame}
+
+% -----------------------------------------------------------------------
+% Shared TikZ styles for RNN application diagrams
+\tikzset{
+  rnnapp/.style={scale=0.55, every node/.style={scale=0.55}},
+  rcell/.style={rectangle, draw, fill=blue!15, minimum width=0.55cm, minimum height=0.55cm},
+  rxn/.style={rectangle, rounded corners=2pt, draw=green!50!black, fill=green!15,
+              minimum width=0.55cm, minimum height=0.4cm, font=\scriptsize},
+  ryn/.style={rectangle, rounded corners=2pt, draw=red!50!black, fill=red!15,
+              minimum width=0.55cm, minimum height=0.4cm, font=\scriptsize},
+  rinit/.style={rectangle, rounded corners=2pt, draw=green!50!black, fill=green!15,
+                minimum width=0.5cm, minimum height=0.35cm, font=\tiny},
+  rarr/.style={-{Stealth[length=1.5pt]}, thin},
+}
+
+\begin{frame}{RNN Applications}
+  RNNs support flexible input/output configurations:
+
+  \vspace{0.3em}
+  \begin{columns}[T]
+    \begin{column}{0.48\textwidth}
+      % --- One-to-One ---
+      \textbf{One-to-One} {\small -- Classification, $T_x{=}T_y{=}1$}
+      \begin{center}
+      \begin{tikzpicture}[rnnapp]
+        \node[rinit] (a) at (0, 0) {$a^{\la 0\ra}$};
+        \node[rcell] (c) at (1.3, 0) {};
+        \node[rxn]   (x) at (1.3, -1.1) {$x$};
+        \node[ryn]   (y) at (1.3, 1.1) {$\hat{y}$};
+        \draw[rarr] (a) -- (c); \draw[rarr] (x) -- (c); \draw[rarr] (c) -- (y);
+      \end{tikzpicture}
+      \end{center}
+
+      \vspace{0.2em}
+      % --- One-to-Many ---
+      \textbf{One-to-Many} {\small -- Image captioning, $T_x{=}1 < T_y$}
+      \begin{center}
+      \begin{tikzpicture}[rnnapp]
+        \node[rinit] (a) at (0, 0) {$a^{\la 0\ra}$};
+        \node[rcell] (c1) at (1.3, 0) {};
+        \node[rcell] (c2) at (2.7, 0) {};
+        \node[rcell] (c3) at (4.7, 0) {};
+        \node[rxn]   (x) at (1.3, -1.1) {$x$};
+        \node[ryn]  (y1) at (1.3, 1.1) {$\hat{y}^{\la 1\ra}$};
+        \node[ryn]  (y2) at (2.7, 1.1) {$\hat{y}^{\la 2\ra}$};
+        \node[ryn]  (y3) at (4.7, 1.1) {$\hat{y}^{\la T_y\ra}$};
+        \draw[rarr] (a) -- (c1); \draw[rarr] (x) -- (c1);
+        \draw[rarr] (c1) -- (c2);
+        \draw[rarr] (c2) -- ++(0.6,0);
+        \node[font=\scriptsize] at (3.7, 0) {$\cdots$};
+        \draw[rarr] (4.1, 0) -- (c3);
+        \draw[rarr] (c1) -- (y1); \draw[rarr] (c2) -- (y2); \draw[rarr] (c3) -- (y3);
+        \draw[rarr] (y1.east) to[out=0,in=180] (c2.south west);
+        \draw[rarr] (y2.east) to[out=0,in=200] (3.3, 0);
+      \end{tikzpicture}
+      \end{center}
+
+      \vspace{0.2em}
+      % --- Many-to-One ---
+      \textbf{Many-to-One} {\small -- Sentiment, $T_x > T_y{=}1$}
+      \begin{center}
+      \begin{tikzpicture}[rnnapp]
+        \node[rinit] (a) at (0, 0) {$a^{\la 0\ra}$};
+        \node[rcell] (c1) at (1.3, 0) {};
+        \node[rcell] (c2) at (2.7, 0) {};
+        \node[rcell] (c3) at (4.7, 0) {};
+        \node[rxn] (x1) at (1.3, -1.1) {$x^{\la 1\ra}$};
+        \node[rxn] (x2) at (2.7, -1.1) {$x^{\la 2\ra}$};
+        \node[rxn] (x3) at (4.7, -1.1) {$x^{\la T_x\ra}$};
+        \node[ryn]  (y) at (4.7, 1.1) {$\hat{y}$};
+        \draw[rarr] (a) -- (c1);
+        \draw[rarr] (x1) -- (c1); \draw[rarr] (x2) -- (c2); \draw[rarr] (x3) -- (c3);
+        \draw[rarr] (c1) -- (c2);
+        \draw[rarr] (c2) -- ++(0.6,0);
+        \node[font=\scriptsize] at (3.7, 0) {$\cdots$};
+        \draw[rarr] (4.1, 0) -- (c3);
+        \draw[rarr] (c3) -- (y);
+      \end{tikzpicture}
+      \end{center}
+    \end{column}
+
+    \begin{column}{0.48\textwidth}
+      % --- Many-to-Many (T_x = T_y) ---
+      \textbf{Many-to-Many} ($T_x{=}T_y$) {\small -- Seq.\ tagging}
+      \begin{center}
+      \begin{tikzpicture}[rnnapp]
+        \node[rinit] (a) at (0, 0) {$a^{\la 0\ra}$};
+        \node[rcell] (c1) at (1.3, 0) {};
+        \node[rcell] (c2) at (2.7, 0) {};
+        \node[rcell] (c3) at (4.7, 0) {};
+        \node[rxn] (x1) at (1.3, -1.1) {$x^{\la 1\ra}$};
+        \node[rxn] (x2) at (2.7, -1.1) {$x^{\la 2\ra}$};
+        \node[rxn] (x3) at (4.7, -1.1) {$x^{\la T\ra}$};
+        \node[ryn] (y1) at (1.3, 1.1) {$\hat{y}^{\la 1\ra}$};
+        \node[ryn] (y2) at (2.7, 1.1) {$\hat{y}^{\la 2\ra}$};
+        \node[ryn] (y3) at (4.7, 1.1) {$\hat{y}^{\la T\ra}$};
+        \draw[rarr] (a) -- (c1);
+        \draw[rarr] (x1) -- (c1); \draw[rarr] (c1) -- (y1);
+        \draw[rarr] (x2) -- (c2); \draw[rarr] (c2) -- (y2);
+        \draw[rarr] (x3) -- (c3); \draw[rarr] (c3) -- (y3);
+        \draw[rarr] (c1) -- (c2);
+        \draw[rarr] (c2) -- ++(0.6,0);
+        \node[font=\scriptsize] at (3.7, 0) {$\cdots$};
+        \draw[rarr] (4.1, 0) -- (c3);
+      \end{tikzpicture}
+      \end{center}
+
+      \vspace{0.2em}
+      % --- Many-to-Many (T_x != T_y) ---
+      \textbf{Many-to-Many} ($T_x{\neq}T_y$) {\small -- Translation}
+      \begin{center}
+      \begin{tikzpicture}[rnnapp]
+        \node[rinit] (a) at (0, 0) {$a^{\la 0\ra}$};
+        \node[rcell] (c1) at (1.3, 0) {};
+        \node[rcell] (c2) at (2.7, 0) {};
+        \node[rcell] (c3) at (4.7, 0) {};
+        \node[rcell] (c4) at (6.1, 0) {};
+        \node[rxn] (x1) at (1.3, -1.1) {$x^{\la 1\ra}$};
+        \node[rxn] (x2) at (2.7, -1.1) {$x^{\la T_x\ra}$};
+        \node[ryn] (y3) at (4.7, 1.1) {$\hat{y}^{\la 1\ra}$};
+        \node[ryn] (y4) at (6.1, 1.1) {$\hat{y}^{\la T_y\ra}$};
+        \draw[rarr] (a) -- (c1);
+        \draw[rarr] (x1) -- (c1); \draw[rarr] (x2) -- (c2);
+        \draw[rarr] (c1) -- (c2);
+        \draw[rarr] (c2) -- ++(0.6,0);
+        \node[font=\scriptsize] at (3.7, 0) {$\cdots$};
+        \draw[rarr] (4.1, 0) -- (c3);
+        \draw[rarr] (c3) -- (c4);
+        \draw[rarr] (c3) -- (y3); \draw[rarr] (c4) -- (y4);
+        \draw[dashed, gray] (3.7, -1.3) -- (3.7, 1.3);
+        \node[font=\tiny, text=gray, anchor=south] at (2.0, 1.3) {encoder};
+        \node[font=\tiny, text=gray, anchor=south] at (5.4, 1.3) {decoder};
+      \end{tikzpicture}
+      \end{center}
+    \end{column}
+  \end{columns}
+\end{frame}
+
+% -----------------------------------------------------------------------
+\begin{frame}{Deep RNNs}
+  \begin{columns}
+    \begin{column}{0.45\textwidth}
+      A single-layer RNN has limited capacity.
+
+      \vspace{0.5em}
+      \textbf{Solution:} Stack multiple RNN layers, analogous to stacking Transformer blocks.
+
+      \vspace{0.5em}
+      \begin{itemize}
+        \item Layer $l$ receives $h^{[l{-}1]\langle t \rangle}$ as input
+        \item More expressive representations
+        \item Output from topmost layer
+      \end{itemize}
+    \end{column}
+    \begin{column}{0.5\textwidth}
+      \begin{center}
+      \begin{tikzpicture}[
+        scale=0.6, every node/.style={scale=0.6},
+        cell/.style={rectangle, draw, fill=blue!15, rounded corners=2pt,
+                     minimum width=0.8cm, minimum height=0.8cm},
+        xn/.style={rectangle, rounded corners=2pt, draw=green!50!black, fill=green!15,
+                   minimum width=0.8cm, minimum height=0.65cm, font=\scriptsize},
+        yn/.style={rectangle, rounded corners=2pt, draw=red!50!black, fill=red!15,
+                   minimum width=0.8cm, minimum height=0.65cm, font=\scriptsize},
+        init/.style={rectangle, rounded corners=2pt, draw=green!50!black, fill=green!15,
+                     minimum width=0.75cm, minimum height=0.6cm, font=\tiny},
+        arr/.style={-{Stealth[length=2pt]}, semithick},
+        lbl/.style={font=\scriptsize, text=gray}
+      ]
+        \def\dx{1.8}  % horizontal spacing
+        \def\dy{1.8}  % vertical spacing between layers
+
+        % --- Layer 1 ---
+        \node[init] (a10) at (-1.2, 0) {$a^{[1]\la 0\ra}$};
+        \foreach \t in {1,2,3} {
+          \node[cell] (c1\t) at (\t*\dx, 0) {};
+        }
+        \draw[arr] (a10) -- (c11);
+        \draw[arr] (c11) -- (c12);
+        \draw[arr] (c12) -- ++(0.55,0);
+        \node[font=\scriptsize] at (2.5*\dx, 0) {$\cdots$};
+        \draw[arr] (2.5*\dx+0.35, 0) -- (c13);
+        \draw[arr] (c13) -- ++(0.7,0) node[right, font=\scriptsize] {$\cdots$};
+
+        % Inputs x
+        \foreach \t/\xl in {1/$x^{\la 1\ra}$, 2/$x^{\la 2\ra}$, 3/$x^{\la t\ra}$} {
+          \node[xn] (x\t) at (\t*\dx, -1.4) {\xl};
+          \draw[arr] (x\t) -- (c1\t);
+        }
+
+        % --- Layer 2 ---
+        \node[init] (a20) at (-1.2, \dy) {$a^{[2]\la 0\ra}$};
+        \foreach \t in {1,2,3} {
+          \node[cell] (c2\t) at (\t*\dx, \dy) {};
+          \draw[arr] (c1\t) -- (c2\t);
+        }
+        \draw[arr] (a20) -- (c21);
+        \draw[arr] (c21) -- (c22);
+        \draw[arr] (c22) -- ++(0.55,0);
+        \node[font=\scriptsize] at (2.5*\dx, \dy) {$\cdots$};
+        \draw[arr] (2.5*\dx+0.35, \dy) -- (c23);
+        \draw[arr] (c23) -- ++(0.7,0) node[right, font=\scriptsize] {$\cdots$};
+
+        % --- Vertical dots between layer 2 and layer k ---
+        \foreach \t in {1,2,3} {
+          \node[font=\scriptsize] at (\t*\dx, 2*\dy-0.3) {$\vdots$};
+        }
+
+        % --- Layer k (top) ---
+        \def\ky{2.5*\dy}
+        \node[init] (ak0) at (-1.2, \ky) {$a^{[k]\la 0\ra}$};
+        \foreach \t in {1,2,3} {
+          \node[cell] (ck\t) at (\t*\dx, \ky) {};
+        }
+        \draw[arr] (ak0) -- (ck1);
+        \draw[arr] (ck1) -- (ck2);
+        \draw[arr] (ck2) -- ++(0.55,0);
+        \node[font=\scriptsize] at (2.5*\dx, \ky) {$\cdots$};
+        \draw[arr] (2.5*\dx+0.35, \ky) -- (ck3);
+        \draw[arr] (ck3) -- ++(0.7,0) node[right, font=\scriptsize] {$\cdots$};
+
+        % Arrows from vdots to layer k
+        \foreach \t in {1,2,3} {
+          \draw[arr] (\t*\dx, 2*\dy+0.1) -- (ck\t);
+        }
+
+        % Outputs y
+        \foreach \t/\yl in {1/$\hat{y}^{\la 1\ra}$, 2/$\hat{y}^{\la 2\ra}$, 3/$\hat{y}^{\la t\ra}$} {
+          \node[yn] (y\t) at (\t*\dx, \ky+1.4) {\yl};
+          \draw[arr] (ck\t) -- (y\t);
+        }
+      \end{tikzpicture}
+      \end{center}
+    \end{column}
+  \end{columns}
+\end{frame}
+
+% -----------------------------------------------------------------------
+\begin{frame}{RNN: Advantages and Drawbacks}
+  \begin{columns}[T]
+    \begin{column}{0.47\textwidth}
+      \textbf{Advantages}
+      \begin{itemize}
+        \item Can process input of \emph{any length}
+        \item Model size does not grow with input length
+        \item Hidden state captures historical context
+        \item Weights shared across time
+        \item $\mathcal{O}(T)$ memory (vs.\ $\mathcal{O}(T^2)$ for attention)
+      \end{itemize}
+    \end{column}
+    \begin{column}{0.47\textwidth}
+      \textbf{Drawbacks}
+      \begin{itemize}
+        \item \textbf{Slow training:} sequential computation, no parallelism across time
+        \item \textbf{Long-range dependencies:} hidden state must compress all history --- information decays
+        \item \textbf{Gradient problems:} vanishing/exploding gradients through many time steps
+        \item Cannot natively look ahead (but bidirectional RNNs exist)
+      \end{itemize}
+    \end{column}
+  \end{columns}
+
+\end{frame}
+
+% -----------------------------------------------------------------------
+\begin{frame}{The Vanishing/Exploding Gradient Problem}
+  During backpropagation through time (BPTT), gradients involve products of Jacobians:
+  \[
+    \frac{\partial \mathcal{L}}{\partial W} = \sum_{t=1}^{T} \frac{\partial \mathcal{L}_t}{\partial W} \;, \qquad
+    \frac{\partial a^{\langle t \rangle}}{\partial a^{\langle k \rangle}} = \prod_{i=k+1}^{t} \frac{\partial a^{\langle i \rangle}}{\partial a^{\langle i{-}1 \rangle}}
+  \]
+
+  Each Jacobian factor is
+  $\frac{\partial a^{\langle i \rangle}}{\partial a^{\langle i{-}1 \rangle}} = W_{aa}^\top \cdot \operatorname{diag}\!\bigl(g'(W_{aa}\,a^{\langle i{-}1\rangle} + W_{ax}\,x^{\langle i\rangle} + b)\bigr)$, so
+  \[
+    \left\|\frac{\partial a^{\langle t \rangle}}{\partial a^{\langle k \rangle}}\right\|
+    = \left\|\prod_{i=k+1}^{t} W_{aa}^\top \operatorname{diag}(g'(\cdot))\right\|
+    \leq \bigl(\|W_{aa}\| \cdot \gamma\bigr)^{t-k}
+    \quad \text{where } \gamma = \sup |g'|
+  \]
+  \begin{itemize}
+    \item $\|W_{aa}\| \cdot \gamma > 1$: gradients \textbf{explode} exponentially in $t{-}k$
+    \item $\|W_{aa}\| \cdot \gamma < 1$: gradients \textbf{vanish} exponentially in $t{-}k$
+  \end{itemize}
+
+  \vspace{0.5em}
+  \begin{block}{Remedies}
+    \begin{description}
+      \item[Exploding gradients:] \textbf{Gradient clipping:} rescale gradient if $\|\nabla\| > \theta$ (typically $\theta = 1$) 
+      \item[Vanishing gradients:] Architectural solutions: \textbf{LSTM} and \textbf{GRU} with gating mechanisms
+    \end{description}
+  \end{block}
+\end{frame}
+
+% -----------------------------------------------------------------------
+% Reusable LSTM diagram macro
+% Argument: highlight mode — all, forget, input, output
+\newcommand{\lstmdiagram}[1]{%
+  \begin{tikzpicture}[xscale=0.38, yscale=0.32, every node/.style={xscale=0.38, yscale=0.32},
+    arr/.style={-{Stealth[length=4pt, width=3pt]}, very thick, rounded corners=3pt},
+    line/.style={very thick, rounded corners=3pt},
+  ]
+    % --- Highlight logic: define opacity per group ---
+    % opacBase:  input infrastructure (h_{t-1}, x_t, bus junction)
+    % opacFg:    forget gate (fg sigma, fg->fmul arrow, f_t label)
+    % opacIgSig: input gate sigma node
+    % opacCg:    candidate tanh node
+    % opacImul:  input multiply (ig * cg) and imul->addop connection
+    % opacOg:    output gate (og sigma, tanhc, omul, h_t output)
+    % opacCell:  cell state line (C_{t-1}, fmul, addop, C_t, segments)
+    % Default: everything dimmed
+    \colorlet{clrFg}{gray!35}      \colorlet{fillFg}{gray!10}
+    \colorlet{clrIgSig}{gray!35}   \colorlet{fillIgSig}{gray!10}
+    \colorlet{clrCg}{gray!35}      \colorlet{fillCg}{gray!10}
+    \colorlet{clrImul}{gray!35}    \colorlet{fillImul}{gray!10}
+    \colorlet{clrOg}{gray!35}      \colorlet{fillOg}{gray!10}
+    \colorlet{clrBase}{gray!35}    \colorlet{fillBase}{gray!10}
+    \def\opacBase{0.35}
+    \def\opacFg{0.35}
+    \def\opacIgSig{0.35}
+    \def\opacCg{0.35}
+    \def\opacImul{0.35}
+    \def\opacOg{0.35}
+    \def\opacCell{0.35}
+    %
+    \ifnum\pdfstrcmp{#1}{all}=0
+      \colorlet{clrFg}{black}      \colorlet{fillFg}{yellow!30}
+      \colorlet{clrIgSig}{black}   \colorlet{fillIgSig}{yellow!30}
+      \colorlet{clrCg}{black}      \colorlet{fillCg}{yellow!30}
+      \colorlet{clrImul}{black}    \colorlet{fillImul}{pink!30}
+      \colorlet{clrOg}{black}      \colorlet{fillOg}{yellow!30}
+      \colorlet{clrBase}{black}    \colorlet{fillBase}{pink!30}
+      \def\opacBase{1}\def\opacFg{1}\def\opacIgSig{1}\def\opacCg{1}\def\opacImul{1}\def\opacOg{1}\def\opacCell{1}
+    \fi
+    \ifnum\pdfstrcmp{#1}{forget}=0
+      \colorlet{clrFg}{black}      \colorlet{fillFg}{yellow!30}
+      \colorlet{clrBase}{black}    \colorlet{fillBase}{pink!30}
+      \def\opacBase{1}\def\opacFg{1}
+    \fi
+    \ifnum\pdfstrcmp{#1}{input}=0
+      \colorlet{clrIgSig}{black}   \colorlet{fillIgSig}{yellow!30}
+      \colorlet{clrCg}{black}      \colorlet{fillCg}{yellow!30}
+      \colorlet{clrImul}{black}    \colorlet{fillImul}{pink!30}
+      \colorlet{clrBase}{black}    \colorlet{fillBase}{pink!30}
+      \def\opacBase{1}\def\opacIgSig{1}\def\opacCg{1}\def\opacImul{1}\def\opacCell{1}
+    \fi
+    \ifnum\pdfstrcmp{#1}{output}=0
+      \colorlet{clrOg}{black}      \colorlet{fillOg}{yellow!30}
+      \colorlet{clrBase}{black}    \colorlet{fillBase}{pink!30}
+      \def\opacBase{1}\def\opacOg{1}
+    \fi
+    \ifnum\pdfstrcmp{#1}{inputgate}=0
+      \colorlet{clrIgSig}{black}   \colorlet{fillIgSig}{yellow!30}
+      \colorlet{clrBase}{black}    \colorlet{fillBase}{pink!30}
+      \def\opacBase{1}\def\opacIgSig{1}
+    \fi
+    \ifnum\pdfstrcmp{#1}{candidate}=0
+      \colorlet{clrCg}{black}      \colorlet{fillCg}{yellow!30}
+      \colorlet{clrBase}{black}    \colorlet{fillBase}{pink!30}
+      \def\opacBase{1}\def\opacCg{1}
+    \fi
+    \ifnum\pdfstrcmp{#1}{cellupdate}=0
+      \colorlet{clrImul}{black}    \colorlet{fillImul}{pink!30}
+      \def\opacCell{1}\def\opacImul{1}
+    \fi
+    %
+    % Coordinates
+    \def\cellY{8}
+    \def\hidY{1.5}
+    \def\gateY{3.5}
+    \def\imulY{5.6}
+    \def\boxL{-1.3}
+    \def\boxR{7.3}
+    \def\boxB{0.3}
+    \def\boxT{9.0}
+    %
+    % Background box
+    \fill[green!10, rounded corners=8pt] (\boxL, \boxB) rectangle (\boxR, \boxT);
+    \draw[green!50!black, rounded corners=8pt, thick] (\boxL, \boxB) rectangle (\boxR, \boxT);
+    %
+    % === Cell state line (top) — gaps at fmul (×) and addop (+) nodes ===
+    \draw[arr, opacity=\opacCell] (-3, \cellY) -- (-0.1, \cellY);
+    \draw[arr, opacity=\opacCell] (0.7, \cellY) -- (2.35, \cellY);
+    % no segment from 2.35 to 3.15 — addop (+) node at 2.75 bridges the gap
+    \draw[arr, opacity=\opacCell] (3.15, \cellY) -- (5.8, \cellY);
+    \draw[arr, opacity=\opacCell] (5.8, \cellY) -- (8, \cellY);
+    %
+    % === Hidden state line (bottom) ===
+    \draw[arr, opacity=\opacCell] (-3, \hidY) -- (\boxL, \hidY);
+    \draw[arr, opacity=\opacOg] (\boxR, \hidY) -- (8, \hidY);
+    %
+    % === Labels ===
+    \node[font=\Large, above, opacity=\opacCell] at (-2.5, \cellY) {$C_{t-1}$};
+    \node[font=\Large, above, opacity=\opacCell] at (7.7, \cellY) {$C_t$};
+    \node[font=\Large, above, opacity=\opacCell] at (-2.5, \hidY) {$h_{t-1}$};
+    \node[font=\Large, above, opacity=\opacOg] at (7.7, \hidY) {$h_t$};
+    %
+    % === Operations on cell state line ===
+    \pgfmathsetmacro{\opacFmul}{max(\opacFg, \opacCell)}
+    \node[circle, draw, fill=pink!30, minimum size=1.0cm, inner sep=0pt, font=\Large, opacity=\opacFmul] (fmul) at (0.3, \cellY) {$\times$};
+    \pgfmathsetmacro{\opacAddop}{max(\opacImul, \opacCell)}
+    \node[circle, draw, fill=pink!30, minimum size=1.0cm, inner sep=0pt, font=\Large, opacity=\opacAddop] (addop) at (2.75, \cellY) {$+$};
+    %
+    % === Four gate layers ===
+    \node[rectangle, draw=clrFg, fill=fillFg, minimum width=1.1cm, minimum height=0.8cm, font=\Large, opacity=\opacFg] (fg) at (0.3, \gateY) {$\sigma$};
+    \node[rectangle, draw=clrIgSig, fill=fillIgSig, minimum width=1.1cm, minimum height=0.8cm, font=\Large, opacity=\opacIgSig] (ig) at (2.0, \gateY) {$\sigma$};
+    \node[rectangle, draw=clrCg, fill=fillCg, minimum width=1.1cm, minimum height=0.8cm, font=\Large, opacity=\opacCg] (cg) at (3.5, \gateY) {tanh};
+    \node[rectangle, draw=clrOg, fill=fillOg, minimum width=1.1cm, minimum height=0.8cm, font=\Large, opacity=\opacOg] (og) at (5.2, \gateY) {$\sigma$};
+    %
+    % === Input multiply (ig * cg) ===
+    \node[circle, draw=clrImul, fill=fillImul, minimum size=1.0cm, inner sep=0pt, font=\Large, opacity=\opacImul] (imul) at (2.75, \imulY) {$\times$};
+    %
+    % === tanh on cell state (right side) ===
+    \node[ellipse, draw=clrOg, fill=orange!20, minimum width=1.3cm, minimum height=0.7cm, inner sep=1pt, font=\Large, opacity=\opacOg] (tanhc) at (5.8, 7.0) {tanh};
+    %
+    % === Output multiply ===
+    \node[circle, draw=clrOg, fill=fillBase, minimum size=1.0cm, inner sep=0pt, font=\Large, opacity=\opacOg] (omul) at (5.8, \imulY) {$\times$};
+    %
+    % === Input feeding: h_{t-1} and x_t -> all gates ===
+    \coordinate (hbend) at (-0.5, \hidY);
+    \draw[line, opacity=\opacCell] (\boxL, \hidY) -- (hbend);
+    \draw[line, opacity=\opacCell] (hbend) -- (-0.5, 2.2);
+    %
+    \node[circle, draw, fill=blue!15, minimum size=1.2cm, font=\Large, opacity=\opacBase] (xt) at (-0.5, -1.5) {$x_t$};
+    \draw[arr, opacity=\opacBase] (xt) -- (-0.5, 2.2);
+    %
+    % Bus line — segmented at bifurcation points (max opacity per segment)
+    % Segment -0.5 to 0.3: needed by fg, ig, cg, og
+    \pgfmathsetmacro{\opacBusA}{max(\opacFg, max(\opacIgSig, max(\opacCg, \opacOg)))}
+    \draw[line, opacity=\opacBusA] (-0.5, 2.2) -- (0.3, 2.2);
+    % Segment 0.3 to 2.0: needed by ig, cg, og
+    \pgfmathsetmacro{\opacBusB}{max(\opacIgSig, max(\opacCg, \opacOg))}
+    \draw[line, opacity=\opacBusB] (0.3, 2.2) -- (2.0, 2.2);
+    % Segment 2.0 to 3.5: needed by cg, og
+    \pgfmathsetmacro{\opacBusC}{max(\opacCg, \opacOg)}
+    \draw[line, opacity=\opacBusC] (2.0, 2.2) -- (3.5, 2.2);
+    % Segment 3.5 to 5.2: needed by og only
+    \draw[line, opacity=\opacOg] (3.5, 2.2) -- (5.2, 2.2);
+    % Bus -> gate arrows
+    \draw[arr, opacity=\opacFg] (0.3, 2.2) -- (fg.south);
+    \draw[arr, opacity=\opacIgSig] (2.0, 2.2) -- (ig.south);
+    \draw[arr, opacity=\opacCg] (3.5, 2.2) -- (cg.south);
+    \draw[arr, opacity=\opacOg] (5.2, 2.2) -- (og.south);
+    %
+    % === Gate output connections ===
+    \draw[arr, opacity=\opacFg] (fg.north) -- (fmul.south);
+    \node[font=\Large, right, opacity=\opacFg] at (0.6, 6.0) {$f_t$};
+    \pgfmathsetmacro{\opacIgToImul}{max(\opacIgSig, \opacImul)}
+    \draw[arr, opacity=\opacIgToImul] (ig.north) -- ++(0, 0.8) -| ($(imul.south) + (-0.15, 0)$);
+    \pgfmathsetmacro{\opacCgToImul}{max(\opacCg, \opacImul)}
+    \draw[arr, opacity=\opacCgToImul] (cg.north) -- ++(0, 0.8) -| ($(imul.south) + (0.15, 0)$);
+    \node[font=\Large, right, opacity=\opacCg] at (3.7, 4.7) {$\tilde{C}_t$};
+    \draw[arr, opacity=\opacImul] (imul.north) -- (addop.south);
+    \draw[arr, opacity=\opacOg] (og.north) -- ++(0, 0.6) -| (omul.south);
+    %
+    % Cell state branch -> tanh -> output multiply
+    \draw[line, opacity=\opacOg] (5.8, \cellY) -- (tanhc.north);
+    \draw[arr, opacity=\opacOg] (tanhc.south) -- (omul.north);
+    %
+    % === Output multiply -> hidden state ===
+    \draw[line, opacity=\opacOg] (omul.east) -- (6.8, \imulY) -- (6.8, \hidY);
+    \draw[line, opacity=\opacOg] (6.8, \hidY) -- (\boxR, \hidY);
+    %
+    % === h_t output going up ===
+    \node[circle, draw, fill=purple!15, minimum size=1.2cm, font=\Large, opacity=\opacOg] (htout) at (6.8, 10.5) {$h_t$};
+    \draw[arr, opacity=\opacOg] (6.8, \imulY) -- (htout.south);
+  \end{tikzpicture}%
+}
+
+\subsection{LSTM}
+
+\begin{frame}{LSTM: Long Short-Term Memory}
+
+  \cite{hochreiter1997lstm} introduced two key ideas to address vanishing gradients:
+
+  \begin{columns}
+    \begin{column}{0.55\textwidth}
+      \begin{itemize}
+        \item \textbf{Gates} for selectively adding/removing information to/from cell state
+        \item An \textbf{information highway} $C_t$ (similar to residual connections) for unimpeded gradient flow
+      \end{itemize}
+
+      \vspace{0.3em}
+      Two state vectors:
+      \begin{itemize}
+        \item $C_t$: Cell state (long-term memory, upper line)
+        \item $h_t$: Hidden state (short-term output, lower line)
+      \end{itemize}
+    \end{column}
+    \begin{column}{0.4\textwidth}
+      \begin{center}
+        \lstmdiagram{all}
+      \end{center}
+    \end{column}
+  \end{columns}
+
+  \vspace{0.3em}
+  Each gate has the form $\sigma\!\left(W [h_{t-1}, x_t] + b\right) \in [0,1]$, with its own learned $W, b$.
+\end{frame}
+
+% -----------------------------------------------------------------------
+\begin{frame}{LSTM: Forget Gate}
+  \begin{columns}[T]
+    \begin{column}{0.48\textwidth}
+      \textbf{Forget gate} $f_t$:
+      \[
+        f_t = \sigma\!\left(W_f \cdot [h_{t-1}, x_t] + b_f\right)
+      \]
+
+      \textcolor{gray!50}{Input gate $i_t$, candidate $\tilde{C}_t$:}
+      \[
+      \textcolor{gray!50}{
+      \begin{aligned}
+        i_t &= \sigma\!\left(W_i \cdot [h_{t-1}, x_t] + b_i\right) \\
+        \tilde{C}_t &= \tanh\!\left(W_C \cdot [h_{t-1}, x_t] + b_C\right)
+      \end{aligned}
+      }
+      \]
+
+      \textcolor{gray!50}{Cell state update:}
+      \[
+        \textcolor{gray!50}{C_t = f_t \odot C_{t-1} + i_t \odot \tilde{C}_t}
+      \]
+
+      \textcolor{gray!50}{Output:}
+      \[
+      \textcolor{gray!50}{
+      \begin{aligned}
+        o_t &= \sigma\!\left(W_o \cdot [h_{t-1}, x_t] + b_o\right) \\
+        h_t &= o_t \odot \tanh(C_t)
+      \end{aligned}
+      }
+      \]
+    \end{column}
+    \begin{column}{0.48\textwidth}
+      \begin{center}
+        \lstmdiagram{forget}
+      \end{center}
+    \end{column}
+  \end{columns}
+\end{frame}
+
+% -----------------------------------------------------------------------
+\begin{frame}{LSTM: Input Gate}
+  \begin{columns}[T]
+    \begin{column}{0.48\textwidth}
+      \textcolor{gray!50}{Forget gate $f_t$:}
+      \[
+        \textcolor{gray!50}{f_t = \sigma\!\left(W_f \cdot [h_{t-1}, x_t] + b_f\right)}
+      \]
+
+      \textbf{Input gate} $i_t$:
+      \[
+        i_t = \sigma\!\left(W_i \cdot [h_{t-1}, x_t] + b_i\right)
+      \]
+
+      \textcolor{gray!50}{Candidate $\tilde{C}_t$:}
+      \[
+        \textcolor{gray!50}{\tilde{C}_t = \tanh\!\left(W_C \cdot [h_{t-1}, x_t] + b_C\right)}
+      \]
+
+      \textcolor{gray!50}{Cell state update:}
+      \[
+        \textcolor{gray!50}{C_t = f_t \odot C_{t-1} + i_t \odot \tilde{C}_t}
+      \]
+
+      \textcolor{gray!50}{Output:}
+      \[
+      \textcolor{gray!50}{
+      \begin{aligned}
+        o_t &= \sigma\!\left(W_o \cdot [h_{t-1}, x_t] + b_o\right) \\
+        h_t &= o_t \odot \tanh(C_t)
+      \end{aligned}
+      }
+      \]
+    \end{column}
+    \begin{column}{0.48\textwidth}
+      \begin{center}
+        \lstmdiagram{inputgate}
+      \end{center}
+    \end{column}
+  \end{columns}
+\end{frame}
+
+% -----------------------------------------------------------------------
+\begin{frame}{LSTM: Candidate}
+  \begin{columns}[T]
+    \begin{column}{0.48\textwidth}
+      \textcolor{gray!50}{Forget gate $f_t$:}
+      \[
+        \textcolor{gray!50}{f_t = \sigma\!\left(W_f \cdot [h_{t-1}, x_t] + b_f\right)}
+      \]
+
+      \textcolor{gray!50}{Input gate $i_t$:}
+      \[
+        \textcolor{gray!50}{i_t = \sigma\!\left(W_i \cdot [h_{t-1}, x_t] + b_i\right)}
+      \]
+
+      \textbf{Candidate} $\tilde{C}_t$:
+      \[
+        \tilde{C}_t = \tanh\!\left(W_C \cdot [h_{t-1}, x_t] + b_C\right)
+      \]
+
+      \textcolor{gray!50}{Cell state update:}
+      \[
+        \textcolor{gray!50}{C_t = f_t \odot C_{t-1} + i_t \odot \tilde{C}_t}
+      \]
+
+      \textcolor{gray!50}{Output:}
+      \[
+      \textcolor{gray!50}{
+      \begin{aligned}
+        o_t &= \sigma\!\left(W_o \cdot [h_{t-1}, x_t] + b_o\right) \\
+        h_t &= o_t \odot \tanh(C_t)
+      \end{aligned}
+      }
+      \]
+    \end{column}
+    \begin{column}{0.48\textwidth}
+      \begin{center}
+        \lstmdiagram{candidate}
+      \end{center}
+    \end{column}
+  \end{columns}
+\end{frame}
+
+% -----------------------------------------------------------------------
+\begin{frame}{LSTM: Cell State Update}
+  \begin{columns}[T]
+    \begin{column}{0.48\textwidth}
+      \textcolor{gray!50}{Forget gate $f_t$:}
+      \[
+        \textcolor{gray!50}{f_t = \sigma\!\left(W_f \cdot [h_{t-1}, x_t] + b_f\right)}
+      \]
+
+      \textcolor{gray!50}{Input gate $i_t$, candidate $\tilde{C}_t$:}
+      \[
+      \textcolor{gray!50}{
+      \begin{aligned}
+        i_t &= \sigma\!\left(W_i \cdot [h_{t-1}, x_t] + b_i\right) \\
+        \tilde{C}_t &= \tanh\!\left(W_C \cdot [h_{t-1}, x_t] + b_C\right)
+      \end{aligned}
+      }
+      \]
+
+      \textbf{Cell state update:}
+      \[
+        \boxed{C_t = f_t \odot C_{t-1} + i_t \odot \tilde{C}_t}
+      \]
+
+      \textcolor{gray!50}{Output:}
+      \[
+      \textcolor{gray!50}{
+      \begin{aligned}
+        o_t &= \sigma\!\left(W_o \cdot [h_{t-1}, x_t] + b_o\right) \\
+        h_t &= o_t \odot \tanh(C_t)
+      \end{aligned}
+      }
+      \]
+    \end{column}
+    \begin{column}{0.48\textwidth}
+      \begin{center}
+        \lstmdiagram{cellupdate}
+      \end{center}
+    \end{column}
+  \end{columns}
+\end{frame}
+
+% -----------------------------------------------------------------------
+\begin{frame}{LSTM: Output Gate}
+  \begin{columns}[T]
+    \begin{column}{0.48\textwidth}
+      \textcolor{gray!50}{Forget gate $f_t$:}
+      \[
+        \textcolor{gray!50}{f_t = \sigma\!\left(W_f \cdot [h_{t-1}, x_t] + b_f\right)}
+      \]
+
+      \textcolor{gray!50}{Input gate $i_t$, candidate $\tilde{C}_t$:}
+      \[
+      \textcolor{gray!50}{
+      \begin{aligned}
+        i_t &= \sigma\!\left(W_i \cdot [h_{t-1}, x_t] + b_i\right) \\
+        \tilde{C}_t &= \tanh\!\left(W_C \cdot [h_{t-1}, x_t] + b_C\right)
+      \end{aligned}
+      }
+      \]
+
+      \textcolor{gray!50}{Cell state update:}
+      \[
+        \textcolor{gray!50}{C_t = f_t \odot C_{t-1} + i_t \odot \tilde{C}_t}
+      \]
+
+      \textbf{Output gate} $o_t$:
+      \[
+      \begin{aligned}
+        o_t &= \sigma\!\left(W_o \cdot [h_{t-1}, x_t] + b_o\right) \\
+        h_t &= o_t \odot \tanh(C_t)
+      \end{aligned}
+      \]
+    \end{column}
+    \begin{column}{0.48\textwidth}
+      \begin{center}
+        \lstmdiagram{output}
+      \end{center}
+    \end{column}
+  \end{columns}
+\end{frame}
+
+% -----------------------------------------------------------------------
+\begin{frame}{LSTM: Summary of Gates}
+  \begin{center}
+  \renewcommand{\arraystretch}{1.4}
+  \begin{tabular}{llp{5.5cm}}
+    \toprule
+    \textbf{Gate} & \textbf{Equation} & \textbf{Purpose} \\
+    \midrule
+    Forget $f_t$ & $\sigma(W_f [h_{t-1}, x_t] + b_f)$ & Erase cell state features \\
+    Input $i_t$ & $\sigma(W_i [h_{t-1}, x_t] + b_i)$ & Select features to update \\
+    Candidate $\tilde{C}_t$ & $\tanh(W_C [h_{t-1}, x_t] + b_C)$ & Proposed new values \\
+    Output $o_t$ & $\sigma(W_o [h_{t-1}, x_t] + b_o)$ & Filter cell state for output \\
+    \midrule
+    Cell update & $C_t = f_t \odot C_{t-1} + i_t \odot \tilde{C}_t$ & \\
+    Hidden state & $h_t = o_t \odot \tanh(C_t)$ & \\
+    \bottomrule
+  \end{tabular}
+  \end{center}
+
+  \vspace{0.5em}
+  \begin{block}{Why LSTM helps with vanishing gradients}
+    $\frac{\partial C_t}{\partial C_{t-1}} = f_t$ --- when $f_t \approx 1$, gradients flow through unchanged (information highway), similar to residual connections.
+  \end{block}
+\end{frame}
+
+
+
+% -----------------------------------------------------------------------
+% Reusable GRU diagram macro
+% Argument: highlight mode — all, update, reset, candidate, combine
+\newcommand{\grudiagram}[1]{%
+  \begin{tikzpicture}[xscale=0.38, yscale=0.32, every node/.style={xscale=0.38, yscale=0.32},
+    arr/.style={-{Stealth[length=4pt, width=3pt]}, very thick, rounded corners=3pt},
+    line/.style={very thick, rounded corners=3pt},
+  ]
+    % --- Highlight logic ---
+    % opacIn:   input infrastructure (h_{t-1} branch, x_t, bus)
+    % opacZt:   update gate (z_t sigma only)
+    % opacRt:   reset gate (r_t sigma, r_t->rmul)
+    % opacCand: candidate (rmul, tanh, their connections)
+    % opacComb: combination (state line ops, ztmul, z_t->zmul, z_t->ztmul, tanh->ztmul, h_t)
+    \def\opacIn{0.35}
+    \def\opacZt{0.35}
+    \def\opacRt{0.35}
+    \def\opacCand{0.35}
+    \def\opacComb{0.35}
+    %
+    \ifnum\pdfstrcmp{#1}{all}=0
+      \def\opacIn{1}\def\opacZt{1}\def\opacRt{1}\def\opacCand{1}\def\opacComb{1}
+    \fi
+    \ifnum\pdfstrcmp{#1}{update}=0
+      \def\opacIn{1}\def\opacZt{1}
+    \fi
+    \ifnum\pdfstrcmp{#1}{reset}=0
+      \def\opacIn{1}\def\opacRt{1}
+    \fi
+    \ifnum\pdfstrcmp{#1}{candidate}=0
+      \def\opacIn{1}\def\opacCand{1}
+    \fi
+    \ifnum\pdfstrcmp{#1}{combine}=0
+      \def\opacIn{1}\def\opacComb{1}
+    \fi
+    %
+    % Coordinates
+    \def\stateY{8}
+    \def\gateY{2.0}
+    \def\midY{5.8}
+    \def\boxL{-1.3}
+    \def\boxR{7.3}
+    \def\boxB{-0.3}
+    \def\boxT{9.0}
+    %
+    % Background box
+    \fill[green!10, rounded corners=8pt] (\boxL, \boxB) rectangle (\boxR, \boxT);
+    \draw[green!50!black, rounded corners=8pt, thick] (\boxL, \boxB) rectangle (\boxR, \boxT);
+    %
+    % === State line (top) — part of combine ===
+    \draw[arr, opacity=\opacComb] (-3, \stateY) -- (-0.1, \stateY);
+    \draw[arr, opacity=\opacComb] (0.7, \stateY) -- (4.6, \stateY);
+    \draw[arr, opacity=\opacComb] (5.4, \stateY) -- (8, \stateY);
+    %
+    % === Labels ===
+    \node[font=\Large, above, opacity=\opacComb] at (-2.5, \stateY) {$h_{t-1}$};
+    \node[font=\Large, above, opacity=\opacComb] at (7.7, \stateY) {$h_t$};
+    %
+    % === Operations on state line — part of combine ===
+    \node[circle, draw, fill=pink!30, minimum size=1.0cm, inner sep=0pt, font=\Large, opacity=\opacComb] (zmul) at (0.3, \stateY) {$\times$};
+    \node[circle, draw, fill=pink!30, minimum size=1.0cm, inner sep=0pt, font=\Large, opacity=\opacComb] (addop) at (5.0, \stateY) {$+$};
+    %
+    % === Gate row ===
+    \node[rectangle, draw, fill=yellow!30, minimum width=1.1cm, minimum height=0.8cm, font=\Large, opacity=\opacZt] (zt) at (0.3, \gateY) {$\sigma$};
+    \node[rectangle, draw, fill=yellow!30, minimum width=1.1cm, minimum height=0.8cm, font=\Large, opacity=\opacRt] (rt) at (2.2, \gateY) {$\sigma$};
+    \node[circle, draw, fill=pink!30, minimum size=1.0cm, inner sep=0pt, font=\Large, opacity=\opacCand] (rmul) at (3.8, \gateY) {$\times$};
+    \node[rectangle, draw, fill=yellow!30, minimum width=1.1cm, minimum height=0.8cm, font=\Large, opacity=\opacCand] (htilde) at (5.5, \gateY) {tanh};
+    %
+    % === Middle row: z_t * h_tilde — part of combine ===
+    \node[circle, draw, fill=pink!30, minimum size=1.0cm, inner sep=0pt, font=\Large, opacity=\opacComb] (ztmul) at (5.0, \midY) {$\times$};
+    %
+    % === Input feeding — segmented at bifurcation points ===
+    % Vertical h_{t-1} line: from state line down to bus (bifurcation at bus y=0.5)
+    \draw[line, opacity=\opacComb] (-0.5, \stateY) -- (-0.5, 0.5);
+    %
+    % x_t node and line (meets vertical at bus y=0.5)
+    \node[circle, draw, fill=blue!15, minimum size=1.2cm, font=\Large, opacity=\opacIn] (xt) at (-0.5, -1.5) {$x_t$};
+    \draw[line, opacity=\opacIn] (xt) -- (-0.5, 0.5);
+    %
+    % Bus line — each segment drawn for all groups that pass through it
+    % (overlapping draws; highest opacity wins visually)
+    % Segment -0.5 to 0.3: needed by z_t, r_t, cand
+    \draw[line, opacity=\opacZt] (-0.5, 0.5) -- (0.3, 0.5);
+    \draw[line, opacity=\opacRt] (-0.5, 0.5) -- (0.3, 0.5);
+    \draw[line, opacity=\opacCand] (-0.5, 0.5) -- (0.3, 0.5);
+    % Segment 0.3 to 2.2: needed by r_t, cand
+    \draw[line, opacity=\opacRt] (0.3, 0.5) -- (2.2, 0.5);
+    \draw[line, opacity=\opacCand] (0.3, 0.5) -- (2.2, 0.5);
+    % Segment 2.2 to 3.8: needed by cand
+    \draw[line, opacity=\opacCand] (2.2, 0.5) -- (3.8, 0.5);
+    % Segment 3.8 to 5.5: needed by cand
+    \draw[line, opacity=\opacCand] (3.8, 0.5) -- (5.5, 0.5);
+    %
+    % Bus -> gate arrows (at bifurcation points)
+    \draw[arr, opacity=\opacZt] (0.3, 0.5) -- (zt.south);
+    \draw[arr, opacity=\opacRt] (2.2, 0.5) -- (rt.south);
+    \draw[arr, opacity=\opacCand] (3.8, 0.5) -- (rmul.south);
+    \draw[arr, opacity=\opacCand] (5.5, 0.5) -- (htilde.south);
+    %
+    % === Gate connections ===
+    % z_t -> zmul on state line (1-z_t) — part of combine
+    \draw[arr, opacity=\opacComb] (zt.north) -- (zmul.south);
+    \node[font=\Large, right, opacity=\opacComb] at (0.6, 6.0) {$1{-}z_t$};
+    %
+    % r_t -> rmul — part of reset
+    \draw[arr, opacity=\opacRt] (rt.east) -- (rmul.west);
+    \node[font=\Large, above, opacity=\opacRt] at (3.0, \gateY) {$r_t$};
+    %
+    % rmul -> tanh — part of candidate
+    \draw[arr, opacity=\opacCand] (rmul.east) -- (htilde.west);
+    %
+    % z_t -> ztmul — part of combine
+    \draw[arr, opacity=\opacComb] (0.3, 4.5) -| ($(ztmul.south) + (-0.15, 0)$);
+    \node[font=\Large, above, opacity=\opacComb] at (2.5, 4.5) {$z_t$};
+    %
+    % tanh -> ztmul — part of combine
+    \draw[line, opacity=\opacComb] (htilde.north) -- (5.5, 4.5) -- (5.15, 4.5);
+    \draw[arr, opacity=\opacComb] (5.15, 4.5) -- ($(ztmul.south) + (0.15, 0)$);
+    \node[font=\Large, above, opacity=\opacComb] at (5.5, 4.5) {$\tilde{h}_t$};
+    %
+    % ztmul -> + on state line — part of combine
+    \draw[arr, opacity=\opacComb] (ztmul.north) -- (addop.south);
+    %
+    % === h_t output going up — part of combine ===
+    \node[circle, draw, fill=purple!15, minimum size=1.2cm, font=\Large, opacity=\opacComb] (htout) at (6.8, 10.5) {$h_t$};
+    \draw[arr, opacity=\opacComb] (6.8, \stateY) -- (htout.south);
+  \end{tikzpicture}%
+}
+
+\subsection{GRU}
+
+\begin{frame}{GRU: Gated Recurrent Unit}
+  The GRU~\cite{cho2014gru} simplifies the LSTM by merging cell and hidden state into a single state $h_t$, using only two gates:
+
+  \vspace{0.5em}
+  \begin{columns}[T]
+    \begin{column}{0.48\textwidth}
+      \textbf{Update gate} $z_t$ (combines forget + input):
+      \[
+        z_t = \sigma\!\left(W_z [h_{t-1}, x_t] + b_z\right)
+      \]
+
+      \textbf{Reset gate} $r_t$:
+      \[
+        r_t = \sigma\!\left(W_r [h_{t-1}, x_t] + b_r\right)
+      \]
+
+      \textbf{Candidate hidden state:}
+      \[
+        \tilde{h}_t = \tanh\!\left(W_h [r_t \odot h_{t-1}, x_t] + b_h\right)
+      \]
+
+      \textbf{Hidden state update:}
+      \[
+        \boxed{h_t = (1 - z_t) \odot h_{t-1} + z_t \odot \tilde{h}_t}
+      \]
+    \end{column}
+    \begin{column}{0.48\textwidth}
+      \begin{center}
+        \grudiagram{all}
+      \end{center}
+    \end{column}
+  \end{columns}
+\end{frame}
+
+% -----------------------------------------------------------------------
+\begin{frame}{GRU: Update Gate}
+  \begin{columns}[T]
+    \begin{column}{0.48\textwidth}
+      \textbf{Update gate} $z_t$ (combines forget + input):
+      \[
+        z_t = \sigma\!\left(W_z [h_{t-1}, x_t] + b_z\right)
+      \]
+
+      \textcolor{gray!50}{Reset gate $r_t$:}
+      \[
+        \textcolor{gray!50}{r_t = \sigma\!\left(W_r [h_{t-1}, x_t] + b_r\right)}
+      \]
+
+      \textcolor{gray!50}{Candidate hidden state:}
+      \[
+        \textcolor{gray!50}{\tilde{h}_t = \tanh\!\left(W_h [r_t \odot h_{t-1}, x_t] + b_h\right)}
+      \]
+
+      \textcolor{gray!50}{Hidden state update:}
+      \[
+        \textcolor{gray!50}{h_t = (1 - z_t) \odot h_{t-1} + z_t \odot \tilde{h}_t}
+      \]
+    \end{column}
+    \begin{column}{0.48\textwidth}
+      \begin{center}
+        \grudiagram{update}
+      \end{center}
+    \end{column}
+  \end{columns}
+\end{frame}
+
+% -----------------------------------------------------------------------
+\begin{frame}{GRU: Reset Gate}
+  \begin{columns}[T]
+    \begin{column}{0.48\textwidth}
+      \textcolor{gray!50}{Update gate $z_t$ (combines forget + input):}
+      \[
+        \textcolor{gray!50}{z_t = \sigma\!\left(W_z [h_{t-1}, x_t] + b_z\right)}
+      \]
+
+      \textbf{Reset gate} $r_t$:
+      \[
+        r_t = \sigma\!\left(W_r [h_{t-1}, x_t] + b_r\right)
+      \]
+
+      \textcolor{gray!50}{Candidate hidden state:}
+      \[
+        \textcolor{gray!50}{\tilde{h}_t = \tanh\!\left(W_h [r_t \odot h_{t-1}, x_t] + b_h\right)}
+      \]
+
+      \textcolor{gray!50}{Hidden state update:}
+      \[
+        \textcolor{gray!50}{h_t = (1 - z_t) \odot h_{t-1} + z_t \odot \tilde{h}_t}
+      \]
+    \end{column}
+    \begin{column}{0.48\textwidth}
+      \begin{center}
+        \grudiagram{reset}
+      \end{center}
+    \end{column}
+  \end{columns}
+\end{frame}
+
+% -----------------------------------------------------------------------
+\begin{frame}{GRU: Candidate Hidden State}
+  \begin{columns}[T]
+    \begin{column}{0.48\textwidth}
+      \textcolor{gray!50}{Update gate $z_t$ (combines forget + input):}
+      \[
+        \textcolor{gray!50}{z_t = \sigma\!\left(W_z [h_{t-1}, x_t] + b_z\right)}
+      \]
+
+      \textcolor{gray!50}{Reset gate $r_t$:}
+      \[
+        \textcolor{gray!50}{r_t = \sigma\!\left(W_r [h_{t-1}, x_t] + b_r\right)}
+      \]
+
+      \textbf{Candidate hidden state:}
+      \[
+        \tilde{h}_t = \tanh\!\left(W_h [r_t \odot h_{t-1}, x_t] + b_h\right)
+      \]
+
+      \textcolor{gray!50}{Hidden state update:}
+      \[
+        \textcolor{gray!50}{h_t = (1 - z_t) \odot h_{t-1} + z_t \odot \tilde{h}_t}
+      \]
+    \end{column}
+    \begin{column}{0.48\textwidth}
+      \begin{center}
+        \grudiagram{candidate}
+      \end{center}
+    \end{column}
+  \end{columns}
+\end{frame}
+
+% -----------------------------------------------------------------------
+\begin{frame}{GRU: Hidden State Update}
+  \begin{columns}[T]
+    \begin{column}{0.48\textwidth}
+      \textcolor{gray!50}{Update gate $z_t$ (combines forget + input):}
+      \[
+        \textcolor{gray!50}{z_t = \sigma\!\left(W_z [h_{t-1}, x_t] + b_z\right)}
+      \]
+
+      \textcolor{gray!50}{Reset gate $r_t$:}
+      \[
+        \textcolor{gray!50}{r_t = \sigma\!\left(W_r [h_{t-1}, x_t] + b_r\right)}
+      \]
+
+      \textcolor{gray!50}{Candidate hidden state:}
+      \[
+        \textcolor{gray!50}{\tilde{h}_t = \tanh\!\left(W_h [r_t \odot h_{t-1}, x_t] + b_h\right)}
+      \]
+
+      \textbf{Hidden state update:}
+      \[
+        \boxed{h_t = (1 - z_t) \odot h_{t-1} + z_t \odot \tilde{h}_t}
+      \]
+    \end{column}
+    \begin{column}{0.48\textwidth}
+      \begin{center}
+        \grudiagram{combine}
+      \end{center}
+    \end{column}
+  \end{columns}
+\end{frame}
+
+% -----------------------------------------------------------------------
+\begin{frame}{GRU vs.\ LSTM}
+  \begin{center}
+  \renewcommand{\arraystretch}{1.3}
+  \begin{tabular}{lcc}
+    \toprule
+    & \textbf{LSTM} & \textbf{GRU} \\
+    \midrule
+    States & 2 ($C_t$, $h_t$) & 1 ($h_t$) \\
+    Gates & 3 (forget, input, output) & 2 (update, reset) \\
+    Parameters & $4 \cdot (n_h^2 + n_h \cdot n_x + n_h)$ & $3 \cdot (n_h^2 + n_h \cdot n_x + n_h)$ \\
+    \midrule
+    \multicolumn{3}{l}{\textbf{When to use which?}} \\
+    \midrule
+    \multicolumn{3}{p{9cm}}{%
+      \begin{itemize}
+        \item GRU: fewer parameters $\Rightarrow$ faster training, good for smaller datasets
+        \item LSTM: more expressive, often better on longer sequences and larger datasets
+        \item In practice: try both; performance differences are often task-dependent
+      \end{itemize}
+    } \\
+    \bottomrule
+  \end{tabular}
+  \end{center}
+
+  \vspace{0.3em}
+  \begin{block}{Historical note}
+    LSTMs~\cite{hochreiter1997lstm} (1997) and GRUs~\cite{cho2014gru} (2014) were the dominant sequence models before Transformers~\cite{vaswani2017attention} (2017). They remain relevant for streaming/real-time applications due to $\mathcal{O}(1)$ per-step computation.
+  \end{block}
+\end{frame}
+

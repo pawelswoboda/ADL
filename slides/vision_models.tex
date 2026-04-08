@@ -1,0 +1,1539 @@
+% !TEX root=./adl.tex
+
+% -----------------------------------------------------------------------
+\section{Vision Models}
+
+% =======================================================================
+\subsection{Vision Transformer (ViT)}
+
+% -----------------------------------------------------------------------
+\begin{frame}{ViT: An Image is Worth 16$\times$16 Words}
+
+  \cite{dosovitskiy2021vit}: Apply a \textbf{standard Transformer encoder} directly to sequences of image patches --- no convolutions needed.
+
+  \vspace{0.3em}
+  \begin{center}
+    \begin{tikzpicture}[
+      scale=0.78, every node/.style={scale=0.78},
+      box/.style={draw, rounded corners, minimum height=0.5cm, align=center, font=\small},
+      arr/.style={-Stealth, thick},
+    ]
+      % --- Image ---
+      \node[inner sep=0] (img) at (-5.2, 0) {
+        \begin{tikzpicture}
+          \draw[thick, fill=orange!10] (0,0) rectangle (2,2);
+          % Grid lines for patches
+          \foreach \i in {0.5, 1.0, 1.5} {
+            \draw[gray!60, dashed] (\i, 0) -- (\i, 2);
+            \draw[gray!60, dashed] (0, \i) -- (2, \i);
+          }
+          % Number a few patches
+          \node[font=\tiny] at (0.25, 1.75) {$p_1$};
+          \node[font=\tiny] at (0.75, 1.75) {$p_2$};
+          \node[font=\tiny] at (1.75, 0.25) {$p_N$};
+        \end{tikzpicture}
+      };
+      \node[font=\scriptsize, below=0.1cm of img] {Image $H{\times}W{\times}C$};
+
+      % --- Flatten + Linear Projection ---
+      \node[box, fill=blue!10, minimum width=1.4cm] (proj) at (-1.5, 0) {Linear\\Proj.};
+      \draw[arr] (-3.1, 0) -- (proj);
+
+      % --- Patch embeddings + CLS ---
+      \def\ew{0.28}
+      \def\npatches{7} % showing CLS + 6 patches
+      \foreach \i [count=\c from 0] in {0,...,6} {
+        \pgfmathsetmacro{\yy}{2.0 - \c*0.52}
+        \ifnum\i=0
+          \node[draw, fill=violet!20, minimum width=0.85cm, minimum height=0.35cm,
+                rounded corners=1pt, font=\tiny] (e\i) at (0.8, \yy) {[CLS]};
+        \else
+          \node[draw, fill=green!15, minimum width=0.85cm, minimum height=0.35cm,
+                rounded corners=1pt, font=\tiny] (e\i) at (0.8, \yy) {$\mathbf{x}_{\i}$};
+        \fi
+      }
+      \draw[arr] (proj) -- (e3);
+
+      % --- Positional embeddings ---
+      \node[font=\scriptsize, text=orange!70!black] at (0.8, 2.65) {$+\,E_\text{pos}$};
+
+      % --- Transformer Encoder ---
+      \node[box, fill=red!10, minimum width=1.6cm, minimum height=2.8cm] (enc) at (3.0, 0.28) {};
+      \node[font=\small, text=red!60!black] at (3.0, 1.25) {\textbf{Transformer}};
+      \node[font=\small, text=red!60!black] at (3.0, 0.85) {\textbf{Encoder}};
+      \node[font=\scriptsize, text=gray] at (3.0, 0.35) {$L$ layers};
+      % Internal structure hint
+      \node[draw, rounded corners, fill=white, minimum width=1.2cm, font=\tiny, inner sep=2pt] at (3.0, -0.15) {MSA + MLP};
+      \node[draw, rounded corners, fill=white, minimum width=1.2cm, font=\tiny, inner sep=2pt] at (3.0, -0.65) {MSA + MLP};
+
+      \draw[arr] (1.3, 0.28) -- (2.1, 0.28);
+
+      % --- MLP Head ---
+      \node[box, fill=yellow!20, minimum width=1.2cm] (head) at (5.5, 1.7) {MLP\\Head};
+      \draw[arr] (3.85, 1.7) -- node[above, font=\tiny, text=violet] {[CLS] output} (head);
+
+      % --- Class output ---
+      \node[font=\small] (cls) at (7.2, 1.7) {Class};
+      \draw[arr] (head) -- (cls);
+
+      % --- Annotations ---
+      \node[font=\scriptsize, text=gray, align=center] at (-5.2, -1.8) {Split into $N = \frac{HW}{P^2}$\\patches of size $P{\times}P$};
+      \node[font=\scriptsize, text=gray, align=center] at (0.8, -1.8) {Patch embeddings\\$\in \mathbb{R}^{(N+1) \times D}$};
+    \end{tikzpicture}
+  \end{center}
+
+  \vspace{0.2em}
+  \begin{itemize}
+    \item Split image into fixed-size patches ($P{=}16$), flatten and linearly project to $D$ dimensions
+    \item Prepend a learnable \textcolor{violet}{\textbf{[CLS]}} token; add learnable positional embeddings
+    \item Standard Transformer encoder; classify from [CLS] output
+    \item Requires large-scale pre-training (JFT-300M) to outperform CNNs
+  \end{itemize}
+\end{frame}
+
+% -----------------------------------------------------------------------
+\begin{frame}[fragile]{ViT: Patch Embedding \& Transformer Block}
+
+  \begin{columns}
+    \begin{column}{0.48\textwidth}
+      \textbf{Patch embedding}:
+      \[
+        \mathbf{z}_0 = [\mathbf{x}_\text{class};\; \mathbf{x}_p^1 E;\; \ldots;\; \mathbf{x}_p^N E] + E_\text{pos}
+      \]
+      \begin{itemize}
+        \item $E \in \mathbb{R}^{(P^2 C) \times D}$: projection matrix
+        \item $E_\text{pos} \in \mathbb{R}^{(N+1) \times D}$: positional embeddings
+        \item Implemented as \texttt{Conv2d} with kernel and stride $= P$
+      \end{itemize}
+
+      \vspace{0.5em}
+      \textbf{Transformer encoder block} (pre-norm):
+      \begin{align*}
+        \mathbf{z}'_\ell &= \operatorname{MSA}(\operatorname{LN}(\mathbf{z}_{\ell-1})) + \mathbf{z}_{\ell-1} \\
+        \mathbf{z}_\ell &= \operatorname{MLP}(\operatorname{LN}(\mathbf{z}'_\ell)) + \mathbf{z}'_\ell
+      \end{align*}
+      Classification: $\mathbf{y} = \operatorname{LN}(\mathbf{z}_L^0)$
+    \end{column}
+    \begin{column}{0.48\textwidth}
+      \begin{center}
+        \begin{tikzpicture}[
+          scale=0.85, every node/.style={scale=0.85},
+          box/.style={draw, rounded corners, fill=#1, minimum width=2.2cm,
+                      minimum height=0.45cm, align=center, font=\small},
+          arr/.style={-Stealth, thick},
+        ]
+          % Input
+          \node[font=\small] (in) at (0, -0.3) {$\mathbf{z}_{\ell-1}$};
+
+          % LN1
+          \node[box=gray!10] (ln1) at (0, 0.6) {Layer Norm};
+          \draw[arr] (in) -- (ln1);
+
+          % MSA
+          \node[box=red!15] (msa) at (0, 1.6) {Multi-Head SA};
+          \draw[arr] (ln1) -- (msa);
+
+          % Residual 1
+          \draw[arr, gray!50] (in.east) -- ++(0.8, 0) |- ($(msa.north) + (0, 0.3)$);
+          \node[draw, circle, inner sep=1pt, font=\scriptsize, fill=white] (add1) at (0, 2.2) {$+$};
+          \draw[arr] (msa) -- (add1);
+
+          % LN2
+          \node[box=gray!10] (ln2) at (0, 3.0) {Layer Norm};
+          \draw[arr] (add1) -- (ln2);
+
+          % MLP
+          \node[box=blue!12] (mlp) at (0, 4.0) {MLP};
+          \draw[arr] (ln2) -- (mlp);
+
+          % Residual 2
+          \draw[arr, gray!50] (add1.east) -- ++(0.8, 0) |- ($(mlp.north) + (0, 0.3)$);
+          \node[draw, circle, inner sep=1pt, font=\scriptsize, fill=white] (add2) at (0, 4.6) {$+$};
+          \draw[arr] (mlp) -- (add2);
+
+          % Output
+          \node[font=\small] (out) at (0, 5.3) {$\mathbf{z}_\ell$};
+          \draw[arr] (add2) -- (out);
+        \end{tikzpicture}
+      \end{center}
+    \end{column}
+  \end{columns}
+
+  \vspace{0.3em}
+  \begin{center}
+    \small
+    \begin{tabular}{lccccc}
+      \toprule
+      \textbf{Variant} & \textbf{Layers} & \textbf{Hidden $D$} & \textbf{MLP dim} & \textbf{Heads} & \textbf{Params} \\
+      \midrule
+      ViT-B/16 & 12 & 768 & 3072 & 12 & 86M \\
+      ViT-L/16 & 24 & 1024 & 4096 & 16 & 307M \\
+      ViT-H/14 & 32 & 1280 & 5120 & 16 & 632M \\
+      \bottomrule
+    \end{tabular}
+  \end{center}
+\end{frame}
+
+% =======================================================================
+\subsection{DeiT: Data-efficient Image Transformers}
+
+% -----------------------------------------------------------------------
+\begin{frame}[fragile]{DeiT: Knowledge Distillation for ViT}
+
+  \cite{touvron2021deit}: Train ViT \textbf{on ImageNet-1K only} (no JFT-300M) via a \textbf{distillation token} and strong data augmentation.
+
+  \vspace{0.3em}
+  \begin{center}
+    \begin{tikzpicture}[
+      scale=0.8, every node/.style={scale=0.8},
+      box/.style={draw, rounded corners, fill=#1, minimum width=1.8cm, minimum height=0.45cm, align=center, font=\small},
+      arr/.style={-Stealth, thick},
+    ]
+      % Teacher
+      \node[box=orange!20, minimum width=2.2cm] (teacher) at (-4, 4.5) {Teacher CNN};
+      \node[font=\scriptsize, text=gray] at (-4, 3.85) {(RegNetY-16GF)};
+      \node[font=\small] (tlab) at (-4, 5.3) {$y_t$};
+      \draw[arr] (teacher) -- (tlab);
+
+      % Student ViT
+      \node[box=red!12, minimum width=2.2cm, minimum height=2.0cm] (enc) at (1.5, 2.0) {};
+      \node[font=\small, text=red!60!black] at (1.5, 2.6) {\textbf{Transformer}};
+      \node[font=\small, text=red!60!black] at (1.5, 2.2) {\textbf{Encoder}};
+      \node[font=\scriptsize, text=gray] at (1.5, 1.6) {(ViT)};
+
+      % Input tokens
+      \node[draw, fill=violet!20, rounded corners=1pt, minimum width=0.7cm, minimum height=0.3cm, font=\tiny] (cls) at (-0.2, 0) {[CLS]};
+      \node[draw, fill=teal!20, rounded corners=1pt, minimum width=0.7cm, minimum height=0.3cm, font=\tiny] (dist) at (0.8, 0) {[DIST]};
+      \node[draw, fill=green!15, rounded corners=1pt, minimum width=0.7cm, minimum height=0.3cm, font=\tiny] (p1) at (1.8, 0) {$\mathbf{x}_1$};
+      \node[font=\small] at (2.5, 0) {$\cdots$};
+      \node[draw, fill=green!15, rounded corners=1pt, minimum width=0.7cm, minimum height=0.3cm, font=\tiny] (pn) at (3.2, 0) {$\mathbf{x}_N$};
+      \draw[arr] (1.5, 0.3) -- (1.5, 0.9);
+
+      % CLS head
+      \node[box=violet!15] (clshead) at (-0.5, 4.5) {Class Head};
+      \draw[arr, violet] (-0.2, 3.1) -- (-0.2, 3.6) -- (-0.5, 3.6) -- (clshead);
+      \node[font=\scriptsize, text=violet, anchor=east] at (-0.5, 3.3) {[CLS] out};
+
+      % Distill head
+      \node[box=teal!15] (disthead) at (3.5, 4.5) {Distill Head};
+      \draw[arr, teal!70!black] (3.2, 3.1) -- (3.2, 3.6) -- (3.5, 3.6) -- (disthead);
+      \node[font=\scriptsize, text=teal!70!black, anchor=west] at (3.4, 3.3) {[DIST] out};
+
+      % Loss arrows
+      \node[font=\small] (gt) at (-0.5, 5.9) {Ground truth $y$};
+      \draw[arr, violet, dashed] (gt) -- node[left, font=\scriptsize] {$\mathcal{L}_\text{CE}$} (clshead);
+
+      \draw[arr, orange, dashed] (tlab) -- ++(3.5, 0) -- ++(0, -0.5) -- (disthead.north west);
+      \node[font=\scriptsize, text=orange!70!black] at (0.5, 5.5) {$\mathcal{L}_\text{distill}$};
+    \end{tikzpicture}
+  \end{center}
+
+  \vspace{0.2em}
+  \begin{itemize}
+    \item Input: $[\text{CLS}];\; [\text{DIST}];\; \mathbf{x}_1;\; \ldots;\; \mathbf{x}_N$ \quad ($N{+}2$ tokens)
+    \item \textcolor{violet}{\textbf{[CLS]}} head: cross-entropy vs.\ ground truth labels
+    \item \textcolor{teal}{\textbf{[DIST]}} head: cross-entropy vs.\ teacher's hard labels (\textbf{hard distillation} works best)
+    \item At inference: average both heads' predictions
+  \end{itemize}
+\end{frame}
+
+% -----------------------------------------------------------------------
+\begin{frame}{DeiT: Hard vs Soft Distillation}
+
+  \begin{columns}
+    \begin{column}{0.48\textwidth}
+      \textbf{Soft distillation} (KL divergence):
+      \[
+        \mathcal{L}_\text{soft} = (1{-}\lambda)\,\mathcal{L}_\text{CE}(\psi(Z_s), y) + \lambda\,\tau^2\, \text{KL}(\psi(Z_s/\tau) \| \psi(Z_t/\tau))
+      \]
+      \begin{itemize}
+        \item $Z_s, Z_t$: student/teacher logits
+        \item $\tau$: temperature, $\psi$: softmax
+      \end{itemize}
+
+      \vspace{0.5em}
+      \textbf{Hard distillation} (best results):
+      \[
+        \mathcal{L}_\text{hard} = \tfrac{1}{2}\,\mathcal{L}_\text{CE}(\psi(Z_s), y) + \tfrac{1}{2}\,\mathcal{L}_\text{CE}(\psi(Z_s), y_t)
+      \]
+      where $y_t = \arg\max Z_t$ (teacher's hard prediction)
+    \end{column}
+    \begin{column}{0.48\textwidth}
+      \textbf{Training strategy} (data-efficient):
+      \begin{itemize}
+        \item ImageNet-1K only (1.2M images)
+        \item Strong augmentation: RandAugment, Mixup, CutMix, Random Erasing
+        \item Regularization: Stochastic Depth, repeated augmentation
+        \item AdamW + cosine schedule
+        \item Trains in $<3$ days on 8 GPUs
+      \end{itemize}
+
+      \vspace{0.3em}
+      \begin{center}
+        \small
+        \begin{tabular}{lcc}
+          \toprule
+          \textbf{Variant} & \textbf{Dim} & \textbf{Params} \\
+          \midrule
+          DeiT-Ti & 192 & 5M \\
+          DeiT-S & 384 & 22M \\
+          DeiT-B & 768 & 86M \\
+          \bottomrule
+        \end{tabular}
+      \end{center}
+
+      \vspace{0.3em}
+      Key finding: CNN teacher (RegNet) outperforms Transformer teacher for distillation.
+    \end{column}
+  \end{columns}
+\end{frame}
+
+% =======================================================================
+\subsection{MAE: Masked Autoencoders}
+
+% -----------------------------------------------------------------------
+\begin{frame}[fragile]{MAE: Masked Autoencoders Are Scalable Vision Learners}
+
+  \cite{he2022mae}: Self-supervised pre-training by masking \textbf{75\%} of image patches and reconstructing them.
+  Key insight: only \emph{visible} patches pass through the (expensive) encoder.
+
+  \vspace{0.3em}
+  \begin{center}
+    \begin{tikzpicture}[
+      scale=0.72, every node/.style={scale=0.72},
+      box/.style={draw, rounded corners, fill=#1, minimum width=1.6cm, minimum height=0.5cm, align=center, font=\small},
+      arr/.style={-Stealth, thick},
+    ]
+      % --- Image patch grid ---
+      \begin{scope}[shift={(-6.5, -1.2)}]
+        \node[font=\scriptsize\bfseries] at (1.2, 2.8) {Image patches};
+        \foreach \r in {0,...,3} {
+          \foreach \c in {0,...,3} {
+            \pgfmathsetmacro{\x}{\c*0.6}
+            \pgfmathsetmacro{\y}{1.8 - \r*0.6}
+            \draw[thick, fill=orange!15] (\x, \y) rectangle (\x+0.55, \y+0.55);
+          }
+        }
+      \end{scope}
+
+      % Arrow
+      \draw[arr] (-4.0, 0) -- (-3.2, 0);
+      \node[font=\scriptsize, text=gray] at (-3.6, 0.3) {mask 75\%};
+
+      % --- Masked grid ---
+      \begin{scope}[shift={(-3.0, -1.2)}]
+        \node[font=\scriptsize\bfseries] at (1.2, 2.8) {After masking};
+        \foreach \r in {0,...,3} {
+          \foreach \c in {0,...,3} {
+            \pgfmathsetmacro{\x}{\c*0.6}
+            \pgfmathsetmacro{\y}{1.8 - \r*0.6}
+            % ~75% masked (12 out of 16)
+            \pgfmathtruncatemacro{\masked}{
+              (\r==0 && \c==1) ? 0 :
+              (\r==1 && \c==3) ? 0 :
+              (\r==2 && \c==0) ? 0 :
+              (\r==3 && \c==2) ? 0 : 1}
+            \ifnum\masked=1
+              \draw[thick, fill=gray!20] (\x, \y) rectangle (\x+0.55, \y+0.55);
+              \node[font=\tiny, text=gray!50] at (\x+0.275, \y+0.275) {$\times$};
+            \else
+              \draw[thick, fill=green!25] (\x, \y) rectangle (\x+0.55, \y+0.55);
+            \fi
+          }
+        }
+      \end{scope}
+
+      % Arrow to encoder (only visible patches)
+      \draw[arr, green!50!black] (-0.5, 0) -- (0.5, 0);
+      \node[font=\scriptsize, text=green!50!black, align=center] at (0.0, 0.5) {visible\\only};
+
+      % --- Encoder ---
+      \node[box=red!12, minimum width=1.8cm, minimum height=2.2cm] (enc) at (2.0, 0) {};
+      \node[font=\small, text=red!60!black] at (2.0, 0.5) {\textbf{ViT}};
+      \node[font=\small, text=red!60!black] at (2.0, 0.1) {\textbf{Encoder}};
+      \node[font=\tiny, text=gray] at (2.0, -0.4) {(large)};
+      \node[font=\tiny, text=gray] at (2.0, -0.7) {25\% tokens};
+
+      % Arrow: insert mask tokens
+      \draw[arr] (3.0, 0) -- (4.2, 0);
+      \node[font=\scriptsize, text=violet, align=center] at (3.6, 0.55) {insert\\mask tokens};
+
+      % --- Decoder ---
+      \node[box=blue!12, minimum width=1.8cm, minimum height=1.6cm] (dec) at (5.5, 0) {};
+      \node[font=\small, text=blue!60!black] at (5.5, 0.3) {\textbf{Decoder}};
+      \node[font=\tiny, text=gray] at (5.5, -0.2) {(small: 8 layers)};
+      \node[font=\tiny, text=gray] at (5.5, -0.5) {100\% tokens};
+
+      % Arrow to reconstruction
+      \draw[arr] (6.5, 0) -- (7.5, 0);
+
+      % --- Reconstructed grid ---
+      \begin{scope}[shift={(7.7, -1.2)}]
+        \node[font=\scriptsize\bfseries] at (1.2, 2.8) {Reconstruction};
+        \foreach \r in {0,...,3} {
+          \foreach \c in {0,...,3} {
+            \pgfmathsetmacro{\x}{\c*0.6}
+            \pgfmathsetmacro{\y}{1.8 - \r*0.6}
+            \pgfmathtruncatemacro{\masked}{
+              (\r==0 && \c==1) ? 0 :
+              (\r==1 && \c==3) ? 0 :
+              (\r==2 && \c==0) ? 0 :
+              (\r==3 && \c==2) ? 0 : 1}
+            \ifnum\masked=1
+              \draw[thick, fill=orange!30] (\x, \y) rectangle (\x+0.55, \y+0.55);
+            \else
+              \draw[thick, fill=green!25] (\x, \y) rectangle (\x+0.55, \y+0.55);
+            \fi
+          }
+        }
+        \node[font=\scriptsize, text=red!60!black] at (1.2, -0.5) {MSE loss on \textcolor{orange!70!black}{masked} only};
+      \end{scope}
+    \end{tikzpicture}
+  \end{center}
+
+  \vspace{0.2em}
+  \begin{itemize}
+    \item \textbf{Encoder}: standard ViT, processes only \textcolor{green!50!black}{visible patches} (25\%) --- $3\times$+ speedup
+    \item \textbf{Decoder}: lightweight (8 layers, width 512), operates on all tokens incl.\ shared learned \textcolor{violet}{mask tokens}
+    \item \textbf{Target}: per-patch normalized pixel values; loss $= \frac{1}{|\mathcal{M}|}\sum_{i \in \mathcal{M}} \|\hat{x}_i - x_i\|^2$ on masked patches only
+  \end{itemize}
+\end{frame}
+
+% -----------------------------------------------------------------------
+\begin{frame}{MAE: Design Choices \& Results}
+
+  \begin{columns}
+    \begin{column}{0.48\textwidth}
+      \textbf{Why 75\% masking?}
+      \begin{itemize}
+        \item Images have high spatial redundancy --- low masking allows trivial interpolation
+        \item 75\% forces the model to learn \emph{semantic} understanding, not local texture
+        \item Much higher than BERT's 15\% for text
+      \end{itemize}
+
+      \vspace{0.3em}
+      \textbf{Asymmetric encoder-decoder}:
+      \begin{itemize}
+        \item Encoder: large ViT (e.g.\ 24 layers, 1024 dim)
+        \item Decoder: small (8 layers, 512 dim)
+        \item Decoder \textbf{discarded} after pre-training
+        \item Only encoder used for downstream tasks
+      \end{itemize}
+
+      \vspace{0.3em}
+      \textbf{Downstream usage}:
+      \begin{description}[style=nextline, leftmargin=0.5cm]
+        \item[Fine-tuning] Full encoder + classification head; best results
+        \item[Linear probing] Frozen encoder + linear layer; weaker than contrastive methods but gap narrows at scale
+      \end{description}
+    \end{column}
+    \begin{column}{0.48\textwidth}
+      \textbf{ImageNet-1K results} (fine-tuning):
+      \begin{center}
+        \small
+        \begin{tabular}{lcc}
+          \toprule
+          \textbf{Model} & \textbf{Params} & \textbf{Top-1} \\
+          \midrule
+          ViT-B/16 & 86M & 83.6\% \\
+          ViT-L/16 & 307M & 85.9\% \\
+          ViT-H/14 & 632M & 86.9\% \\
+          \bottomrule
+        \end{tabular}
+      \end{center}
+      Using ImageNet-1K only --- no external data.
+
+      \vspace{0.3em}
+      \textbf{vs.\ other self-supervised methods}:
+      \begin{center}
+        \small
+        \begin{tabular}{lcc}
+          \toprule
+           & \textbf{Fine-tune} & \textbf{Lin.\ probe} \\
+          \midrule
+          MAE & \textbf{best} & good \\
+          BEiT & good & good \\
+          DINO & good & \textbf{best} \\
+          MoCo v3 & good & good \\
+          \bottomrule
+        \end{tabular}
+      \end{center}
+
+      \vspace{0.3em}
+      \textbf{Key}: MAE scales excellently to ViT-H; contrastive methods plateau at larger sizes.
+    \end{column}
+  \end{columns}
+\end{frame}
+
+% -----------------------------------------------------------------------
+\begin{frame}[fragile]{MAE: Comparison with BEiT}
+
+  \begin{center}
+    \begin{tikzpicture}[
+      scale=0.75, every node/.style={scale=0.75},
+      box/.style={draw, rounded corners, fill=#1, minimum width=2.0cm, minimum height=0.5cm, align=center, font=\small},
+      arr/.style={-Stealth, thick},
+    ]
+      % === MAE (top) ===
+      \node[font=\small\bfseries] at (-5, 3.5) {MAE};
+
+      % Patches (visible only going to encoder)
+      \node[draw, fill=green!20, minimum width=0.5cm, minimum height=0.3cm, font=\tiny] (v1) at (-5.5, 2.5) {};
+      \node[draw, fill=green!20, minimum width=0.5cm, minimum height=0.3cm, font=\tiny] (v2) at (-4.8, 2.5) {};
+      \node[draw, fill=green!20, minimum width=0.5cm, minimum height=0.3cm, font=\tiny] (v3) at (-4.1, 2.5) {};
+      \node[font=\tiny, text=green!50!black] at (-4.8, 2.0) {25\% visible};
+
+      \node[box=red!12, minimum width=2.0cm] (mae_enc) at (-2.0, 2.5) {ViT Encoder};
+      \draw[arr, green!50!black] (-3.6, 2.5) -- (mae_enc);
+      \node[font=\tiny, text=gray, below=0.05cm of mae_enc] {large, 25\% tokens};
+
+      % Insert mask tokens
+      \node[draw, fill=violet!15, minimum width=0.4cm, minimum height=0.3cm, font=\tiny] at (0.3, 2.9) {};
+      \node[draw, fill=violet!15, minimum width=0.4cm, minimum height=0.3cm, font=\tiny] at (0.3, 2.5) {};
+      \node[draw, fill=violet!15, minimum width=0.4cm, minimum height=0.3cm, font=\tiny] at (0.3, 2.1) {};
+      \node[font=\tiny, text=violet, right] at (0.6, 2.5) {mask tokens};
+
+      \node[box=blue!12, minimum width=1.6cm] (mae_dec) at (2.8, 2.5) {Decoder};
+      \draw[arr] (mae_enc) -- (mae_dec);
+      \node[font=\tiny, text=gray, below=0.05cm of mae_dec] {small, 100\% tokens};
+
+      \node[box=orange!12, minimum width=1.6cm, font=\scriptsize] (mae_out) at (5.5, 2.5) {Pixels\\(MSE)};
+      \draw[arr] (mae_dec) -- (mae_out);
+
+      % === BEiT (bottom) ===
+      \node[font=\small\bfseries] at (-5, 0.5) {BEiT};
+
+      % All patches including masks go to encoder
+      \node[draw, fill=green!20, minimum width=0.5cm, minimum height=0.3cm, font=\tiny] at (-5.5, -0.5) {};
+      \node[draw, fill=gray!30, minimum width=0.5cm, minimum height=0.3cm, font=\tiny] at (-4.8, -0.5) {};
+      \node[draw, fill=green!20, minimum width=0.5cm, minimum height=0.3cm, font=\tiny] at (-4.1, -0.5) {};
+      \node[font=\tiny, text=gray] at (-4.8, -1.0) {100\% (with masks)};
+
+      \node[box=red!12, minimum width=2.0cm] (beit_enc) at (-2.0, -0.5) {ViT Encoder};
+      \draw[arr] (-3.6, -0.5) -- (beit_enc);
+      \node[font=\tiny, text=gray, below=0.05cm of beit_enc] {large, 100\% tokens};
+
+      \node[box=orange!12, minimum width=1.6cm, font=\scriptsize] (beit_out) at (1.3, -0.5) {dVAE tokens\\(CE)};
+      \draw[arr] (beit_enc) -- (beit_out);
+
+      % dVAE tokenizer
+      \node[box=yellow!15, minimum width=1.6cm, font=\scriptsize] (dvae) at (1.3, -1.8) {Pre-trained\\dVAE};
+      \draw[arr, dashed, gray] (dvae) -- (beit_out);
+    \end{tikzpicture}
+  \end{center}
+
+  \vspace{0.3em}
+  \begin{center}
+    \small
+    \begin{tabular}{lcccccc}
+      \toprule
+      & \textbf{Encoder input} & \textbf{Target} & \textbf{Ext.\ tokenizer} & \textbf{Mask ratio} & \textbf{Speed} \\
+      \midrule
+      MAE & visible only (25\%) & pixels & No & 75\% & $3\times$+ faster \\
+      BEiT & all (incl.\ masks) & dVAE tokens & Yes & 40\% & slower \\
+      SimMIM & all (incl.\ masks) & pixels & No & 32--60\% & slower \\
+      \bottomrule
+    \end{tabular}
+  \end{center}
+
+  MAE is simpler (no tokenizer), faster (encoder sees fewer tokens), and achieves better fine-tuning accuracy.
+\end{frame}
+
+% =======================================================================
+\subsection{Swin Transformer}
+
+% -----------------------------------------------------------------------
+\begin{frame}[fragile]{Swin Transformer: Hierarchical Vision Transformer}
+
+  \cite{liu2021swin}: Build \textbf{hierarchical feature maps} (like CNNs) using \textbf{shifted window} self-attention for linear complexity.
+
+  \vspace{0.3em}
+  \begin{center}
+    \begin{tikzpicture}[
+      scale=0.72, every node/.style={scale=0.72},
+      stage/.style={draw, rounded corners, fill=#1, minimum height=1.0cm, align=center, font=\small},
+      arr/.style={-Stealth, thick},
+    ]
+      % Stage 1
+      \node[stage=red!10, minimum width=2.8cm] (s1) at (0, 0) {
+        \textbf{Stage 1}\\
+        Linear Embed\\
+        $2\times$ Swin Block
+      };
+      \node[font=\scriptsize, text=gray, below=0.1cm of s1] {$56{\times}56$, $C{=}96$};
+
+      % Stage 2
+      \node[stage=orange!12, minimum width=2.4cm] (s2) at (4.2, 0) {
+        \textbf{Stage 2}\\
+        Patch Merge\\
+        $2\times$ Swin Block
+      };
+      \node[font=\scriptsize, text=gray, below=0.1cm of s2] {$28{\times}28$, $2C$};
+
+      % Stage 3
+      \node[stage=yellow!15, minimum width=2.0cm] (s3) at (8.0, 0) {
+        \textbf{Stage 3}\\
+        Patch Merge\\
+        $6\times$ Swin Block
+      };
+      \node[font=\scriptsize, text=gray, below=0.1cm of s3] {$14{\times}14$, $4C$};
+
+      % Stage 4
+      \node[stage=green!12, minimum width=1.6cm] (s4) at (11.4, 0) {
+        \textbf{Stage 4}\\
+        Patch Merge\\
+        $2\times$ Swin Block
+      };
+      \node[font=\scriptsize, text=gray, below=0.1cm of s4] {$7{\times}7$, $8C$};
+
+      % Image
+      \node[font=\small, align=center, left=0.3cm of s1] (img) {Image\\$224^2$};
+      \draw[arr] (img) -- node[above, font=\tiny] {$4{\times}4$ patches} (s1);
+
+      % Arrows
+      \draw[arr] (s1) -- (s2);
+      \draw[arr] (s2) -- (s3);
+      \draw[arr] (s3) -- (s4);
+
+      % Output
+      \node[font=\small, align=center, right=0.3cm of s4] (out) {GAP\\$\to$ class};
+      \draw[arr] (s4) -- (out);
+
+      % Comparison annotation
+      \node[font=\scriptsize, text=blue!60!black, align=center] at (5.5, -2.0) {
+        \textbf{vs.\ ViT}: flat $14{\times}14$ tokens throughout all layers\\
+        \textbf{Swin}: hierarchical, like ResNet's feature pyramid
+      };
+    \end{tikzpicture}
+  \end{center}
+
+  \vspace{0.2em}
+  \begin{description}[style=nextline, leftmargin=2cm]
+    \item[Patch Partition] Split image into $4{\times}4$ non-overlapping patches ($56{\times}56$ tokens)
+    \item[Patch Merging] Concatenate $2{\times}2$ neighbor patches $\to$ linear projection to $2C$ dims; halves spatial resolution, doubles channels
+    \item[Swin Block] Window-MSA $\to$ Shifted Window-MSA (alternating in consecutive blocks)
+  \end{description}
+\end{frame}
+
+% -----------------------------------------------------------------------
+\begin{frame}{Swin: Window \& Shifted Window Attention}
+
+  \begin{columns}
+    \begin{column}{0.48\textwidth}
+      \textbf{Window-MSA (W-MSA)}:
+      \begin{itemize}
+        \item Partition feature map into non-overlapping $M{\times}M$ windows ($M{=}7$)
+        \item Self-attention computed \emph{within} each window
+        \item Complexity: $\mathcal{O}(M^2 \cdot hw \cdot C)$ --- \textbf{linear} in image size
+      \end{itemize}
+
+      \vspace{0.3em}
+      \textbf{Problem}: No cross-window information flow.
+
+      \vspace{0.3em}
+      \textbf{Shifted Window-MSA (SW-MSA)}:
+      \begin{itemize}
+        \item Shift window grid by $(\lfloor M/2\rfloor, \lfloor M/2\rfloor)$
+        \item Windows now straddle previous boundaries
+        \item Consecutive blocks alternate W-MSA / SW-MSA
+      \end{itemize}
+
+      \vspace{0.3em}
+      \textbf{Efficient cyclic shift}:
+      \begin{enumerate}
+        \item Cyclically shift feature map
+        \item Regular window partition + attention masks
+        \item Reverse shift
+      \end{enumerate}
+    \end{column}
+    \begin{column}{0.48\textwidth}
+      \begin{center}
+        \begin{tikzpicture}[scale=0.65, every node/.style={scale=0.65}]
+          % --- Layer l: regular windows ---
+          \node[font=\small\bfseries] at (2, 4.6) {Layer $\ell$: W-MSA};
+          \draw[thick] (0,0) rectangle (4,4);
+          % Window boundaries
+          \draw[very thick, red] (2,0) -- (2,4);
+          \draw[very thick, red] (0,2) -- (4,2);
+          % Color windows
+          \fill[blue!12] (0,2) rectangle (2,4);
+          \fill[green!12] (2,2) rectangle (4,4);
+          \fill[orange!12] (0,0) rectangle (2,2);
+          \fill[yellow!12] (2,0) rectangle (4,2);
+          % Redraw borders
+          \draw[thick] (0,0) rectangle (4,4);
+          \draw[very thick, red] (2,0) -- (2,4);
+          \draw[very thick, red] (0,2) -- (4,2);
+          % Labels
+          \node[font=\small] at (1,3) {W1};
+          \node[font=\small] at (3,3) {W2};
+          \node[font=\small] at (1,1) {W3};
+          \node[font=\small] at (3,1) {W4};
+        \end{tikzpicture}
+
+        \vspace{0.3cm}
+
+        \begin{tikzpicture}[scale=0.65, every node/.style={scale=0.65}]
+          % --- Layer l+1: shifted windows ---
+          \node[font=\small\bfseries] at (2, 4.6) {Layer $\ell{+}1$: SW-MSA};
+          \draw[thick] (0,0) rectangle (4,4);
+          % Shifted window boundaries (shifted by M/2 = 1 unit)
+          \draw[very thick, blue] (1,0) -- (1,4);
+          \draw[very thick, blue] (3,0) -- (3,4);
+          \draw[very thick, blue] (0,1) -- (4,1);
+          \draw[very thick, blue] (0,3) -- (4,3);
+          % Highlight center window
+          \fill[cyan!15] (1,1) rectangle (3,3);
+          \draw[thick] (0,0) rectangle (4,4);
+          \draw[very thick, blue] (1,0) -- (1,4);
+          \draw[very thick, blue] (3,0) -- (3,4);
+          \draw[very thick, blue] (0,1) -- (4,1);
+          \draw[very thick, blue] (0,3) -- (4,3);
+          % Original grid (dashed)
+          \draw[dashed, red!50] (2,0) -- (2,4);
+          \draw[dashed, red!50] (0,2) -- (4,2);
+          % Arrow showing shift
+          \draw[-Stealth, thick, violet] (-0.3, 4.2) -- (-0.3, 3.2) node[midway, left, font=\tiny] {$\frac{M}{2}$};
+          \draw[-Stealth, thick, violet] (-0.1, 4.4) -- (0.9, 4.4) node[midway, above, font=\tiny] {$\frac{M}{2}$};
+          % Annotation
+          \node[font=\tiny, text=blue!60!black, align=center] at (2, -0.5) {shifted grid crosses\\previous boundaries};
+        \end{tikzpicture}
+      \end{center}
+    \end{column}
+  \end{columns}
+
+  \vspace{0.2em}
+  \textbf{Relative position bias}: $\operatorname{Attn}(Q,K,V) = \operatorname{softmax}\!\bigl(\frac{QK^\top}{\sqrt{d}} + B\bigr)\,V$,\quad $B$ from learnable $(2M{-}1){\times}(2M{-}1)$ table.
+\end{frame}
+
+% -----------------------------------------------------------------------
+\begin{frame}{Swin: Complexity Comparison \& Configurations}
+
+  \begin{columns}
+    \begin{column}{0.48\textwidth}
+      \textbf{Swin block equations}:
+      \begin{align*}
+        \hat{\mathbf{z}}^\ell &= \text{W-MSA}(\text{LN}(\mathbf{z}^{\ell-1})) + \mathbf{z}^{\ell-1} \\
+        \mathbf{z}^\ell &= \text{MLP}(\text{LN}(\hat{\mathbf{z}}^\ell)) + \hat{\mathbf{z}}^\ell \\
+        \hat{\mathbf{z}}^{\ell+1} &= \text{SW-MSA}(\text{LN}(\mathbf{z}^\ell)) + \mathbf{z}^\ell \\
+        \mathbf{z}^{\ell+1} &= \text{MLP}(\text{LN}(\hat{\mathbf{z}}^{\ell+1})) + \hat{\mathbf{z}}^{\ell+1}
+      \end{align*}
+
+      \vspace{0.3em}
+      \textbf{Complexity} ($h{\times}w$ spatial, $M^2$ window):
+      \begin{description}[leftmargin=0.5cm]
+        \item[Global MSA] $\mathcal{O}(4hwC^2 + 2(hw)^2 C)$
+        \item[W-MSA] $\mathcal{O}(4hwC^2 + 2M^2 hwC)$
+      \end{description}
+      Quadratic $\to$ \textbf{linear} in spatial resolution.
+    \end{column}
+    \begin{column}{0.48\textwidth}
+      \begin{center}
+        \small
+        \begin{tabular}{lccl}
+          \toprule
+          \textbf{Variant} & $C$ & \textbf{Layers} & \textbf{Params} \\
+          \midrule
+          Swin-T & 96 & [2,2,6,2] & 29M \\
+          Swin-S & 96 & [2,2,18,2] & 50M \\
+          Swin-B & 128 & [2,2,18,2] & 88M \\
+          Swin-L & 192 & [2,2,18,2] & 197M \\
+          \bottomrule
+        \end{tabular}
+      \end{center}
+
+      \vspace{0.5em}
+      \textbf{Key advantages}:
+      \begin{itemize}
+        \item Hierarchical features $\to$ natural fit as backbone for detection, segmentation
+        \item Linear complexity $\to$ scales to high-resolution images
+        \item Outperforms ViT on ImageNet at comparable size (without large-scale pre-training)
+        \item Relative position bias instead of absolute positional embeddings
+      \end{itemize}
+    \end{column}
+  \end{columns}
+\end{frame}
+
+% =======================================================================
+\subsection{MLP-Mixer}
+
+% -----------------------------------------------------------------------
+\begin{frame}[fragile]{MLP-Mixer: No Attention, Only MLPs}
+
+  \cite{tolstikhin2021mlpmixer}: Replace attention entirely with two types of MLPs --- \textbf{token-mixing} (across patches) and \textbf{channel-mixing} (within patches).
+
+  \vspace{0.3em}
+  \begin{center}
+    \begin{tikzpicture}[
+      scale=0.75, every node/.style={scale=0.75},
+      box/.style={draw, rounded corners, fill=#1, minimum width=2.2cm, minimum height=0.45cm, align=center, font=\small},
+      arr/.style={-Stealth, thick},
+    ]
+      % --- Mixer Layer ---
+      % Input
+      \node[font=\small] (in) at (0, -0.3) {$X \in \mathbb{R}^{S \times C}$};
+
+      % Token-mixing block
+      \node[box=gray!10] (ln1) at (0, 0.6) {Layer Norm};
+      \draw[arr] (in) -- (ln1);
+
+      \node[font=\scriptsize, text=red!60!black] at (2.5, 1.1) {transpose};
+      \node[box=red!12, minimum width=2.6cm] (tmix) at (0, 1.5) {Token-Mixing MLP};
+      \draw[arr] (ln1) -- (tmix);
+
+      \node[draw, circle, inner sep=1pt, font=\scriptsize, fill=white] (add1) at (0, 2.4) {$+$};
+      \draw[arr] (tmix) -- (add1);
+      \draw[arr, gray!50] (in.west) -- ++(-0.7, 0) |- (add1.west);
+
+      % Channel-mixing block
+      \node[box=gray!10] (ln2) at (0, 3.2) {Layer Norm};
+      \draw[arr] (add1) -- (ln2);
+
+      \node[box=blue!12, minimum width=2.6cm] (cmix) at (0, 4.1) {Channel-Mixing MLP};
+      \draw[arr] (ln2) -- (cmix);
+
+      \node[draw, circle, inner sep=1pt, font=\scriptsize, fill=white] (add2) at (0, 5.0) {$+$};
+      \draw[arr] (cmix) -- (add2);
+      \draw[arr, gray!50] (add1.west) -- ++(-0.7, 0) |- (add2.west);
+
+      \node[font=\small] (out) at (0, 5.7) {$Y \in \mathbb{R}^{S \times C}$};
+      \draw[arr] (add2) -- (out);
+
+      % --- Matrix visualization ---
+      % Token-mixing: operates along S dimension
+      \begin{scope}[shift={(5.5, 0.3)}]
+        \node[font=\small\bfseries, text=red!60!black] at (1.2, 4.8) {Token-Mixing};
+        % Matrix
+        \draw[thick] (0, 1.5) rectangle (2.4, 4.5);
+        \node[font=\scriptsize] at (-0.3, 3.0) {$S$};
+        \node[font=\scriptsize] at (1.2, 4.75) {$C$};
+        % Arrow along S (vertical)
+        \draw[-Stealth, very thick, red!60!black] (0.4, 1.7) -- (0.4, 4.3);
+        \draw[-Stealth, very thick, red!60!black] (1.2, 1.7) -- (1.2, 4.3);
+        \draw[-Stealth, very thick, red!60!black] (2.0, 1.7) -- (2.0, 4.3);
+        \node[font=\scriptsize, text=red!60!black, align=center] at (1.2, 0.9) {MLP shared\\across channels};
+      \end{scope}
+
+      % Channel-mixing: operates along C dimension
+      \begin{scope}[shift={(9.5, 0.3)}]
+        \node[font=\small\bfseries, text=blue!60!black] at (1.2, 4.8) {Channel-Mixing};
+        % Matrix
+        \draw[thick] (0, 1.5) rectangle (2.4, 4.5);
+        \node[font=\scriptsize] at (-0.3, 3.0) {$S$};
+        \node[font=\scriptsize] at (1.2, 4.75) {$C$};
+        % Arrow along C (horizontal)
+        \draw[-Stealth, very thick, blue!60!black] (0.2, 4.1) -- (2.2, 4.1);
+        \draw[-Stealth, very thick, blue!60!black] (0.2, 3.0) -- (2.2, 3.0);
+        \draw[-Stealth, very thick, blue!60!black] (0.2, 1.9) -- (2.2, 1.9);
+        \node[font=\scriptsize, text=blue!60!black, align=center] at (1.2, 0.9) {MLP shared\\across patches};
+      \end{scope}
+    \end{tikzpicture}
+  \end{center}
+
+  \vspace{0.2em}
+  \small
+  \textbf{Token-mixing}: $U_{*,i} = X_{*,i} + W_2\, \sigma(W_1\, \text{LN}(X)_{*,i}^\top)^\top$ \quad (mixes across $S$ patches, shared across $C$ channels)\\
+  \textbf{Channel-mixing}: $Y_{j,*} = U_{j,*} + W_4\, \sigma(W_3\, \text{LN}(U)_{j,*})$ \quad (mixes across $C$ channels, shared across $S$ patches)
+\end{frame}
+
+% -----------------------------------------------------------------------
+\begin{frame}{MLP-Mixer: Architecture Comparison}
+
+  \begin{columns}
+    \begin{column}{0.48\textwidth}
+      \textbf{Full pipeline}:
+      \begin{enumerate}
+        \item Split image into $S = HW/P^2$ patches
+        \item Per-patch linear projection $\to X \in \mathbb{R}^{S \times C}$
+        \item $N$ Mixer layers (token-mix + channel-mix)
+        \item Global average pooling over $S$ $\to \mathbb{R}^C$
+        \item Linear classification head
+      \end{enumerate}
+
+      \vspace{0.3em}
+      \textbf{Why it works}:
+      \begin{itemize}
+        \item Token-mixing MLPs learn \emph{fixed} spatial mixing patterns (no data-dependent attention)
+        \item With enough data, fixed mixing is competitive with attention
+        \item Much simpler architecture
+      \end{itemize}
+    \end{column}
+    \begin{column}{0.48\textwidth}
+      \textbf{Comparison with Transformer}:
+      \begin{center}
+        \small
+        \begin{tabular}{lcc}
+          \toprule
+          & \textbf{Transformer} & \textbf{Mixer} \\
+          \midrule
+          Spatial mix & Attention & Token MLP \\
+          Channel mix & FFN & Channel MLP \\
+          Data-dep.\ & Yes & No \\
+          Complexity & $\mathcal{O}(S^2)$ & $\mathcal{O}(S)$ \\
+          \bottomrule
+        \end{tabular}
+      \end{center}
+
+      \vspace{0.5em}
+      \textbf{Configurations}:
+      \begin{center}
+        \small
+        \begin{tabular}{lccc}
+          \toprule
+          \textbf{Variant} & $N$ & $C$ & \textbf{Params} \\
+          \midrule
+          Mixer-S/16 & 8 & 512 & 18M \\
+          Mixer-B/16 & 12 & 768 & 59M \\
+          Mixer-L/16 & 24 & 1024 & 207M \\
+          \bottomrule
+        \end{tabular}
+      \end{center}
+
+      \vspace{0.3em}
+      Competitive with ViT when pre-trained on large data; degrades more on small datasets.
+    \end{column}
+  \end{columns}
+\end{frame}
+
+% =======================================================================
+\subsection{DETR}
+
+% -----------------------------------------------------------------------
+\begin{frame}[fragile]{DETR: End-to-End Object Detection with Transformers}
+
+  \cite{carion2020detr}: Reformulate object detection as a \textbf{direct set prediction} problem --- no anchors, no NMS, no hand-crafted components.
+
+  \vspace{0.2em}
+  \begin{center}
+    \begin{tikzpicture}[
+      scale=0.72, every node/.style={scale=0.72},
+      box/.style={draw, rounded corners, fill=#1, minimum width=1.8cm, minimum height=0.5cm, align=center, font=\small},
+      arr/.style={-Stealth, thick},
+    ]
+      % Image
+      \node[inner sep=0] (img) at (-5.5, 0) {
+        \begin{tikzpicture}
+          \draw[thick, fill=orange!8] (0,0) rectangle (1.5, 1.0);
+          \node[font=\tiny] at (0.75, 0.5) {Image};
+        \end{tikzpicture}
+      };
+
+      % CNN Backbone
+      \node[box=orange!15, minimum width=1.6cm] (cnn) at (-2.8, 0) {CNN\\Backbone};
+      \draw[arr] (-4.6, 0) -- (cnn);
+      \node[font=\tiny, text=gray, below=0.05cm of cnn] {ResNet-50};
+
+      % 1x1 conv
+      \node[box=orange!8, minimum width=0.9cm, font=\tiny] (conv) at (-0.8, 0) {$1{\times}1$\\Conv};
+      \draw[arr] (cnn) -- (conv);
+
+      % Positional encoding
+      \node[font=\tiny, text=orange!70!black] at (-0.8, 0.8) {$+ \text{pos}_{2D}$};
+
+      % Transformer Encoder
+      \node[box=red!12, minimum width=2.0cm, minimum height=1.4cm] (enc) at (1.5, 0) {};
+      \node[font=\small, text=red!60!black] at (1.5, 0.25) {\textbf{Encoder}};
+      \node[font=\tiny, text=gray] at (1.5, -0.2) {$6$ layers};
+      \draw[arr] (conv) -- (enc);
+
+      % Transformer Decoder
+      \node[box=blue!12, minimum width=2.0cm, minimum height=1.4cm] (dec) at (4.5, 0) {};
+      \node[font=\small, text=blue!60!black] at (4.5, 0.25) {\textbf{Decoder}};
+      \node[font=\tiny, text=gray] at (4.5, -0.2) {$6$ layers};
+      \draw[arr] (enc) -- node[above, font=\tiny] {memory} (dec);
+
+      % Object queries
+      \node[box=violet!15, minimum width=1.8cm, font=\scriptsize] (oq) at (4.5, -1.8) {Object Queries\\$N{=}100$ learned};
+      \draw[arr, violet] (oq) -- (dec);
+
+      % Prediction heads
+      \node[box=green!12, font=\tiny] (clsp) at (7.5, 0.5) {Class\\FFN};
+      \node[box=yellow!15, font=\tiny] (boxp) at (7.5, -0.5) {Box\\MLP};
+      \draw[arr] (dec.east) ++(0, 0.25) -- (clsp.west);
+      \draw[arr] (dec.east) ++(0, -0.25) -- (boxp.west);
+
+      % Outputs
+      \node[font=\tiny] at (9.2, 0.5) {$c_i$ or $\varnothing$};
+      \node[font=\tiny] at (9.6, -0.5) {$(c_x, c_y, w, h)$};
+      \draw[arr] (clsp) -- (8.8, 0.5);
+      \draw[arr] (boxp) -- (9.0, -0.5);
+
+      % Brace for N predictions
+      \draw[decorate, decoration={brace, amplitude=4pt}, thick] (9.8, 0.8) -- (9.8, -0.8)
+        node[midway, right=4pt, font=\scriptsize] {$\times N$};
+    \end{tikzpicture}
+  \end{center}
+
+  \vspace{0.3em}
+  \begin{columns}
+    \begin{column}{0.48\textwidth}
+      \textbf{Key components}:
+      \begin{itemize}
+        \item CNN extracts features $\to$ flatten to sequence
+        \item Encoder: self-attention over spatial features
+        \item Decoder: $N$ \textbf{object queries} cross-attend to encoder memory
+        \item Each query predicts one (class, box) or ``no object''
+      \end{itemize}
+    \end{column}
+    \begin{column}{0.48\textwidth}
+      \textbf{Why it matters}:
+      \begin{itemize}
+        \item No anchors, NMS, or hand-crafted post-processing
+        \item Set prediction via \textbf{Hungarian matching}
+        \item Object queries self-attend $\to$ reason about inter-object relations
+        \item Simple, elegant, end-to-end trainable
+      \end{itemize}
+    \end{column}
+  \end{columns}
+\end{frame}
+
+% -----------------------------------------------------------------------
+\begin{frame}{DETR: Bipartite Matching Loss}
+
+  Training requires matching $N$ predictions to $M$ ground truth objects (padded with $\varnothing$).
+
+  \vspace{0.3em}
+  \begin{columns}
+    \begin{column}{0.52\textwidth}
+      \textbf{Step 1: Hungarian matching} --- find optimal assignment $\hat{\sigma}$:
+      \[
+        \hat{\sigma} = \arg\min_{\sigma \in \mathfrak{S}_N} \sum_{i=1}^{N} \mathcal{L}_\text{match}(y_i, \hat{y}_{\sigma(i)})
+      \]
+      \[
+        \mathcal{L}_\text{match} = -\mathbbm{1}_{c_i \neq \varnothing}\, \hat{p}_{\sigma(i)}(c_i) + \mathbbm{1}_{c_i \neq \varnothing}\, \mathcal{L}_\text{box}(b_i, \hat{b}_{\sigma(i)})
+      \]
+      Solved by the Hungarian algorithm in $\mathcal{O}(N^3)$.
+
+      \vspace{0.3em}
+      \textbf{Step 2: Compute loss} on matched pairs:
+      \[
+        \mathcal{L} = \sum_{i=1}^{N} \bigl[-\log \hat{p}_{\hat{\sigma}(i)}(c_i) + \mathbbm{1}_{c_i \neq \varnothing}\, \mathcal{L}_\text{box}\bigr]
+      \]
+      \[
+        \mathcal{L}_\text{box} = \lambda_\text{iou}\,\mathcal{L}_\text{giou} + \lambda_{L_1}\,\| b_i - \hat{b} \|_1
+      \]
+    \end{column}
+    \begin{column}{0.44\textwidth}
+      \begin{center}
+        \begin{tikzpicture}[
+          scale=0.8, every node/.style={scale=0.8},
+          pred/.style={draw, circle, fill=blue!15, inner sep=3pt, font=\scriptsize},
+          gt/.style={draw, circle, fill=green!20, inner sep=3pt, font=\scriptsize},
+        ]
+          % Ground truth
+          \node[gt] (g1) at (0, 3) {$y_1$};
+          \node[gt] (g2) at (0, 2) {$y_2$};
+          \node[gt] (g3) at (0, 1) {$y_3$};
+          \node[gt] (g4) at (0, 0) {$\varnothing$};
+          \node[font=\scriptsize, above=0.2cm of g1, text=green!50!black] {GT};
+
+          % Predictions
+          \node[pred] (p1) at (3, 3) {$\hat{y}_1$};
+          \node[pred] (p2) at (3, 2) {$\hat{y}_2$};
+          \node[pred] (p3) at (3, 1) {$\hat{y}_3$};
+          \node[pred] (p4) at (3, 0) {$\hat{y}_4$};
+          \node[font=\scriptsize, above=0.2cm of p1, text=blue!60!black] {Pred};
+
+          % Matching (Hungarian)
+          \draw[thick, red!70!black, -Stealth] (g1) -- (p2);
+          \draw[thick, red!70!black, -Stealth] (g2) -- (p1);
+          \draw[thick, red!70!black, -Stealth] (g3) -- (p4);
+          \draw[thick, gray, dashed, -Stealth] (g4) -- (p3);
+
+          \node[font=\scriptsize, text=red!70!black, align=center] at (1.5, -0.8) {Optimal 1-to-1\\assignment $\hat{\sigma}$};
+        \end{tikzpicture}
+      \end{center}
+
+      \vspace{0.3em}
+      \begin{itemize}
+        \item Each GT matched to exactly one prediction
+        \item Unmatched predictions trained to output $\varnothing$
+        \item No NMS needed: queries learn to avoid duplicates
+      \end{itemize}
+    \end{column}
+  \end{columns}
+\end{frame}
+
+% =======================================================================
+\subsection{Deformable DETR}
+
+% -----------------------------------------------------------------------
+\begin{frame}{Deformable DETR: Sparse Attention for Detection}
+
+  \cite{zhu2021deformabledetr}: Fix DETR's slow convergence (500 epochs) and poor small-object performance via \textbf{deformable attention} --- each query attends to only $K$ learned sampling points.
+
+  \vspace{0.3em}
+  \begin{center}
+    \begin{tikzpicture}[
+      scale=0.82, every node/.style={scale=0.82},
+      arr/.style={-Stealth, thick},
+    ]
+      % --- Standard Attention (left) ---
+      \begin{scope}[shift={(-4.5, 0)}]
+        \node[font=\small\bfseries] at (1.5, 3.5) {DETR: Global Attention};
+        \draw[thick, fill=gray!8] (0, 0) rectangle (3, 3);
+        % Grid
+        \foreach \i in {0.5, 1.0, ..., 2.5} {
+          \draw[gray!20] (\i, 0) -- (\i, 3);
+          \draw[gray!20] (0, \i) -- (3, \i);
+        }
+        % Reference point
+        \fill[red] (1.5, 1.5) circle (3pt);
+        % Attention to all positions
+        \foreach \x in {0.25, 0.75, ..., 2.75} {
+          \foreach \y in {0.25, 0.75, ..., 2.75} {
+            \draw[red!30, thin, -Stealth] (1.5, 1.5) -- (\x, \y);
+          }
+        }
+        \fill[red] (1.5, 1.5) circle (3pt);
+        \node[font=\scriptsize, text=red!60!black] at (1.5, -0.4) {$\mathcal{O}(H^2 W^2)$};
+      \end{scope}
+
+      % --- Deformable Attention (right) ---
+      \begin{scope}[shift={(2.0, 0)}]
+        \node[font=\small\bfseries] at (1.5, 3.5) {Deformable: $K$ Points};
+        \draw[thick, fill=gray!8] (0, 0) rectangle (3, 3);
+        \foreach \i in {0.5, 1.0, ..., 2.5} {
+          \draw[gray!20] (\i, 0) -- (\i, 3);
+          \draw[gray!20] (0, \i) -- (3, \i);
+        }
+        % Reference point
+        \fill[red] (1.5, 1.5) circle (3pt);
+        \node[font=\tiny, text=red!70!black, below right=1pt] at (1.5, 1.5) {$\mathbf{p}_q$};
+        % K=4 sampling points with offset arrows
+        \draw[blue!70!black, thick, -Stealth] (1.5, 1.5) -- (0.8, 2.3) node[circle, fill=blue!60, inner sep=2pt] {};
+        \draw[blue!70!black, thick, -Stealth] (1.5, 1.5) -- (2.4, 2.1) node[circle, fill=blue!60, inner sep=2pt] {};
+        \draw[blue!70!black, thick, -Stealth] (1.5, 1.5) -- (2.1, 0.6) node[circle, fill=blue!60, inner sep=2pt] {};
+        \draw[blue!70!black, thick, -Stealth] (1.5, 1.5) -- (0.5, 0.9) node[circle, fill=blue!60, inner sep=2pt] {};
+        % Labels
+        \node[font=\tiny, text=blue!70!black] at (0.5, 2.5) {$\Delta\mathbf{p}_1$};
+        \node[font=\tiny, text=blue!70!black] at (2.7, 2.3) {$\Delta\mathbf{p}_2$};
+        \node[font=\tiny, text=blue!70!black] at (2.5, 0.4) {$\Delta\mathbf{p}_3$};
+        \node[font=\tiny, text=blue!70!black] at (0.2, 0.7) {$\Delta\mathbf{p}_4$};
+        \node[font=\scriptsize, text=blue!60!black] at (1.5, -0.4) {$\mathcal{O}(HW \cdot K)$, $K{=}4$};
+      \end{scope}
+    \end{tikzpicture}
+  \end{center}
+
+  \vspace{0.2em}
+  \textbf{Deformable attention}:
+  \[
+    \operatorname{DeformAttn}(\mathbf{z}_q, \mathbf{p}_q, \mathbf{x}) = \sum_{m=1}^{M} W_m \biggl[\sum_{k=1}^{K} A_{mqk} \cdot W'_m \, \mathbf{x}(\mathbf{p}_q + \Delta\mathbf{p}_{mqk})\biggr]
+  \]
+  \begin{itemize}
+    \item Offsets $\Delta\mathbf{p}_{mqk}$ and weights $A_{mqk}$ predicted from query $\mathbf{z}_q$ via linear layers
+    \item $\mathbf{x}(\cdot)$: bilinear interpolation at continuous positions
+    \item $K{=}4$ sampling points per head, $M$ heads
+  \end{itemize}
+\end{frame}
+
+% -----------------------------------------------------------------------
+\begin{frame}{Deformable DETR: Multi-Scale Features}
+
+  \begin{columns}
+    \begin{column}{0.55\textwidth}
+      \textbf{Multi-scale deformable attention}:
+      \[
+        \operatorname{MSDeformAttn} = \sum_{m=1}^{M} W_m \biggl[\sum_{l=1}^{L}\sum_{k=1}^{K} A_{mlqk} \cdot W'_m \, \mathbf{x}^l(\phi_l(\hat{\mathbf{p}}_q) + \Delta\mathbf{p}_{mlqk})\biggr]
+      \]
+      \begin{itemize}
+        \item Attend across $L{=}4$ feature map levels simultaneously
+        \item $\phi_l$: rescales reference point to level $l$
+        \item Weights normalized: $\sum_l \sum_k A_{mlqk} = 1$
+      \end{itemize}
+
+      \vspace{0.3em}
+      \textbf{Additional features}:
+      \begin{itemize}
+        \item \textbf{Iterative box refinement}: each decoder layer refines the box from the previous layer
+        \item \textbf{Two-stage variant}: encoder produces proposals as initial reference points
+      \end{itemize}
+    \end{column}
+    \begin{column}{0.42\textwidth}
+      \begin{center}
+        \begin{tikzpicture}[
+          scale=0.65, every node/.style={scale=0.65},
+          arr/.style={-Stealth, thick},
+        ]
+          % Multi-scale feature maps
+          \draw[thick, fill=red!8] (0, 3.5) rectangle (4.0, 5.0);
+          \node[font=\scriptsize] at (2.0, 4.25) {$\frac{1}{8}$ scale};
+
+          \draw[thick, fill=orange!8] (0.5, 1.8) rectangle (3.5, 3.0);
+          \node[font=\scriptsize] at (2.0, 2.4) {$\frac{1}{16}$ scale};
+
+          \draw[thick, fill=yellow!8] (1.0, 0.3) rectangle (3.0, 1.3);
+          \node[font=\scriptsize] at (2.0, 0.8) {$\frac{1}{32}$ scale};
+
+          % Reference point (query)
+          \fill[red] (5.0, 2.5) circle (4pt);
+          \node[font=\scriptsize, right] at (5.2, 2.5) {$\mathbf{p}_q$};
+
+          % Sampling points on each scale
+          \draw[blue!70!black, thick, -Stealth] (5.0, 2.5) -- (1.5, 4.2) node[circle, fill=blue!60, inner sep=1.5pt] {};
+          \draw[blue!70!black, thick, -Stealth] (5.0, 2.5) -- (3.2, 3.8) node[circle, fill=blue!60, inner sep=1.5pt] {};
+
+          \draw[green!60!black, thick, -Stealth] (5.0, 2.5) -- (1.8, 2.6) node[circle, fill=green!60, inner sep=1.5pt] {};
+          \draw[green!60!black, thick, -Stealth] (5.0, 2.5) -- (2.8, 2.2) node[circle, fill=green!60, inner sep=1.5pt] {};
+
+          \draw[violet, thick, -Stealth] (5.0, 2.5) -- (1.6, 0.9) node[circle, fill=violet!60, inner sep=1.5pt] {};
+          \draw[violet, thick, -Stealth] (5.0, 2.5) -- (2.5, 0.6) node[circle, fill=violet!60, inner sep=1.5pt] {};
+
+          \node[font=\scriptsize, align=center, text=gray] at (2.0, -0.4) {$K$ points per level\\$L \cdot K$ total};
+        \end{tikzpicture}
+      \end{center}
+
+      \vspace{0.3em}
+      \begin{center}
+        \small
+        \begin{tabular}{lcc}
+          \toprule
+          & \textbf{DETR} & \textbf{Def.\ DETR} \\
+          \midrule
+          Epochs & 500 & 50 \\
+          Scales & 1 & 4 \\
+          Queries & 100 & 300 \\
+          AP (COCO) & 42.0 & 46.2 \\
+          \bottomrule
+        \end{tabular}
+      \end{center}
+    \end{column}
+  \end{columns}
+\end{frame}
+
+% =======================================================================
+\subsection{TrackFormer}
+
+% -----------------------------------------------------------------------
+\begin{frame}[fragile]{TrackFormer: Multi-Object Tracking with Transformers}
+
+  \cite{meinhardt2022trackformer}: Extend DETR to video by introducing \textbf{track queries} that persist across frames --- tracking by attention.
+
+  \vspace{0.3em}
+  \begin{center}
+    \begin{tikzpicture}[
+      scale=0.7, every node/.style={scale=0.7},
+      box/.style={draw, rounded corners, fill=#1, minimum width=2.0cm, minimum height=0.5cm, align=center, font=\small},
+      arr/.style={-Stealth, thick},
+    ]
+      % === Frame t ===
+      \begin{scope}[shift={(0, 0)}]
+        \node[font=\small\bfseries] at (1.5, 5.5) {Frame $t$};
+
+        % Encoder
+        \node[box=orange!15, minimum width=2.6cm] (enc1) at (1.5, 4.5) {CNN + Encoder};
+
+        % Decoder
+        \node[box=blue!12, minimum width=2.6cm, minimum height=1.2cm] (dec1) at (1.5, 2.5) {};
+        \node[font=\small, text=blue!60!black] at (1.5, 2.8) {\textbf{Decoder}};
+
+        \draw[arr] (enc1) -- node[right, font=\tiny] {memory} (dec1);
+
+        % Object queries (for new detections)
+        \node[box=green!15, minimum width=1.2cm, font=\scriptsize] (oq1) at (-1.5, 2.5) {Object\\Queries};
+        \draw[arr, green!60!black] (oq1) -- (dec1);
+
+        % Output: detected objects
+        \node[box=red!10, minimum width=2.0cm, font=\scriptsize] (det1a) at (0.5, 0.8) {Det $A$};
+        \node[box=blue!10, minimum width=2.0cm, font=\scriptsize] (det1b) at (2.5, 0.8) {Det $B$};
+        \draw[arr] (dec1) -- (det1a);
+        \draw[arr] (dec1) -- (det1b);
+      \end{scope}
+
+      % === Frame t+1 ===
+      \begin{scope}[shift={(7.5, 0)}]
+        \node[font=\small\bfseries] at (1.5, 5.5) {Frame $t{+}1$};
+
+        % Encoder
+        \node[box=orange!15, minimum width=2.6cm] (enc2) at (1.5, 4.5) {CNN + Encoder};
+
+        % Decoder
+        \node[box=blue!12, minimum width=2.6cm, minimum height=1.2cm] (dec2) at (1.5, 2.5) {};
+        \node[font=\small, text=blue!60!black] at (1.5, 2.8) {\textbf{Decoder}};
+
+        \draw[arr] (enc2) -- node[right, font=\tiny] {memory} (dec2);
+
+        % Object queries (for new detections)
+        \node[box=green!15, minimum width=1.2cm, font=\scriptsize] (oq2) at (-1.5, 2.8) {Object\\Queries};
+        \draw[arr, green!60!black] (oq2) -- (dec2);
+
+        % Track queries (from previous frame)
+        \node[box=violet!15, minimum width=1.2cm, font=\scriptsize] (tq) at (-1.5, 2.0) {Track\\Queries};
+        \draw[arr, violet] (tq) -- (dec2);
+
+        % Outputs
+        \node[box=red!10, minimum width=1.5cm, font=\scriptsize] (tr2a) at (-0.3, 0.8) {Track $A$};
+        \node[box=blue!10, minimum width=1.5cm, font=\scriptsize] (tr2b) at (1.5, 0.8) {Track $B$};
+        \node[box=yellow!15, minimum width=1.5cm, font=\scriptsize] (new2) at (3.3, 0.8) {New $C$};
+        \draw[arr] (dec2) -- (tr2a);
+        \draw[arr] (dec2) -- (tr2b);
+        \draw[arr] (dec2) -- (new2);
+      \end{scope}
+
+      % Autoregressive arrows (track queries from frame t to t+1)
+      \draw[arr, violet, very thick, dashed] (det1a.east) -- ++(1.0, 0) |- (tq.west);
+      \draw[arr, violet, very thick, dashed] (det1b.east) -- ++(0.5, 0) |- ([yshift=-3pt]tq.west);
+
+      % Labels
+      \node[font=\scriptsize, text=violet, align=center] at (5.0, 0.0) {decoder outputs\\become track queries};
+      \node[font=\scriptsize, text=green!50!black] at (6.0, 3.2) {\emph{new objects}};
+      \node[font=\scriptsize, text=violet] at (6.0, 1.8) {\emph{existing tracks}};
+    \end{tikzpicture}
+  \end{center}
+
+  \vspace{0.2em}
+  \begin{itemize}
+    \item \textbf{Object queries}: detect \emph{new} objects (as in DETR)
+    \item \textbf{Track queries}: autoregressive embeddings from previous frame $\to$ track \emph{existing} objects
+    \item Decoder self-attention lets track/object queries reason about each other (avoid identity switches)
+    \item Track terminated when classified as $\varnothing$; can be revived from stored embedding
+  \end{itemize}
+\end{frame}
+
+% =======================================================================
+\subsection{MaskFormer}
+
+% -----------------------------------------------------------------------
+\begin{frame}[fragile]{MaskFormer: From Per-Pixel to Mask Classification}
+
+  \cite{cheng2021maskformer}: Reformulate segmentation as predicting a set of \textbf{(class, binary mask)} pairs instead of assigning a class to every pixel independently.
+
+  \vspace{0.3em}
+  \begin{center}
+    \begin{tikzpicture}[
+      scale=0.72, every node/.style={scale=0.72},
+      box/.style={draw, rounded corners, fill=#1, minimum width=1.8cm, minimum height=0.5cm, align=center, font=\small},
+      arr/.style={-Stealth, thick},
+    ]
+      % Backbone
+      \node[box=orange!15, minimum width=2.0cm] (backbone) at (0, 0) {Backbone};
+      \node[font=\scriptsize, text=gray, below=0.1cm of backbone] {ResNet / Swin};
+
+      % Pixel Decoder
+      \node[box=cyan!12, minimum width=2.2cm, minimum height=1.0cm] (pixdec) at (0, 2.5) {};
+      \node[font=\small, text=cyan!60!black] at (0, 2.75) {\textbf{Pixel Decoder}};
+      \node[font=\tiny, text=gray] at (0, 2.25) {(FPN)};
+      \draw[arr] (backbone) -- (pixdec);
+
+      % Per-pixel embeddings
+      \node[box=cyan!8, minimum width=2.0cm, font=\scriptsize] (epix) at (0, 4.5) {$\mathcal{E}_\text{pixel}$\\$H{\times}W{\times}D$};
+      \draw[arr] (pixdec) -- (epix);
+
+      % Transformer Decoder
+      \node[box=red!12, minimum width=2.2cm, minimum height=1.0cm] (trdec) at (5.0, 2.5) {};
+      \node[font=\small, text=red!60!black] at (5.0, 2.75) {\textbf{Transformer}};
+      \node[font=\small, text=red!60!black] at (5.0, 2.35) {\textbf{Decoder}};
+      \draw[arr] (pixdec.east) -- node[above, font=\tiny] {features} (trdec.west);
+
+      % Query embeddings
+      \node[box=violet!15, minimum width=1.5cm, font=\scriptsize] (queries) at (5.0, 0) {$N$ Queries};
+      \draw[arr, violet] (queries) -- (trdec);
+
+      % Segment embeddings
+      \node[box=red!8, minimum width=2.0cm, font=\scriptsize] (eseg) at (5.0, 4.5) {$\mathcal{E}_\text{segment}$\\$N{\times}D$};
+      \draw[arr] (trdec) -- (eseg);
+
+      % Class prediction
+      \node[box=green!12, font=\scriptsize] (clsp) at (8.5, 5.2) {Class MLP\\$N \times (K{+}1)$};
+      \draw[arr] (eseg) -- (clsp);
+
+      % Dot product for mask
+      \node[draw, circle, inner sep=2pt, font=\small] (dot) at (2.5, 6.5) {$\cdot$};
+      \draw[arr] (epix) -- (dot);
+      \draw[arr] (eseg) -- (dot);
+
+      % Mask output
+      \node[box=yellow!15, font=\scriptsize] (masks) at (2.5, 7.8) {Binary Masks\\$N \times H \times W$};
+      \draw[arr] (dot) -- (masks);
+
+      % Annotation
+      \node[font=\scriptsize, text=gray, align=center] at (2.5, 5.7) {$M_i(h,w) = \mathcal{E}_\text{seg}^{i\,\top} \cdot \mathcal{E}_\text{pixel}(h,w)$};
+    \end{tikzpicture}
+  \end{center}
+
+  \vspace{0.2em}
+  \begin{itemize}
+    \item \textbf{Pixel decoder}: produces dense per-pixel embeddings $\mathcal{E}_\text{pixel} \in \mathbb{R}^{H \times W \times D}$
+    \item \textbf{Transformer decoder}: $N$ queries $\to$ $N$ segment embeddings $\mathcal{E}_\text{segment} \in \mathbb{R}^{N \times D}$
+    \item \textbf{Mask}: dot product $M_i = \mathcal{E}_\text{segment}^i \cdot \mathcal{E}_\text{pixel}^\top$ \quad (binary mask per query)
+    \item Loss: Hungarian matching + CE (class) + BCE + Dice (mask). Unified for semantic/instance/panoptic.
+  \end{itemize}
+\end{frame}
+
+% =======================================================================
+\subsection{Mask2Former}
+
+% -----------------------------------------------------------------------
+\begin{frame}[fragile]{Mask2Former: Masked Attention for Universal Segmentation}
+
+  \cite{cheng2022mask2former}: Improve MaskFormer with \textbf{masked cross-attention} (restrict attention to predicted mask region) and \textbf{multi-scale} decoder features.
+
+  \vspace{0.3em}
+  \begin{center}
+    \begin{tikzpicture}[
+      scale=0.72, every node/.style={scale=0.72},
+      box/.style={draw, rounded corners, fill=#1, minimum width=2.0cm, minimum height=0.45cm, align=center, font=\small},
+      arr/.style={-Stealth, thick},
+    ]
+      % --- Masked Attention Illustration ---
+      \node[font=\small\bfseries] at (0, 5.5) {Standard Cross-Attention};
+
+      % Standard: attend to all
+      \begin{scope}[shift={(-2, 0.5)}]
+        \draw[thick] (0, 0) rectangle (4, 4);
+        % All pixels highlighted
+        \fill[blue!10] (0, 0) rectangle (4, 4);
+        % Object region
+        \fill[blue!30] (1.2, 1.0) -- (1.5, 3.0) -- (2.8, 3.2) -- (3.0, 1.2) -- cycle;
+        \draw[thick, blue] (1.2, 1.0) -- (1.5, 3.0) -- (2.8, 3.2) -- (3.0, 1.2) -- cycle;
+        % Query arrow
+        \fill[red] (2.0, 2.0) circle (3pt);
+        \draw[thick] (0, 0) rectangle (4, 4);
+        \node[font=\tiny, text=blue!60!black] at (2.0, -0.4) {attends to \textbf{all} pixels};
+      \end{scope}
+
+      \node[font=\small\bfseries] at (7, 5.5) {Masked Cross-Attention};
+
+      % Masked: attend to predicted region only
+      \begin{scope}[shift={(5, 0.5)}]
+        \draw[thick] (0, 0) rectangle (4, 4);
+        % Background grayed out
+        \fill[gray!10] (0, 0) rectangle (4, 4);
+        % Object region highlighted
+        \fill[blue!30] (1.2, 1.0) -- (1.5, 3.0) -- (2.8, 3.2) -- (3.0, 1.2) -- cycle;
+        \draw[thick, blue] (1.2, 1.0) -- (1.5, 3.0) -- (2.8, 3.2) -- (3.0, 1.2) -- cycle;
+        % X marks on background
+        \foreach \x/\y in {0.5/0.5, 0.5/3.5, 3.5/0.5, 3.5/3.5, 0.5/2.0, 3.5/2.0} {
+          \node[font=\tiny, text=red!50] at (\x, \y) {$\times$};
+        }
+        \fill[red] (2.0, 2.0) circle (3pt);
+        \draw[thick] (0, 0) rectangle (4, 4);
+        \node[font=\tiny, text=blue!60!black] at (2.0, -0.4) {attends to \textbf{predicted mask} only};
+      \end{scope}
+    \end{tikzpicture}
+  \end{center}
+
+  \vspace{0.2em}
+  \textbf{Masked cross-attention}:
+  \[
+    X_\ell = \operatorname{softmax}\!\Bigl(\mathcal{M}_{\ell-1} + \frac{Q_\ell K_\ell^\top}{\sqrt{d}}\Bigr) V_\ell + X_{\ell-1}
+  \]
+  where $\mathcal{M}_{\ell-1}(i, h, w) = \begin{cases} 0 & \text{if } \sigma(m_{\ell-1}(h,w)) \geq 0.5 \\ -\infty & \text{otherwise}\end{cases}$
+  \quad ($m_{\ell-1}$: predicted mask from previous layer)
+\end{frame}
+
+% -----------------------------------------------------------------------
+\begin{frame}{Mask2Former: Multi-Scale Decoder \& Results}
+
+  \begin{columns}
+    \begin{column}{0.52\textwidth}
+      \textbf{Multi-scale feature processing}:
+
+      \vspace{0.2em}
+      \begin{center}
+        \begin{tikzpicture}[
+          scale=0.7, every node/.style={scale=0.7},
+          layer/.style={draw, rounded corners, minimum width=2.0cm, minimum height=0.4cm, align=center, font=\scriptsize},
+          arr/.style={-Stealth, thick},
+        ]
+          % Decoder layers in rounds
+          \node[layer, fill=red!12] (l1) at (0, 6.0) {Layer 1: $\frac{1}{32}$};
+          \node[layer, fill=orange!12] (l2) at (0, 5.2) {Layer 2: $\frac{1}{16}$};
+          \node[layer, fill=yellow!12] (l3) at (0, 4.4) {Layer 3: $\frac{1}{8}$};
+
+          \node[layer, fill=red!12] (l4) at (0, 3.4) {Layer 4: $\frac{1}{32}$};
+          \node[layer, fill=orange!12] (l5) at (0, 2.6) {Layer 5: $\frac{1}{16}$};
+          \node[layer, fill=yellow!12] (l6) at (0, 1.8) {Layer 6: $\frac{1}{8}$};
+
+          \node[layer, fill=red!12] (l7) at (0, 0.8) {Layer 7: $\frac{1}{32}$};
+          \node[layer, fill=orange!12] (l8) at (0, 0.0) {Layer 8: $\frac{1}{16}$};
+          \node[layer, fill=yellow!12] (l9) at (0, -0.8) {Layer 9: $\frac{1}{8}$};
+
+          % Arrows
+          \foreach \i/\j in {l1/l2, l2/l3, l3/l4, l4/l5, l5/l6, l6/l7, l7/l8, l8/l9} {
+            \draw[arr, thin] (\i) -- (\j);
+          }
+
+          % Round braces
+          \draw[decorate, decoration={brace, amplitude=4pt, mirror}, thick] (1.3, 4.2) -- (1.3, 6.2) node[midway, right=4pt, font=\scriptsize] {Round 1};
+          \draw[decorate, decoration={brace, amplitude=4pt, mirror}, thick] (1.3, 1.6) -- (1.3, 3.6) node[midway, right=4pt, font=\scriptsize] {Round 2};
+          \draw[decorate, decoration={brace, amplitude=4pt, mirror}, thick] (1.3, -1.0) -- (1.3, 1.0) node[midway, right=4pt, font=\scriptsize] {Round 3};
+
+          % Pixel decoder
+          \node[draw, rounded corners, fill=cyan!10, minimum width=1.5cm, minimum height=2.5cm, font=\scriptsize, align=center] (pixdec) at (-3.5, 2.5) {Pixel\\Decoder\\(MSDeform\\Attn)};
+          \draw[arr, red!60, thin] (pixdec.east) ++(0, 0.8) -- ([xshift=-0.3cm]l1.west) -- (l1.west);
+          \draw[arr, orange!60, thin] (pixdec.east) ++(0, 0) -- ([xshift=-0.15cm]l2.west) -- (l2.west);
+          \draw[arr, yellow!70!black, thin] (pixdec.east) ++(0, -0.8) -- ([xshift=-0.3cm]l3.west) -- (l3.west);
+        \end{tikzpicture}
+      \end{center}
+    \end{column}
+    \begin{column}{0.45\textwidth}
+      \textbf{Key innovations}:
+      \begin{itemize}
+        \item 9 decoder layers in 3 rounds
+        \item Round-robin across 3 resolutions
+        \item Coarse-to-fine within each round
+        \item Pixel decoder uses Deformable DETR encoder (MSDeformAttn)
+      \end{itemize}
+
+      \vspace{0.3em}
+      \textbf{Universal architecture}: same model for
+      \begin{itemize}
+        \item Semantic segmentation
+        \item Instance segmentation
+        \item Panoptic segmentation
+      \end{itemize}
+
+      \vspace{0.3em}
+      \textbf{Results (COCO)}:
+      \begin{center}
+        \small
+        \begin{tabular}{lcc}
+          \toprule
+          \textbf{Task} & \textbf{MF} & \textbf{M2F} \\
+          \midrule
+          Panoptic (PQ) & 52.7 & 57.8 \\
+          Instance (AP) & 43.7 & 47.2 \\
+          Semantic (mIoU) & -- & 57.7 \\
+          \bottomrule
+        \end{tabular}
+      \end{center}
+
+      \vspace{0.2em}
+      Masked attention provides faster convergence and better localization.
+    \end{column}
+  \end{columns}
+\end{frame}
+
+% -----------------------------------------------------------------------
+\begin{frame}{Vision Models: Summary}
+
+  \begin{center}
+    \small
+    \begin{tabular}{llll}
+      \toprule
+      \textbf{Model} & \textbf{Key Innovation} & \textbf{Task} & \textbf{Attention} \\
+      \midrule
+      ViT & Patches + Transformer & Classification & Global \\
+      DeiT & Distillation token & Classification & Global \\
+      MAE & Masked autoencoding (75\%) & Pre-training & Global \\
+      Swin & Shifted windows + hierarchy & General backbone & Window-local \\
+      MLP-Mixer & MLPs only (no attention) & Classification & None \\
+      \midrule
+      DETR & Object queries + Hungarian & Detection & Global \\
+      Def.\ DETR & Deformable + multi-scale & Detection & Sparse sampling \\
+      TrackFormer & Track queries across frames & Tracking & Global \\
+      MaskFormer & Mask classification & Segmentation & Global \\
+      Mask2Former & Masked attn + multi-scale & Segmentation & Masked \\
+      \bottomrule
+    \end{tabular}
+  \end{center}
+
+  \vspace{0.5em}
+  \textbf{Evolution}:
+  \begin{itemize}
+    \item \textbf{Classification}: ViT $\to$ DeiT (data-efficient) $\to$ MAE (self-supervised) $\to$ Swin (hierarchical) / MLP-Mixer (simplicity)
+    \item \textbf{Detection}: DETR (end-to-end) $\to$ Deformable DETR (practical) $\to$ TrackFormer (video)
+    \item \textbf{Segmentation}: MaskFormer (mask classification) $\to$ Mask2Former (universal, masked attention)
+  \end{itemize}
+\end{frame}

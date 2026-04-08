@@ -1,0 +1,76 @@
+\beamer@sectionintoc {1}{Introduction}{2}{0}{1}
+\beamer@sectionintoc {2}{Language Generation}{10}{0}{2}
+\beamer@subsectionintoc {2}{1}{Tokenization}{11}{0}{2}
+\beamer@subsectionintoc {2}{2}{Training Objective}{15}{0}{2}
+\beamer@subsectionintoc {2}{3}{Autoregressive Sampling}{19}{0}{2}
+\beamer@sectionintoc {3}{Sequence Models}{25}{0}{3}
+\beamer@subsectionintoc {3}{1}{Overview}{26}{0}{3}
+\beamer@subsectionintoc {3}{2}{Recurrent Neural Networks}{30}{0}{3}
+\beamer@subsectionintoc {3}{3}{LSTM}{36}{0}{3}
+\beamer@subsectionintoc {3}{4}{GRU}{44}{0}{3}
+\beamer@sectionintoc {4}{Attention \& Transformers}{51}{0}{4}
+\beamer@sectionintoc {5}{Training a GPT-2 Model}{70}{0}{5}
+\beamer@sectionintoc {6}{Flash Attention}{92}{0}{6}
+\beamer@subsectionintoc {6}{1}{Motivation \& GPU Memory Hierarchy}{94}{0}{6}
+\beamer@subsectionintoc {6}{2}{GPU Programming: CUDA and Triton}{100}{0}{6}
+\beamer@subsectionintoc {6}{3}{The Flash Attention Algorithm}{109}{0}{6}
+\beamer@subsectionintoc {6}{4}{Triton Implementation}{114}{0}{6}
+\beamer@sectionintoc {7}{Mixture of Experts}{120}{0}{7}
+\beamer@subsectionintoc {7}{1}{Motivation and Basic Idea}{121}{0}{7}
+\beamer@subsectionintoc {7}{2}{Sparsely-Gated MoE (Shazeer et al., 2017)}{125}{0}{7}
+\beamer@subsectionintoc {7}{3}{Switch Transformer}{130}{0}{7}
+\beamer@subsectionintoc {7}{4}{MoE in Practice: Integration into Transformers}{134}{0}{7}
+\beamer@subsectionintoc {7}{5}{DeepSeek-MoE}{136}{0}{7}
+\beamer@subsectionintoc {7}{6}{DeepSeek-V3: MoE at Scale}{141}{0}{7}
+\beamer@subsectionintoc {7}{7}{Summary}{145}{0}{7}
+\beamer@sectionintoc {8}{Vision Models}{147}{0}{8}
+\beamer@subsectionintoc {8}{1}{Vision Transformer (ViT)}{148}{0}{8}
+\beamer@subsectionintoc {8}{2}{DeiT: Data-efficient Image Transformers}{151}{0}{8}
+\beamer@subsectionintoc {8}{3}{MAE: Masked Autoencoders}{154}{0}{8}
+\beamer@subsectionintoc {8}{4}{Swin Transformer}{158}{0}{8}
+\beamer@subsectionintoc {8}{5}{MLP-Mixer}{162}{0}{8}
+\beamer@subsectionintoc {8}{6}{DETR}{165}{0}{8}
+\beamer@subsectionintoc {8}{7}{Deformable DETR}{168}{0}{8}
+\beamer@subsectionintoc {8}{8}{TrackFormer}{171}{0}{8}
+\beamer@subsectionintoc {8}{9}{MaskFormer}{173}{0}{8}
+\beamer@subsectionintoc {8}{10}{Mask2Former}{175}{0}{8}
+\beamer@sectionintoc {9}{Multimodal Models}{179}{0}{9}
+\beamer@subsectionintoc {9}{1}{From Language to Vision-Language}{180}{0}{9}
+\beamer@subsectionintoc {9}{2}{CLIP}{182}{0}{9}
+\beamer@subsectionintoc {9}{3}{SigLIP}{188}{0}{9}
+\beamer@subsectionintoc {9}{4}{PaliGemma}{193}{0}{9}
+\beamer@subsectionintoc {9}{5}{Summary}{200}{0}{9}
+\beamer@sectionintoc {10}{Hyperparameter Selection}{202}{0}{10}
+\beamer@subsectionintoc {10}{1}{Classical Hyperparameter Optimization}{204}{0}{10}
+\beamer@subsectionintoc {10}{2}{Learning Rate Schedules}{211}{0}{10}
+\beamer@subsectionintoc {10}{3}{Batch Size Selection}{215}{0}{10}
+\beamer@subsectionintoc {10}{4}{Weight Decay and AdamW}{219}{0}{10}
+\beamer@subsectionintoc {10}{5}{Scaling Laws}{221}{0}{10}
+\beamer@subsectionintoc {10}{6}{$\mu $P: Hyperparameter Transfer Across Scales}{224}{0}{10}
+\beamer@subsectionintoc {10}{7}{LLM Training Recipes}{227}{0}{10}
+\beamer@subsectionintoc {10}{8}{Practical Guidelines}{232}{0}{10}
+\beamer@sectionintoc {11}{State Space Models and Mamba}{236}{0}{11}
+\beamer@subsectionintoc {11}{1}{State Space Models}{237}{0}{11}
+\beamer@subsectionintoc {11}{2}{Mamba: Selective State Spaces}{244}{0}{11}
+\beamer@subsectionintoc {11}{3}{Mamba-2: State Space Duality}{250}{0}{11}
+\beamer@subsectionintoc {11}{4}{The Efficient SSD Algorithm}{259}{0}{11}
+\beamer@subsectionintoc {11}{5}{The Mamba-2 Architecture}{262}{0}{11}
+\beamer@subsectionintoc {11}{6}{Comparison and Results}{264}{0}{11}
+\beamer@sectionintoc {12}{Reinforcement Learning for LLMs}{268}{0}{12}
+\beamer@subsectionintoc {12}{1}{Motivation}{269}{0}{12}
+\beamer@subsectionintoc {12}{2}{RL Introduction}{280}{0}{12}
+\beamer@subsectionintoc {12}{3}{Reward Model}{284}{0}{12}
+\beamer@subsectionintoc {12}{4}{Policy Gradient}{287}{0}{12}
+\beamer@subsectionintoc {12}{5}{Reducing Variance}{294}{0}{12}
+\beamer@subsectionintoc {12}{6}{Off-Policy Learning and PPO}{301}{0}{12}
+\beamer@subsectionintoc {12}{7}{GRPO}{309}{0}{12}
+\beamer@subsectionintoc {12}{8}{DPO}{319}{0}{12}
+\beamer@subsectionintoc {12}{9}{Summary and Open Problems}{323}{0}{12}
+\beamer@sectionintoc {13}{Memory-Efficient Training Techniques}{326}{0}{13}
+\beamer@sectionintoc {14}{Parallelism for LLM Training and Inference}{335}{0}{14}
+\beamer@subsectionintoc {14}{1}{Data Parallelism}{351}{0}{14}
+\beamer@subsectionintoc {14}{2}{ZeRO Optimization}{355}{0}{14}
+\beamer@subsectionintoc {14}{3}{Pipeline Parallelism}{364}{0}{14}
+\beamer@subsectionintoc {14}{4}{Tensor Parallelism}{377}{0}{14}
+\beamer@subsectionintoc {14}{5}{Context Parallelism}{389}{0}{14}
+\beamer@sectionintoc {15}{References}{405}{0}{15}

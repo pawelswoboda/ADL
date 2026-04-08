@@ -1,0 +1,108 @@
+% !TEX root=./adl.tex
+
+% -----------------------------------------------------------------------
+\begin{frame}{Data Parallelism (DP) --- Recap}
+
+  We covered DDP in the GPT-2 chapter. Brief recap and new details:
+
+  \vspace{0.3em}
+  \begin{columns}
+    \begin{column}{0.48\textwidth}
+      \textbf{Core idea}
+      \begin{itemize}
+        \item Each GPU holds a \emph{full model replica}
+        \item Each GPU processes a different micro-batch
+        \item Gradients synchronized via \emphdef{AllReduce} after backward pass
+        \item Every GPU performs the same optimizer step $\Rightarrow$ models stay in sync
+      \end{itemize}
+
+      \vspace{0.5em}
+      \textbf{Batch size with DP:}
+      \[
+        \text{GBS} = \text{mbs} \times \text{grad\_acc} \times N_{\text{DP}}
+      \]
+    \end{column}
+    \begin{column}{0.48\textwidth}
+      \textbf{Communication cost}
+      \begin{itemize}
+        \item AllReduce transfers $2\Psi$ bytes (ring AllReduce)
+        \item Independent of number of GPUs $N_{\text{DP}}$\,!
+        \item But: latency grows with more GPUs
+      \end{itemize}
+
+      \vspace{0.5em}
+      \textbf{Memory per GPU}
+      \begin{itemize}
+        \item No memory savings: each GPU stores full weights, gradients, optimizer states ($16\Psi$)
+        \item Only activation memory is reduced (smaller micro-batch per GPU)
+      \end{itemize}
+    \end{column}
+  \end{columns}
+\end{frame}
+
+% -----------------------------------------------------------------------
+\begin{frame}{DDP Training Algorithm}
+
+  \begin{algorithm}[H]
+    \caption{Distributed Data Parallel (DDP) Training}
+    \small
+    \KwInput{Model $\theta$ (replicated on each of $N$ GPUs), learning rate $\eta$, gradient accumulation steps $G$, micro-batch size $b$}
+    \For{each training step}{
+      $\nabla\theta \leftarrow 0$ \tcp*{zero gradients}
+      \For{$g = 1, \ldots, G$}{
+        Sample micro-batch $\mathcal{B}_g$ (different on each GPU)\;
+        $\mathcal{L}_g \leftarrow \frac{1}{b}\texttt{forward}(\theta, \mathcal{B}_g)$\;
+        \eIf(\tcp*[f]{last micro-step: sync gradients}){$g = G$}{
+          $\nabla\theta \leftarrow \nabla\theta + \frac{1}{G}\texttt{backward}(\mathcal{L}_g)$\;
+          $\nabla\theta \leftarrow \frac{1}{N}\textsc{AllReduce}(\nabla\theta)$ \tcp*{average across GPUs}
+        }(\tcp*[f]{accumulate locally, no communication}){
+          $\nabla\theta \leftarrow \nabla\theta + \frac{1}{G}\texttt{backward}(\mathcal{L}_g)$\;
+        }
+      }
+      $\theta \leftarrow \textsc{OptimizerStep}(\theta, \nabla\theta, \eta)$\;
+    }
+  \end{algorithm}
+
+  \vspace{0.3em}
+  \begin{itemize}\small
+    \item Effective batch size per step: $\text{GBS} = b \times G \times N$
+    \item Communication happens only once per training step (line 7)
+  \end{itemize}
+\end{frame}
+
+% -----------------------------------------------------------------------
+\begin{frame}{DP: Overlapping Communication with Compute}
+
+  \textbf{Key optimizations} that make DP scale well in practice:
+
+  \vspace{0.5em}
+  \begin{enumerate}
+    \item \textbf{Overlap AllReduce with backward pass:}
+      \begin{itemize}
+        \item Gradients for early layers are ready while later layers are still computing
+        \item Start AllReduce for each layer's gradients \emph{as soon as they are computed}
+        \item In PyTorch DDP: automatic via gradient hooks
+      \end{itemize}
+
+    \vspace{0.3em}
+    \item \textbf{Gradient bucketing:}
+      \begin{itemize}
+        \item Launching one AllReduce per parameter is inefficient (high latency overhead)
+        \item Group parameters into \emph{buckets} ($\sim$25\,MB each in PyTorch)
+        \item One AllReduce per bucket amortizes latency
+      \end{itemize}
+
+    \vspace{0.3em}
+    \item \textbf{Skip sync during gradient accumulation:}
+      \begin{itemize}
+        \item Only AllReduce on the \emph{last} micro-step: \texttt{model.no\_sync()} context manager
+        \item Reduces communication by factor of \texttt{grad\_acc}
+      \end{itemize}
+  \end{enumerate}
+
+  \vspace{0.3em}
+  \begin{alertblock}{Limitation}
+    DP alone cannot train models that don't fit on a single GPU ($16\Psi > $ GPU memory).
+    This motivates ZeRO and model parallelism.
+  \end{alertblock}
+\end{frame}
