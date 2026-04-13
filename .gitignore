@@ -29,6 +29,7 @@ venv/
 *-SAVE-ERROR
 texput.log
 .latexmkrc
+CLAUDE.md
 
 # Old course materials
 slides/ADL_SS2025/
