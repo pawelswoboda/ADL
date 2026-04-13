@@ -28,3 +28,8 @@ venv/
 *.synctex*
 *-SAVE-ERROR
 texput.log
+.latexmkrc
+
+# Old course materials
+slides/ADL_SS2025/
+slides/DL_WS202425/
