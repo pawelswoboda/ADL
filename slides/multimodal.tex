@@ -141,7 +141,7 @@
 \end{frame}
 
 % -----------------------------------------------------------------------
-\begin{frame}{CLIP: Contrastive Loss --- Similarity Matrix}
+\begin{frame}{CLIP: Contrastive Loss and Similarity Matrix}
 
   \begin{center}
     \begin{tikzpicture}[scale=0.75, every node/.style={scale=0.75}]
@@ -266,7 +266,7 @@
       \begin{itemize}
         \item Struggles with fine-grained tasks (car models, flower species)
         \item Poor at abstract/systematic reasoning (counting objects)
-        \item Cannot \emph{generate} text --- only compare embeddings
+        \item Cannot \emph{generate} text. Can only compare embeddings
       \end{itemize}
 
       \vspace{0.3em}
@@ -641,7 +641,7 @@
       Vision encoder is \emph{unfrozen}.
       Resolution: $224 \times 224$ (256 image tokens).
       \begin{itemize}
-        \item \textbf{Loss}: Purely autoregressive next-token prediction on \emph{suffix (output) tokens only} --- no contrastive loss
+        \item \textbf{Loss}: Purely autoregressive next-token prediction on \emph{suffix (output) tokens only}. No contrastive loss
         \item Image and prefix text tokens are excluded from the loss (prefix-LM masking)
         \item Gradients still flow into the vision encoder via backpropagation through the linear projection
       \end{itemize}

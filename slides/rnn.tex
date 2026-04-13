@@ -1,12 +1,122 @@
 % !TEX root=./adl.tex
 
-\subsection{Recurrent Neural Networks}
+\section{Sequence Models}
+
+\subsection{Overview}
+
+% -----------------------------------------------------------------------
+\begin{frame}{Sequence Models: Overview}
+  Many tasks require processing \textbf{ordered sequences} of variable length:
+  \begin{itemize}
+    \item Natural language (words, subwords, characters)
+    \item Time series (sensor data, finance, audio)
+    \item Biological sequences (DNA, protein)
+  \end{itemize}
+
+  \vspace{0.5em}
+  \textbf{High-level idea:} Accumulate information in a \textbf{fixed-size state vector} $h_t \in \R^n$ that summarizes everything seen so far.
+  At each time step, update the state by combining it with the new input:
+  \[
+    \boxed{h_t = f_\theta(h_{t-1}, x_t)}
+  \]
+
+  \vspace{0.3em}
+  \begin{block}{Key properties of recurrent state models}
+    \begin{description}
+      \item[Constant memory:] State size is fixed regardless of sequence length $T$
+      \item[Causal by construction:] Output at time $t$ depends only on $x_1, \ldots, x_t$
+      \item[Online / streaming:] Can process inputs one token at a time
+    \end{description}
+  \end{block}
+\end{frame}
+
+% -----------------------------------------------------------------------
+\begin{frame}{The Recurrent State Paradigm}
+  \begin{columns}[T]
+    \begin{column}{0.52\textwidth}
+      \begin{center}
+      \begin{tikzpicture}[
+        scale=0.75, every node/.style={scale=0.75},
+        cell/.style={rectangle, draw, fill=blue!15, minimum width=1cm, minimum height=0.7cm, font=\small},
+        io/.style={font=\small},
+        arr/.style={-{Stealth[length=3pt]}, thick}
+      ]
+        % State boxes
+        \foreach \t in {0,1,2,3} {
+          \node[cell] (h\t) at (\t*2.0, 0) {$h_{\the\numexpr\t+1}$};
+          \node[io] (x\t) at (\t*2.0, -1.3) {$x_{\the\numexpr\t+1}$};
+          \node[io] (y\t) at (\t*2.0, 1.3) {$y_{\the\numexpr\t+1}$};
+          \draw[arr] (x\t) -- (h\t);
+          \draw[arr] (h\t) -- (y\t);
+        }
+        \node[io] (h_init) at (-1.5, 0) {$h_0$};
+        \draw[arr] (h_init) -- (h0);
+        \draw[arr] (h0) -- (h1);
+        \draw[arr] (h1) -- (h2);
+        \draw[arr] (h2) -- (h3);
+        \node[io] at (7.0, 0) {$\cdots$};
+      \end{tikzpicture}
+      \end{center}
+
+      \vspace{0.3em}
+      The state $h_t$ acts as a \textbf{lossy compression} of the input history $x_1, \ldots, x_t$ into a fixed-dimensional vector.
+    \end{column}
+    \begin{column}{0.45\textwidth}
+      \textbf{Central trade-off:}
+      \begin{itemize}
+        \item Fixed state $\Rightarrow$ \textbf{constant cost} per step ($\mathcal{O}(1)$ memory and compute)
+        \item But also an \textbf{information bottleneck}: must decide what to remember and what to forget
+      \end{itemize}
+
+      \vspace{0.5em}
+      \textbf{Challenges:}
+      \begin{itemize}
+        \item How to learn \emph{what} to store in $h_t$?
+        \item How to avoid vanishing gradients during training?
+        \item Can we parallelize the sequential computation?
+      \end{itemize}
+    \end{column}
+  \end{columns}
+\end{frame}
+
+% -----------------------------------------------------------------------
+\begin{frame}{Recurrent Model Families}
+  Different architectures address these challenges in different ways:
+
+  \vspace{0.5em}
+  \begin{center}
+  \renewcommand{\arraystretch}{1.3}
+  \small
+  \begin{tabular}{l c c c}
+    \toprule
+    & \textbf{RNN} & \textbf{LSTM / GRU} & \textbf{SSM (Mamba)} \\
+    \midrule
+    Year          & 1990 & 1997 / 2014 & 2023 \\
+    What to store & Learned implicitly & \textbf{Gating} mechanism & \textbf{Selective} mechanism \\
+    Gradient flow & Vanishing / exploding & Gated information highway & Structured recurrence \\
+    Training      & Sequential & Sequential & \textbf{Parallelizable} \\
+    Inference / step & $\mathcal{O}(1)$ & $\mathcal{O}(1)$ & $\mathcal{O}(1)$ \\
+    \bottomrule
+  \end{tabular}
+  \end{center}
+
+  \vspace{0.5em}
+  \begin{block}{Progression}
+    Each generation addresses a key limitation of its predecessor:
+    \begin{itemize}
+      \item \textbf{LSTM/GRU:} solve vanishing gradients via gates that control information flow
+      \item \textbf{SSMs (Mamba):} enable parallel training while keeping $\mathcal{O}(1)$ recurrent inference
+    \end{itemize}
+  \end{block}
+\end{frame}
+
+\subsection{RNN}
 
 % -----------------------------------------------------------------------
 \begin{frame}{Recurrent Neural Networks (RNNs)}
   \begin{columns}
     \begin{column}{0.55\textwidth}
-      The simplest sequence model --- process tokens one at a time, maintaining a hidden state:
+      The simplest sequence model: process tokens one at a time, maintaining a hidden state:
       \begin{center}
         \begin{tikzpicture}[
           scale=0.72, every node/.style={scale=0.72},
@@ -314,7 +424,7 @@
       \textbf{Drawbacks}
       \begin{itemize}
         \item \textbf{Slow training:} sequential computation, no parallelism across time
-        \item \textbf{Long-range dependencies:} hidden state must compress all history --- information decays
+        \item \textbf{Long-range dependencies:} hidden state must compress all history, so information decays
         \item \textbf{Gradient problems:} vanishing/exploding gradients through many time steps
         \item Cannot natively look ahead (but bidirectional RNNs exist)
       \end{itemize}
@@ -788,7 +898,7 @@
 
   \vspace{0.5em}
   \begin{block}{Why LSTM helps with vanishing gradients}
-    $\frac{\partial C_t}{\partial C_{t-1}} = f_t$ --- when $f_t \approx 1$, gradients flow through unchanged (information highway), similar to residual connections.
+    $\frac{\partial C_t}{\partial C_{t-1}} = f_t$: when $f_t \approx 1$, gradients flow through unchanged (information highway), similar to residual connections.
   \end{block}
 \end{frame}
 

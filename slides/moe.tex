@@ -74,7 +74,7 @@
       \textbf{Key insight}: Not all tokens need the same computation. Can we \emph{decouple} parameter count from compute cost?
 
       \vspace{0.5em}
-      \textbf{Analogy}: Like consulting a team of specialists --- you don't ask every expert for every question, only the relevant ones.
+      \textbf{Analogy}: Like consulting a team of specialists: you don't ask every expert for every question, only the relevant ones.
     \end{column}
     \begin{column}{0.48\textwidth}
       \begin{alertblock}{Mixture of Experts (MoE)}
@@ -360,7 +360,7 @@
   \vspace{0.3em}
   \begin{itemize}
     \item \textbf{$>$1000$\times$ improvement in model capacity} with only minor losses in computational efficiency
-    \item \textbf{Language modeling} (100B word Google News corpus): scaled up to \textbf{65,536 experts} with $k{=}4$, reaching \textbf{68B total parameters} --- only a tiny fraction active per token
+    \item \textbf{Language modeling} (100B word Google News corpus): scaled up to \textbf{65,536 experts} with $k{=}4$, reaching \textbf{68B total parameters}. Only a tiny fraction active per token
     \item \textbf{Machine translation} (WMT'14): up to 2,048 experts per MoE layer, achieved state-of-the-art BLEU scores with $1/6$ of the training time of Google's production system
     \item Performance improved up to 65,536 experts but degraded at 131,072, likely due to insufficient batch size per expert
   \end{itemize}
@@ -455,7 +455,7 @@
 % -----------------------------------------------------------------------
 \begin{frame}{Switch Transformer: Model Configurations}
 
-  All Switch models are \textbf{FLOP-matched} to their dense T5 counterparts --- extra parameters go into expert FFN layers, but only 1 expert is active per token.
+  All Switch models are \textbf{FLOP-matched} to their dense T5 counterparts. Extra parameters go into expert FFN layers, but only 1 expert is active per token.
 
   \vspace{0.3em}
   \begin{center}
@@ -575,7 +575,7 @@
   \begin{itemize}
     \item \textbf{Dispatch}: \textbf{All-to-all} communication sends each token to the GPU hosting its assigned expert
     \item \textbf{Combine}: After expert computation, \textbf{all-to-all} sends results back
-    \item \textbf{Cost}: Communication volume depends on load balance --- poor balance $\Rightarrow$ congestion
+    \item \textbf{Cost}: Communication volume depends on load balance. Poor balance $\Rightarrow$ congestion
   \end{itemize}
 \end{frame}
 
@@ -604,7 +604,7 @@
     \begin{column}{0.48\textwidth}
       \textbf{2.\ Shared experts}:
       \begin{itemize}
-        \item Dedicate $K_s$ experts as \textbf{shared} --- always active for every token
+        \item Dedicate $K_s$ experts as \textbf{shared}, always active for every token
         \item Remaining experts are \textbf{routed} as usual
         \item Shared experts capture common knowledge; routed experts specialize
       \end{itemize}

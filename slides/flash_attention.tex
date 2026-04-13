@@ -32,7 +32,7 @@
   \vspace{0.2em}
   \begin{columns}
     \begin{column}{0.55\textwidth}
-      \textbf{The bottleneck is \emph{not} arithmetic} --- it is \textbf{memory}:
+      \textbf{The bottleneck is \emph{not} arithmetic}, it is \textbf{memory}:
       \begin{itemize}
         \item The $T \times T$ matrix $S = QK^\top$ must be materialized in HBM
         \item Writing $S$ to HBM and reading it back dominates wall-clock time
@@ -62,13 +62,13 @@
 
       \vspace{0.5em}
       \begin{description}
-        \item[HBM (off-chip):] Large ($\sim$40--80\,GB) but slow ($\sim$1.5--3\,TB/s). Stores model parameters, activations, optimizer states. Every kernel reads inputs from and writes outputs to HBM.
-        \item[SRAM (on-chip):] Small ($\sim$20\,MB) but fast ($\sim$19\,TB/s, $\sim$10$\times$ faster). Each streaming multiprocessor has its own SRAM (shared memory). Data must be explicitly loaded into SRAM before compute.
+        \item[HBM (off-chip):] Stores model parameters, activations, optimizer states. Every kernel reads inputs from and writes outputs to HBM.
+        \item[SRAM (on-chip):] Each streaming multiprocessor has its own SRAM (shared memory). Data must be explicitly loaded into SRAM before compute.
       \end{description}
 
       \vspace{0.5em}
       \begin{alertblock}{Implication for attention}
-        Standard attention writes $S, P \in \mathbb{R}^{T \times T}$ to HBM between steps. If these intermediates fit in SRAM, we can avoid the round-trip entirely.
+        Standard attention writes $S, P \in \mathbb{R}^{T \times T}$ to HBM between steps. Flash attention computes $S$ and $P$ block-wise in SRAM on-the-fly, avoiding the HBM round-trip.
       \end{alertblock}
     \end{column}
     \begin{column}{0.42\textwidth}
@@ -78,39 +78,34 @@
   \end{columns}
 \end{frame}
 
+\definecolor{loadcol}{RGB}{41,128,185}   % blue for loads
+\definecolor{storecol}{RGB}{192,57,43}   % red for stores
+\definecolor{compcol}{RGB}{39,174,96}    % green for compute
+\newcommand{\Load}[1]{\textcolor{loadcol}{\textrm{Load } #1}}
+\newcommand{\Store}[1]{\textcolor{storecol}{\textrm{Write } #1}}
+\newcommand{\Comp}[1]{\textcolor{compcol}{\textrm{Compute } #1}}
+
 \begin{frame}{Standard Attention: Memory Access Pattern}
 
-  \begin{columns}
-    \begin{column}{0.55\textwidth}
       \begin{algorithm}[H]
-        \caption{Standard Attention}
+        \caption{Standard Attention \quad {\small\textcolor{loadcol}{$\blacksquare$ Load}} \quad {\small\textcolor{compcol}{$\blacksquare$ Compute}} \quad {\small\textcolor{storecol}{$\blacksquare$ Store}}}
         \KwIn{$Q, K, V \in \mathbb{R}^{T \times d}$ in HBM}
         \KwOut{$O \in \mathbb{R}^{T \times d}$}
-        Load $Q, K$ from HBM\;
-        Compute $S = QK^\top \in \mathbb{R}^{T \times T}$\;
-        Write $S$ to HBM\;
-        Load $S$ from HBM\;
-        Compute $P = \text{softmax}(S) \in \mathbb{R}^{T \times T}$\;
-        Write $P$ to HBM\;
-        Load $P, V$ from HBM\;
-        Compute $O = PV \in \mathbb{R}^{T \times d}$\;
-        Write $O$ to HBM\;
+        \Load{$Q, K$ from HBM} \tcp*{$2Td$}
+        \Comp{$S = QK^\top \in \mathbb{R}^{T \times T}$}\;
+        \Store{$S$ to HBM} \tcp*{$T^2$}
+        \Load{$S$ from HBM} \tcp*{$T^2$}
+        \Comp{$P = \text{softmax}(S) \in \mathbb{R}^{T \times T}$}\;
+        \Store{$P$ to HBM} \tcp*{$T^2$}
+        \Load{$P, V$ from HBM} \tcp*{$T^2 + Td$}
+        \Comp{$O = PV \in \mathbb{R}^{T \times d}$}\;
+        \Store{$O$ to HBM} \tcp*{$Td$}
         \Return $O$\;
       \end{algorithm}
 
-      \vspace{0.5em}
-      \textbf{Problems:}
-      \begin{itemize}
-        \item Each step is a separate kernel $\to$ no fusion
-        \item $S$ and $P$ are $T \times T$ $\to$ quadratic memory
-        \item Must store $P$ for backward pass
-      \end{itemize}
-    \end{column}
-    \begin{column}{0.42\textwidth}
-      \centering
-      \includegraphics[width=\linewidth]{ADL_SS2025/FlashAttention/std_attention_implementation.png}
-    \end{column}
-  \end{columns}
+      \vspace{0.3em}
+      Total HBM access: $\mathcal{O}(T^2 + Td)$. Each step is a separate kernel (no fusion). $S, P$ are $T \times T$ $\to$ quadratic memory. Must store $P$ for backward pass.
+
 \end{frame}
 
 \begin{frame}{Flash Attention: Key Ideas}
@@ -140,61 +135,580 @@
   \end{columns}
 \end{frame}
 
-\begin{frame}[fragile]{Softmax: Three Versions}
+\begin{frame}{Softmax: Three Versions}
+  \begin{columns}[T]
+    \begin{column}{0.48\textwidth}
+      \textbf{Naive:} 2 passes. Numerically unstable for large $x_i$.
+      \vspace{-0.3em}
+      \[
+        \text{softmax}(x)_i = \frac{e^{x_i}}{\sum_{j} e^{x_j}}
+      \]
+      \vspace{-0.8em}
 
-  \textbf{Naive softmax:} Two passes. Numerically unstable for large values.
-  \[
-    \text{softmax}(x)_i = \frac{e^{x_i}}{\sum_{j} e^{x_j}}
-  \]
+      {\small
+      \begin{algorithm}[H]
+        \caption{\small Naive Softmax}
+        \KwIn{$x = (x_1, \ldots, x_n)$}
+        $\ell \gets 0$\;
+        \lFor{$i = 1$ \KwTo $n$}{$\ell \gets \ell + e^{x_i}$}
+        \lFor{$i = 1$ \KwTo $n$}{$o_i \gets e^{x_i} / \ell$}
+        \Return $(o_1, \ldots, o_n)$\;
+      \end{algorithm}
+      }
 
-\begin{lstlisting}
-def softmax(x):
-    l = sum([math.exp(v) for v in x])
-    return [math.exp(v) / l for v in x]
-\end{lstlisting}
+      \vspace{0.3em}
+      \centering
+      \begin{tikzpicture}[
+        cell/.style={draw, fill=gray!15, minimum width=3mm, minimum height=2.5mm, inner sep=0pt},
+        arr/.style={-stealth, thick}
+      ]
+        \foreach \i in {1,...,7} {
+          \node[cell] (c\i) at (\i*0.35, 0) {};
+        }
+        \draw[arr, blue!70!black] ([xshift=-1mm,yshift=-2mm]c1.south) --
+          ([xshift=1mm,yshift=-2mm]c7.south) node[right,font=\scriptsize] {$\ell = \sum e^{x_i}$};
+        \draw[arr, red!70!black] ([xshift=-1mm,yshift=-5mm]c1.south) --
+          ([xshift=1mm,yshift=-5mm]c7.south) node[right,font=\scriptsize] {$o_i = e^{x_i}/\ell$};
+      \end{tikzpicture}
+    \end{column}
+    \begin{column}{0.48\textwidth}
+      \textbf{Stable:} 3 passes. Subtract max for numerical stability.
+      \vspace{-0.3em}
+      \[
+        \text{softmax}(x)_i = \frac{e^{x_i - m}}{\sum_{j} e^{x_j - m}}, \; m = \max_j x_j
+      \]
+      \vspace{-0.8em}
 
-  \vspace{0.3em}
-  \textbf{Stable softmax:} Three passes. Subtract max for numerical stability.
-  \[
-    \text{softmax}(x)_i = \frac{e^{x_i - \max(x)}}{\sum_{j} e^{x_j - \max(x)}}
-  \]
+      {\small
+      \begin{algorithm}[H]
+        \caption{\small Stable Softmax}
+        \KwIn{$x = (x_1, \ldots, x_n)$}
+        $m \gets -\infty$\;
+        \lFor{$i = 1$ \KwTo $n$}{$m \gets \max(m, x_i)$}
+        $\ell \gets 0$\;
+        \lFor{$i = 1$ \KwTo $n$}{$\ell \gets \ell + e^{x_i - m}$}
+        \lFor{$i = 1$ \KwTo $n$}{$o_i \gets e^{x_i - m} / \ell$}
+        \Return $(o_1, \ldots, o_n)$\;
+      \end{algorithm}
+      }
 
-\begin{lstlisting}
-def stable_softmax(x):
-    m = max(x)
-    l = sum([math.exp(v - m) for v in x])
-    return [math.exp(v - m) / l for v in x]
-\end{lstlisting}
+      \vspace{0.3em}
+      \centering
+      \begin{tikzpicture}[
+        cell/.style={draw, fill=gray!15, minimum width=3mm, minimum height=2.5mm, inner sep=0pt},
+        arr/.style={-stealth, thick}
+      ]
+        \foreach \i in {1,...,7} {
+          \node[cell] (c\i) at (\i*0.35, 0) {};
+        }
+        \draw[arr, green!50!black] ([xshift=-1mm,yshift=-2mm]c1.south) --
+          ([xshift=1mm,yshift=-2mm]c7.south) node[right,font=\scriptsize] {$m = \max x_i$};
+        \draw[arr, blue!70!black] ([xshift=-1mm,yshift=-5mm]c1.south) --
+          ([xshift=1mm,yshift=-5mm]c7.south) node[right,font=\scriptsize] {$\ell = \sum e^{x_i - m}$};
+        \draw[arr, red!70!black] ([xshift=-1mm,yshift=-8mm]c1.south) --
+          ([xshift=1mm,yshift=-8mm]c7.south) node[right,font=\scriptsize] {$o_i = e^{x_i-m}/\ell$};
+      \end{tikzpicture}
+    \end{column}
+  \end{columns}
 \end{frame}
 
-\begin{frame}[fragile]{Streaming (Online) Softmax}
+\begin{frame}{Streaming (Online) Softmax}
+  \begin{columns}[T]
+    \begin{column}{0.55\textwidth}
+      \textbf{Key insight:} Fuse max and sum into a \emph{single pass}.
 
-  \textbf{Key insight:} Fuse max and sum computation into a \emph{single pass}.
+      \vspace{0.3em}
+      Maintain running max $m$ and rescaled sum $\ell$. When seeing $x_i$:
+      \vspace{-0.3em}
+      \begin{align*}
+        m' &= \max(m, x_i) \\
+        \ell' &= \ell \cdot e^{m - m'} + e^{x_i - m'}
+      \end{align*}
+      \vspace{-0.5em}
+
+      The correction $e^{m - m'}$ rescales the previous sum to the new max.
+
+      \vspace{0.3em}
+      {\small
+      \begin{algorithm}[H]
+        \caption{\small Online Softmax}
+        \KwIn{$x = (x_1, \ldots, x_n)$}
+        $m \gets -\infty, \; \ell \gets 0$\;
+        \For{$i = 1$ \KwTo $n$}{
+          $m' \gets \max(m, x_i)$\;
+          $\ell \gets \ell \cdot e^{m - m'} + e^{x_i - m'}$\;
+          $m \gets m'$\;
+        }
+        \lFor{$i = 1$ \KwTo $n$}{$o_i \gets e^{x_i - m} / \ell$}
+        \Return $(o_1, \ldots, o_n)$\;
+      \end{algorithm}
+      }
+    \end{column}
+    \begin{column}{0.42\textwidth}
+      \vspace{0.5em}
+      \centering
+      \begin{tikzpicture}[
+        cell/.style={draw, fill=gray!15, minimum width=3.5mm, minimum height=3mm, inner sep=0pt},
+        arr/.style={-stealth, thick}
+      ]
+        \foreach \i in {1,...,6} {
+          \node[cell] (o\i) at (\i*0.4, 0) {};
+        }
+        \draw[arr, violet!80!black, line width=1.2pt] ([xshift=-1mm,yshift=-2mm]o1.south) --
+          ([xshift=1mm,yshift=-2mm]o6.south) node[right,font=\tiny] {$m, \ell$ (fused)};
+        \draw[arr, red!70!black] ([xshift=-1mm,yshift=-5mm]o1.south) --
+          ([xshift=1mm,yshift=-5mm]o6.south) node[right,font=\tiny] {$o_i$};
+        \node[font=\tiny, anchor=west] at ([xshift=1mm,yshift=-7.5mm]o6.south) {2 HBM reads};
+      \end{tikzpicture}
+
+      \vspace{0.8em}
+      \begin{block}{\small Why this matters}
+        {\small Online softmax lets us process $K$ blocks one at a time without knowing the global max, exactly what tiled attention needs.}
+      \end{block}
+    \end{column}
+  \end{columns}
+\end{frame}
+
+% -----------------------------------------------------------------------
+\subsection{The Flash Attention Algorithm}
+
+\begin{frame}{Attention with Two Blocks}
+
+  \begin{columns}
+    \begin{column}{0.58\textwidth}
+      Consider a single query block $Q$ attending to keys and values split into two blocks.
+      The score matrix and values are partitioned as:
+      \[
+        S = \begin{bmatrix} S^{(1)} & S^{(2)} \end{bmatrix}, \qquad
+        V = \begin{bmatrix} V^{(1)} \\ V^{(2)} \end{bmatrix}
+      \]
+
+      To compute softmax over the full row we need the \textbf{global} max and sum:
+      \begin{align*}
+        m   &= \max\!\big(\text{rowmax}(S^{(1)}),\; \text{rowmax}(S^{(2)})\big) \\
+        \ell &= \text{rowsum}(e^{S^{(1)} - m}) + \text{rowsum}(e^{S^{(2)} - m})
+      \end{align*}
+
+      The softmax-weighted output becomes:
+      \[
+        O = \text{diag}(\ell)^{-1}\!\Big(e^{S^{(1)} - m} V^{(1)} + e^{S^{(2)} - m} V^{(2)}\Big)
+      \]
+    \end{column}
+    \begin{column}{0.40\textwidth}
+      \centering
+      \begin{tikzpicture}[
+        blk/.style={draw, thick, inner sep=2pt, font=\scriptsize\bfseries,
+                     minimum height=0.7cm},
+        arr/.style={-Stealth, thick, gray!70},
+        lbl/.style={font=\tiny, text=fagray},
+      ]
+        \node[blk, fill=orange!25, minimum width=1.3cm] (S1) at (0, 0) {$S^{(1)}$};
+        \node[blk, fill=orange!50, minimum width=1.3cm] (S2) at (2.8, 0) {$S^{(2)}$};
+        \node[lbl, above=2pt] at ($(S1.north)!0.5!(S2.north)$)
+          {$S = QK^\top$};
+        \draw[decorate, decoration={brace, mirror, amplitude=3pt}, thick]
+          (S1.north west) -- (S1.south west)
+          node[midway, left=3pt, font=\tiny] {$B_r$};
+        \draw[decorate, decoration={brace, mirror, amplitude=3pt}, thick]
+          (S1.south west) -- (S2.south east)
+          node[midway, below=3pt, font=\tiny] {$2B_c$};
+
+        \node[lbl, anchor=west] (mlbl) at ($(S2.east) + (0.2, 0.15)$)
+          {$\to m$};
+        \node[lbl, anchor=west] (llbl) at ($(S2.east) + (0.2,-0.15)$)
+          {$\to \ell$};
+
+        \draw[arr] (S1.south) -- ++(0, -0.45)
+          node[midway, left, font=\tiny] {$e^{\cdot\, - m}$};
+        \draw[arr] (S2.south) -- ++(0, -0.45)
+          node[midway, right, font=\tiny] {$e^{\cdot\, - m}$};
+
+        \node[blk, fill=vcol, minimum width=0.9cm, minimum height=0.6cm]
+          (V1) at ($(S1.south) + (0, -0.85)$) {$V^{(1)}$};
+        \node[blk, fill=vcol!60, minimum width=0.9cm, minimum height=0.6cm]
+          (V2) at ($(S2.south) + (0, -0.85)$) {$V^{(2)}$};
+        \node[font=\tiny, gray] at ($(V1.east)!0.5!(V2.west)$) {$\times$};
+        \node[lbl, right=2pt] at (V2.east) {$B_c \!\times\! d$};
+
+        \node[circle, draw, thick, fill=white, inner sep=1pt,
+              font=\scriptsize]
+          (plus) at ($(V1.south)!0.5!(V2.south) + (0, -0.6)$) {$+$};
+        \draw[arr] (V1.south) -- (plus);
+        \draw[arr] (V2.south) -- (plus);
+
+        \node[blk, fill=pink!40, minimum width=0.9cm]
+          (O) at ($(plus) + (0, -0.9)$) {$O$};
+        \draw[arr] (plus) -- (O)
+          node[midway, right, font=\tiny] {$\text{diag}(\ell)^{-1}$};
+        \node[lbl, right=2pt] at (O.east) {$B_r \!\times\! d$};
+      \end{tikzpicture}
+
+    \end{column}
+  \end{columns}
 
   \vspace{0.3em}
-  Maintain running max $m$ and running (rescaled) sum $\ell$. When seeing a new value $v$:
+  \begin{alertblock}{Challenge}
+    Softmax needs $m$ and $\ell$ across \emph{all} blocks, but we want to process one block at a time.
+  \end{alertblock}
+\end{frame}
+
+\begin{frame}{Online Softmax for Blocked Attention}
+  \begin{columns}[T]
+    \begin{column}{0.55\textwidth}
+      \textbf{Solution:} Apply streaming softmax to process one block at a time.
+
+      \vspace{0.3em}
+      {\small\textbf{After block 1:} local statistics and partial output}
+      \vspace{-0.3em}
+      \begin{align*}
+        m^{(1)} &= \text{rowmax}(S^{(1)}) \\
+        \ell^{(1)} &= \text{rowsum}(e^{S^{(1)} - m^{(1)}}) \\
+        O^{(1)} &= \text{diag}(\ell^{(1)})^{-1}\, e^{S^{(1)} - m^{(1)}}\, V^{(1)}
+      \end{align*}
+
+      \vspace{-0.5em}
+      {\small\textbf{After block 2:} update with correction $e^{m^{(1)} - m^{(2)}}$}
+      \vspace{-0.3em}
+      \begin{align*}
+        m^{(2)} &= \max(m^{(1)},\; \text{rowmax}(S^{(2)})) \\
+        \ell^{(2)} &= e^{m^{(1)} - m^{(2)}}\, \ell^{(1)} + \text{rowsum}(e^{S^{(2)} - m^{(2)}}) \\
+        O^{(2)} &= \tfrac{\ell^{(1)}}{\ell^{(2)}} e^{m^{(1)}-m^{(2)}} O^{(1)}
+                 + \tfrac{1}{\ell^{(2)}}\, e^{S^{(2)} - m^{(2)}}\, V^{(2)}
+      \end{align*}
+
+      \vspace{-0.3em}
+      {\small After the last block: $m^{(2)} \!=\! m$, $\ell^{(2)} \!=\! \ell$, $O^{(2)} \!=\! O$: exact result.}
+    \end{column}
+    \begin{column}{0.43\textwidth}
+      \centering
+      \begin{tikzpicture}[
+        blk/.style={draw, thick, inner sep=2pt, font=\scriptsize\bfseries,
+                     minimum height=0.7cm},
+        arr/.style={-Stealth, thick, gray!70},
+        lbl/.style={font=\tiny, text=fagray},
+      ]
+        % === Block 1 (left column) ===
+        \node[blk, fill=orange!25, minimum width=1.3cm] (S1) at (0, 0) {$S^{(1)}$};
+        \node[lbl, above=2pt] at (S1.north) {$Q K_1^\top$};
+
+        \draw[arr] (S1.south) -- ++(0, -0.4)
+          node[midway, left, font=\tiny] {$e^{\cdot\, - m^{(1)}}$};
+
+        \node[blk, fill=vcol, minimum width=0.9cm, minimum height=0.6cm]
+          (V1) at ($(S1.south) + (0, -0.8)$) {$V^{(1)}$};
+
+        % Stats after block 1
+        \node[draw, thick, rounded corners=2pt, fill=blue!10,
+              inner sep=2pt, font=\tiny, minimum width=1.1cm]
+          (st1) at ($(V1.south) + (0, -0.65)$) {$m^{(1)}, \ell^{(1)}$};
+        \draw[arr] (V1.south) -- (st1.north);
+
+        \node[blk, fill=pink!25, minimum width=0.9cm]
+          (O1) at ($(st1.south) + (0, -0.8)$) {$O^{(1)}$};
+        \draw[arr] (st1.south) -- (O1.north);
+
+        % === Block 2 (right column) ===
+        \node[blk, fill=orange!50, minimum width=1.3cm] (S2) at (2.8, 0) {$S^{(2)}$};
+        \node[lbl, above=2pt] at (S2.north) {$Q K_2^\top$};
+
+        \draw[arr] (S2.south) -- ++(0, -0.4)
+          node[midway, right, font=\tiny] {$e^{\cdot\, - m^{(2)}}$};
+
+        \node[blk, fill=vcol!60, minimum width=0.9cm, minimum height=0.6cm]
+          (V2) at ($(S2.south) + (0, -0.8)$) {$V^{(2)}$};
+
+        % Streaming softmax update: stats from block 1 feed into block 2
+        \node[draw, thick, rounded corners=2pt, fill=blue!20,
+              inner sep=2pt, font=\tiny, minimum width=1.1cm]
+          (st2) at ($(V2.south) + (0, -0.65)$) {$m^{(2)}, \ell^{(2)}$};
+        \draw[arr] (V2.south) -- (st2.north);
+
+        % Rescale arrow from block 1 stats to block 2 stats
+        \draw[arr, violet!80!black, line width=1pt]
+          (st1.east) -- (st2.west)
+          node[midway, above, font=\tiny, violet!80!black] {$\cdot\, e^{m^{(1)} - m^{(2)}}$};
+
+        % Plus node below st2
+        \node[circle, draw, thick, fill=white, inner sep=1pt,
+              font=\scriptsize]
+          (plus) at ($(st2.south) + (0, -0.7)$) {$+$};
+
+        % Rescale O^(1) into plus
+        \coordinate (elbow) at (O1.east |- plus.west);
+        \draw[arr, violet!80!black, line width=1pt] (O1.east) -- (elbow) -- (plus.west);
+        \node[above, font=\tiny, violet!80!black] at ($(elbow)!0.5!(plus.west)$) {rescale};
+
+        % New contribution from block 2 into plus
+        \draw[arr] (st2.south) -- (plus.north)
+          node[midway, right, font=\tiny] {$\tilde{P}^{(2)} V^{(2)}$};
+
+        % Final O below plus
+        \node[blk, fill=pink!40, minimum width=0.9cm]
+          (O) at ($(plus) + (0, -0.9)$) {$O$};
+        \draw[arr] (plus) -- (O)
+          node[midway, right, font=\tiny] {$\text{diag}(\ell^{(2)})^{-1}$};
+        \node[lbl, right=2pt] at (O.east) {$B_r \!\times\! d$};
+      \end{tikzpicture}
+    \end{column}
+  \end{columns}
+\end{frame}
+
+\begin{frame}{Flash Attention 2: Forward Pass}
+
+  \begin{columns}[T]
+    \begin{column}{0.55\textwidth}
+      {\small
+      \begin{algorithm}[H]
+        \caption{\small FlashAttention-2 Forward}
+        \KwIn{$Q, K, V \in \mathbb{R}^{T \times d}$ in HBM; block sizes $B_r, B_c$}
+        \KwOut{$O \in \mathbb{R}^{T \times d}$, $L \in \mathbb{R}^{T}$}
+        Divide $Q$ into $T_r$ blocks, $K, V$ into $T_c$ blocks\;
+        \For{$i = 1, \ldots, T_r$}{
+          \textcolor{loadcol}{Load $Q_i$ from HBM to SRAM}\;
+          $O_i \gets 0$, $\ell_i \gets 0$, $m_i \gets -\infty$\;
+          \For{$j = 1, \ldots, T_c$}{
+            \textcolor{loadcol}{Load $K_j, V_j$ from HBM to SRAM}\;
+            \textcolor{compcol}{$S_{ij} \gets Q_i K_j^\top$}\;
+            \textcolor{compcol}{$\tilde{m}_i \gets \max(m_i, \operatorname{rowmax}(S_{ij}))$}\;
+            \textcolor{compcol}{$\tilde{P}_{ij} \gets \exp(S_{ij} - \tilde{m}_i)$}\;
+            \textcolor{compcol}{$\ell_i \gets e^{m_i - \tilde{m}_i} \ell_i + \operatorname{rowsum}(\tilde{P}_{ij})$}\;
+            \textcolor{compcol}{$O_i \gets \operatorname{diag}(e^{m_i - \tilde{m}_i}) O_i + \tilde{P}_{ij} V_j$}\;
+            $m_i \gets \tilde{m}_i$\;
+          }
+          \textcolor{compcol}{$O_i \gets \operatorname{diag}(\ell_i)^{-1} O_i$} \tcp*{Trick 1}
+          $L_i \gets m_i + \log(\ell_i)$ \tcp*{Trick 2}
+          \textcolor{storecol}{Write $O_i$, $L_i$ to HBM}\;
+        }
+        \Return $O$, $L$\;
+      \end{algorithm}
+      }
+
+      \vspace{0.3em}
+      {\small
+      \begin{description}
+        \item[Trick 1:] Accumulate unnormalized $O_i$, divide by $\ell_i$ once at the end.
+        \item[Trick 2:] Store $L_i = m_i + \log(\ell_i)$ instead of $m_i$ and $\ell_i$ separately (for backward pass).
+      \end{description}
+      }
+    \end{column}
+    \begin{column}{0.43\textwidth}
+      \centering
+      \begin{tikzpicture}[
+        mat/.style={draw, thick, minimum width=5mm, minimum height=5mm,
+                    inner sep=0pt, font=\tiny\bfseries,
+                    text depth=.5ex, text height=1.5ex},
+        sram/.style={draw, thick, rounded corners=3pt, dashed,
+                     fill=fasram!15, inner sep=4pt},
+        hbm/.style={draw, thick, rounded corners=3pt,
+                    fill=fahbm!15, inner sep=4pt},
+        arr/.style={-Stealth, thick, gray!60},
+        lbl/.style={font=\tiny},
+      ]
+        % HBM region
+        \node[hbm, minimum width=3.2cm, minimum height=1.2cm] (hbmbox) at (0, 2.8) {};
+        \node[lbl, anchor=north west] at (hbmbox.north west) {HBM};
+
+        % Q, K, V in HBM - as block rows
+        \foreach \i/\c in {1/blue!20, 2/blue!35, 3/blue!50} {
+          \node[mat, fill=\c, minimum width=3.5mm] (Q\i) at (-1.1+\i*0.35, 2.65) {};
+        }
+        \node[lbl, above=1pt] at (Q2.north) {$Q$};
+
+        \foreach \i/\c in {1/green!20, 2/green!35, 3/green!50, 4/green!65} {
+          \node[mat, fill=\c, minimum width=3.5mm] (K\i) at (-0.05+\i*0.35, 2.65) {};
+        }
+        \node[lbl, above=1pt] at ($(K2.north)!0.5!(K3.north)$) {$K,V$};
+
+        % SRAM region (extended right, slightly taller)
+        \node[sram, minimum width=3.8cm, minimum height=1.8cm] (srambox) at (0.3, 0.5) {};
+        \node[lbl, anchor=north west] at (srambox.north west) {SRAM};
+
+        % Q_i block in SRAM (stays)
+        \node[mat, fill=blue!35, minimum width=8mm, minimum height=6mm]
+          (Qi) at (-0.9, 0.45) {$\mathstrut Q_i$};
+        \node[lbl, anchor=base] at (-0.9, -0.05) {stays};
+
+        % K_j, V_j block in SRAM (streamed)
+        \node[mat, fill=green!40, minimum width=8mm, minimum height=6mm]
+          (KVj) at (0.15, 0.45) {$\mathstrut K_j\!,V_j$};
+        \node[lbl, anchor=base] at (0.15, -0.05) {streamed};
+
+        % O_i, m_i, l_i accumulators
+        \node[mat, fill=pink!40, minimum width=8mm, minimum height=6mm]
+          (Oi) at (1.35, 0.45) {$\mathstrut O_i, m_i, \ell_i$};
+        \node[lbl, anchor=base] at (1.35, -0.05) {accum.};
+
+        % Arrows: HBM -> SRAM
+        \draw[arr, loadcol] (Q2.south) -- (Qi.north)
+          node[midway, left, lbl] {once};
+        \draw[arr, loadcol] (K2.south) -- (KVj.north)
+          node[midway, right, lbl] {loop};
+
+        % Arrow: SRAM -> HBM (write back)
+        \draw[arr, storecol] (Oi.north) -- (Oi.north |- hbmbox.south)
+          node[midway, right, lbl] {once};
+
+        % Legend
+        \node[lbl, loadcol, anchor=west] at (-1.4, -0.7) {$\blacksquare$ Load};
+        \node[lbl, compcol, anchor=west] at (-0.3, -0.7) {$\blacksquare$ Compute};
+        \node[lbl, storecol, anchor=west] at (0.85, -0.7) {$\blacksquare$ Store};
+      \end{tikzpicture}
+
+      \vspace{0.3em}
+      {\small
+      \textbf{Key:} $Q_i$ loaded once, $K_j, V_j$ streamed. No $T \times T$ matrix materialized. $O(T)$ extra memory.
+      }
+    \end{column}
+  \end{columns}
+\end{frame}
+
+\begin{frame}{Attention Backward Pass: Gradient Derivation}
+  \textbf{Forward:} $S = QK^\top$, \; $P = \text{softmax}(S)$, \; $O = PV$.
+  \quad Given $dO$, derive $dQ, dK, dV$.
+
+  \vspace{0.3em}
+  \textbf{Step 1: Gradients through $O = PV$}
+  \vspace{-0.5em}
   \begin{align*}
-    m' &= \max(m, v) \\
-    \ell' &= \ell \cdot e^{m - m'} + e^{v - m'}
+    dV &= P^\top dO & dP &= dO\, V^\top
   \end{align*}
 
-  The correction factor $e^{m - m'}$ rescales the previous sum to the new max.
+  \vspace{-0.5em}
+  \textbf{Step 2: Gradient through softmax} $P_i = \text{softmax}(S_i)$ (row-wise).
 
-\begin{lstlisting}
-def streaming_softmax(x):
-    m = float('-inf')
-    l = 0
-    for v in x:
-        m_next = max(m, v)
-        l = l * math.exp(m - m_next) + math.exp(v - m_next)
-        m = m_next
-    return [math.exp(v - m) / l for v in x]
-\end{lstlisting}
+  The Jacobian of softmax is $\frac{\partial P_i}{\partial S_i} = \text{diag}(P_i) - P_i P_i^\top$ (symmetric). By the chain rule, the row gradient $dS_i$ is obtained by multiplying $dP_i$ with this Jacobian:
+  \vspace{-0.3em}
+  \[
+    dS_i = \frac{\partial P_i}{\partial S_i}\, dP_i
+         = \big(\text{diag}(P_i) - P_i P_i^\top\big)\, dP_i
+         = P_i \odot dP_i - \underbrace{(P_i^\top dP_i)}_{=:\, D_i}\, P_i
+  \]
+
+  \vspace{-0.3em}
+  Componentwise: $dS_{ij} = P_{ij}(dP_{ij} - D_i)$, where the scalar $D_i = \sum_j P_{ij}\, dP_{ij}$.
+
+  \vspace{0.2em}
+  Substituting $dP_{ij} = (dO\, V^\top)_{ij} = \sum_k dO_{ik} V_{jk}$:
+  \vspace{-0.3em}
+  \[
+    D_i = \sum_j P_{ij} \sum_k dO_{ik} V_{jk}
+        = \sum_k dO_{ik} \underbrace{\sum_j P_{ij} V_{jk}}_{= O_{ik}}
+        = \sum_k dO_{ik}\, O_{ik}
+  \]
+
+  \vspace{-0.3em}
+  \textbf{Key insight:} $D = \text{rowsum}(dO \odot O)$ can be precomputed from $dO$ and $O$ alone. No need to materialize $P$ or $dP$.
 
   \vspace{0.3em}
-  \begin{block}{Why this matters for Flash Attention}
-    Streaming softmax lets us process $K$ blocks one at a time without knowing the global max --- exactly what we need for tiled attention.
-  \end{block}
+  \textbf{Step 3: Gradients through $S = QK^\top$}
+  \vspace{-0.5em}
+  \begin{align*}
+    dQ &= dS \cdot K & dK &= dS^\top \cdot Q
+  \end{align*}
+\end{frame}
+
+\begin{frame}{Flash Attention 2: Backward Pass}
+  \begin{columns}[T]
+    \begin{column}{0.55\textwidth}
+      {\small
+      \begin{algorithm}[H]
+        \caption{\small FlashAttention-2 Backward}
+        \KwIn{$Q, K, V, O, dO \in \mathbb{R}^{T \times d}$, $L \in \mathbb{R}^{T}$ in HBM; block sizes $B_r, B_c$}
+        \KwOut{$dQ, dK, dV \in \mathbb{R}^{T \times d}$}
+        Divide $K, V$ into $T_c$ blocks; $Q, O, dO, dQ$ into $T_r$ blocks\;
+        $D \gets \operatorname{rowsum}(dO \odot O)$ \tcp*{precompute}
+        \For{$j = 1, \ldots, T_c$}{
+          \textcolor{loadcol}{Load $K_j, V_j$ from HBM}\;
+          $dK_j \gets 0$, $dV_j \gets 0$\;
+          \For{$i = 1, \ldots, T_r$}{
+            \textcolor{loadcol}{Load $Q_i, O_i, dO_i, L_i, D_i$}\;
+            \textcolor{compcol}{$S_{ij} \gets Q_i K_j^\top$}\;
+            \textcolor{compcol}{$P_{ij} \gets \exp(S_{ij} - L_i)$} \tcp*{recompute}
+            \textcolor{compcol}{$dV_j \gets dV_j + P_{ij}^\top\, dO_i$}\;
+            \textcolor{compcol}{$dP_{ij} \gets dO_i\, V_j^\top$}\;
+            \textcolor{compcol}{$dS_{ij} \gets P_{ij} \odot (dP_{ij} - D_i)$}\;
+            \textcolor{compcol}{$dQ_i \gets dQ_i + dS_{ij}\, K_j$}\;
+            \textcolor{compcol}{$dK_j \gets dK_j + dS_{ij}^\top\, Q_i$}\;
+          }
+          \textcolor{storecol}{Write $dK_j$, $dV_j$ to HBM}\;
+        }
+        \Return $dQ, dK, dV$\;
+      \end{algorithm}
+      }
+    \end{column}
+    \begin{column}{0.43\textwidth}
+      \centering
+      \begin{tikzpicture}[
+        mat/.style={draw, thick, minimum width=5mm, minimum height=5mm,
+                    inner sep=0pt, font=\tiny\bfseries,
+                    text depth=.5ex, text height=1.5ex},
+        sram/.style={draw, thick, rounded corners=3pt, dashed,
+                     fill=fasram!15, inner sep=4pt},
+        hbm/.style={draw, thick, rounded corners=3pt,
+                    fill=fahbm!15, inner sep=4pt},
+        arr/.style={-Stealth, thick, gray!60},
+        lbl/.style={font=\tiny},
+      ]
+        % HBM region
+        \node[hbm, minimum width=3.4cm, minimum height=1.2cm] (hbmbox) at (0, 2.8) {};
+        \node[lbl, anchor=north west] at (hbmbox.north west) {HBM};
+
+        % K, V in HBM (left side)
+        \foreach \i/\c in {1/green!20, 2/green!35, 3/green!50, 4/green!65} {
+          \node[mat, fill=\c, minimum width=3.5mm] (K\i) at (-1.6+\i*0.35, 2.65) {};
+        }
+        \node[lbl, above=1pt] at ($(K2.north)!0.5!(K3.north)$) {$K,V$};
+
+        % Q, dO, O, L in HBM (shifted left, closer to K)
+        \foreach \i/\c in {1/blue!20, 2/blue!35, 3/blue!50} {
+          \node[mat, fill=\c, minimum width=3.5mm] (Q\i) at (0.2+\i*0.35, 2.65) {};
+        }
+        \node[lbl, above=1pt] at (Q2.north) {$Q,dO,O,L$};
+
+        % SRAM region (shorter and wider, mirrors HBM layout)
+        \node[sram, minimum width=3.6cm, minimum height=1.6cm] (srambox) at (0.1, 0.5) {};
+        \node[lbl, anchor=north west] at (srambox.north west) {SRAM};
+
+        % K_j, V_j in SRAM (stays)
+        \node[mat, fill=green!40, minimum width=8mm, minimum height=6mm]
+          (KVj) at (-1.05, 0.45) {$\mathstrut K_j\!,V_j$};
+        \node[lbl, anchor=base] at (-1.05, -0.05) {stays};
+
+        % Q_i, dO_i block (streamed)
+        \node[mat, fill=blue!35, minimum width=8mm, minimum height=6mm]
+          (Qi) at (0.1, 0.45) {$\mathstrut Q_i\!,dO_i$};
+        \node[lbl, anchor=base] at (0.1, -0.05) {streamed};
+
+        % dK_j, dV_j accumulators
+        \node[mat, fill=red!20, minimum width=8mm, minimum height=6mm]
+          (dKV) at (1.25, 0.45) {$\mathstrut dK_j\!,dV_j$};
+        \node[lbl, anchor=base] at (1.25, -0.05) {accum.};
+
+        % Arrows
+        \draw[arr, loadcol] (K2.south) -- (KVj.north)
+          node[midway, left, lbl] {once};
+        \draw[arr, loadcol] (Q2.south) -- (Qi.north)
+          node[midway, right, lbl] {loop};
+        \draw[arr, storecol] (dKV.north) -- (dKV.north |- hbmbox.south)
+          node[midway, right, lbl] {once};
+
+        % Legend
+        \node[lbl, loadcol, anchor=west] at (-1.5, -0.7) {$\blacksquare$ Load};
+        \node[lbl, compcol, anchor=west] at (-0.4, -0.7) {$\blacksquare$ Compute};
+        \node[lbl, storecol, anchor=west] at (0.7, -0.7) {$\blacksquare$ Store};
+      \end{tikzpicture}
+
+      \vspace{0.3em}
+      {\small
+      \textbf{Key differences from forward:}
+      \begin{itemize}
+        \item Outer loop over $K, V$ blocks (not $Q$)
+        \item $P_{ij}$ recomputed from $Q_i, K_j, L_i$
+        \item $D_i$ avoids storing $P$
+      \end{itemize}
+      }
+    \end{column}
+  \end{columns}
 \end{frame}
 
 % -----------------------------------------------------------------------
@@ -202,25 +716,67 @@ def streaming_softmax(x):
 
 \begin{frame}{CUDA Programming Model}
 
-  \begin{columns}
-    \begin{column}{0.55\textwidth}
+  \begin{columns}[T]
+    \begin{column}{0.40\textwidth}
       \textbf{CUDA} is NVIDIA's programming model for GPUs.
 
-      \vspace{0.5em}
-      \begin{itemize}
-        \item \textbf{Threads}: Execute the same kernel code in parallel
-        \item \textbf{Blocks}: Groups of up to 1024 threads; run on one SM
-        \item \textbf{Grids}: Collections of blocks
-        \item \textbf{Warps}: Groups of 32 threads executing in lockstep
+      \vspace{0.3em}
+      \begin{itemize}\small
+        \item \textbf{Thread}: runs the kernel
+        \item \textbf{Warp}: 32 threads executing in lockstep (SIMT); implicit, not exposed in CUDA code
+        \item \textbf{Block}: up to 1024 threads, runs on one SM
+        \item \textbf{Grid}: collection of blocks, launched on the GPU
       \end{itemize}
 
-      \vspace{0.5em}
-      Kernels are launched with:
-      \texttt{kernel<<<grid, block>>>(args)}
-    \end{column}
-    \begin{column}{0.42\textwidth}
+      \vspace{0.4em}
       \centering
-      \includegraphics[width=\linewidth]{ADL_SS2025/FlashAttention/CPU_vs_GPU2.png}
+      \includegraphics[width=0.95\linewidth]{ADL_SS2025/FlashAttention/CPU_vs_GPU2.png}
+    \end{column}
+    \begin{column}{0.58\textwidth}
+      \centering
+      \begin{tikzpicture}[
+        >=Stealth,
+        every node/.style={font=\scriptsize},
+        scale=0.85, transform shape,
+      ]
+        % --- Grid ---
+        \node[font=\small\bfseries, anchor=south] at (3.1, 4.05) {Grid (launched on GPU)};
+        \draw[thick, fablue, fill=fablue!8, rounded corners=2pt] (0, 1.6) rectangle (6.2, 4.0);
+        \foreach \x in {0,1,2,3} {
+          \foreach \y in {0,1} {
+            \pgfmathsetmacro{\xx}{0.4 + \x*1.4}
+            \pgfmathsetmacro{\yy}{1.85 + \y*0.95}
+            \draw[fill=fablue!35, thick, draw=fablue!80, rounded corners=1pt]
+              (\xx, \yy) rectangle (\xx+1.2, \yy+0.78);
+            \node[font=\scriptsize] at (\xx+0.6, \yy+0.39) {block};
+          }
+        }
+        % highlighted block (the one we zoom into)
+        \draw[ultra thick, fared, rounded corners=1pt] (1.8, 1.85) rectangle (3.0, 2.63);
+
+        % --- Zoom-in (explosion) lines ---
+        \draw[dashed, fared, semithick] (1.8, 1.85) -- (0, 0.5);
+        \draw[dashed, fared, semithick] (3.0, 1.85) -- (6.2, 0.5);
+
+        % --- Block ---
+        \node[font=\small\bfseries, anchor=south] at (3.1, 0.5) {Block (executed on one SM)};
+        \draw[thick, fared, fill=fared!5, rounded corners=2pt] (0, -2.5) rectangle (6.2, 0.5);
+
+        % Warps as colored rows of 32 thread cells
+        \foreach \w/\warpcolor in {0/fagreen, 1/fablue, 2/fasram, 3/fagray} {
+          \pgfmathsetmacro{\ypos}{0.2 - \w*0.6}
+          \node[font=\tiny, anchor=east] at (1.05, \ypos-0.22) {warp \w};
+          \foreach \i in {0,...,31} {
+            \pgfmathsetmacro{\xpos}{1.1 + \i*0.155}
+            \draw[fill=\warpcolor!50, draw=\warpcolor!90, line width=0.15pt]
+              (\xpos, \ypos) rectangle (\xpos+0.145, \ypos-0.45);
+          }
+        }
+        % brace under one full warp row (warp 3)
+        \draw[decorate, decoration={brace, amplitude=3pt, mirror}, fagray, thick]
+          (1.1, -2.05) -- (6.06, -2.05);
+        \node[font=\tiny, anchor=north] at (3.58, -2.12) {32 threads = 1 warp (lockstep, SIMT)};
+      \end{tikzpicture}
     \end{column}
   \end{columns}
 \end{frame}
@@ -231,18 +787,30 @@ def streaming_softmax(x):
 __global__ void cuda_vector_add(float *OUT, float *A, float *B, int N)
 {
     int i = threadIdx.x;
-    if (i < N)
-    {
-        OUT[i] = A[i] + B[i];
-    }
+    if (i < N) { OUT[i] = A[i] + B[i]; }
 }
+
+// Allocate device memory and copy host vectors to GPU
+float *d_A, *d_B, *d_OUT;
+cudaMalloc(&d_A,   N * sizeof(float));
+cudaMalloc(&d_B,   N * sizeof(float));
+cudaMalloc(&d_OUT, N * sizeof(float));
+cudaMemcpy(d_A, h_A, N * sizeof(float), cudaMemcpyHostToDevice);
+cudaMemcpy(d_B, h_B, N * sizeof(float), cudaMemcpyHostToDevice);
 
 // Launch: one block, N threads
 cuda_vector_add<<<1, N>>>(d_OUT, d_A, d_B, N);
 \end{lstlisting}
 
-  \vspace{0.5em}
-  Each thread computes one element: thread $i$ computes \texttt{OUT[i] = A[i] + B[i]}.
+  \vspace{0.2em}
+  {\scriptsize
+  \begin{description}
+    \item[\texttt{\_\_global\_\_}] Marks a function as a \emph{kernel}: callable from the host, runs on the device.
+    \item[\texttt{cudaMalloc} / \texttt{cudaMemcpy}] Allocate GPU memory and transfer data from host to device.
+    \item[\texttt{threadIdx.x}] Built-in: index of the current thread within its block (here the only block).
+    \item[\texttt{<{}<{}<1, N>{}>{}>}] Launch configuration: 1 block of $N$ threads. Each thread computes one element \texttt{OUT[i] = A[i] + B[i]}.
+  \end{description}
+  }
 \end{frame}
 
 \begin{frame}[fragile]{CUDA Example: Matrix Addition}
@@ -311,13 +879,28 @@ def add_kernel(x_ptr, y_ptr, output_ptr, n_elements,
     result = x + y
     tl.store(output_ptr + offsets, result, mask=mask)
 
+# Allocate vectors directly on the GPU (PyTorch tensors)
+x      = torch.rand(n, device='cuda')
+y      = torch.rand(n, device='cuda')
+output = torch.empty(n, device='cuda')
+
 # Launch
 grid = lambda meta: (triton.cdiv(n, meta['BLOCK_SIZE']),)
 add_kernel[grid](x, y, output, n, BLOCK_SIZE=256)
 \end{lstlisting}
 
-  \vspace{0.3em}
-  Each program handles a \texttt{BLOCK\_SIZE} chunk. Masks handle boundary conditions.
+  \vspace{0.2em}
+  {\scriptsize
+  \begin{description}
+    \item[\texttt{@triton.jit}] JIT-compiles the Python function into a GPU kernel.
+    \item[\texttt{tl.constexpr}] Marks a kernel parameter as a compile-time constant (specialised per value).
+    \item[\texttt{tl.program\_id(0)}] ID of the current program instance along axis 0 (like CUDA \texttt{blockIdx.x}).
+    \item[\texttt{tl.arange(0, BLOCK\_SIZE)}] Vector of indices $[0, \text{BLOCK\_SIZE})$; the kernel operates on whole tiles, not single threads.
+    \item[\texttt{mask}] Boolean vector that disables lanes past \texttt{n\_elements} for the tail block.
+    \item[\texttt{tl.load} / \texttt{tl.store}] Masked, vectorised reads/writes from/to global memory.
+    \item[\texttt{grid = lambda meta: \ldots}] Number of program instances to launch, computed from the chosen \texttt{BLOCK\_SIZE}.
+  \end{description}
+  }
 \end{frame}
 
 \begin{frame}[fragile]{Triton Example: Matrix Addition}
@@ -349,238 +932,205 @@ mat_add_kernel[grid](A, B, C, M, N, BLOCK_M=64, BLOCK_N=64)
 \begin{frame}{Block Matrix Multiplication in Triton}
 
   For computing $S = QK^\top$ in tiles, we need blockwise matrix multiplication.
+  Same formula as for scalars, but each entry is a sub-matrix:
+  \vspace{-0.3em}
+  \[
+    \setlength{\arraycolsep}{3pt}
+    \begin{bmatrix} C_{11} & C_{12} & C_{13} \\ C_{21} & C_{22} & C_{23} \end{bmatrix}
+    =
+    \begin{bmatrix} A_{11} & A_{12} \\ A_{21} & A_{22} \end{bmatrix}
+    \begin{bmatrix} B_{11} & B_{12} & B_{13} \\ B_{21} & B_{22} & B_{23} \end{bmatrix}
+    , \;\; C_{ij} = \sum_{k} A_{ik}\, B_{kj}
+  \]
 
-  \vspace{0.3em}
-  \begin{columns}
-    \begin{column}{0.55\textwidth}
-      To compute a block $C_{ij}$ of $C = A \times B$:
-      \[
-        C_{ij} = \sum_{k} A_{ik} \cdot B_{kj}
-      \]
+  \vspace{-0.4em}
+  \begin{itemize}\small
+    \item Each Triton program computes one output block $C_{ij}$, iterating over the $K$ dimension in chunks of \texttt{BLOCK\_SIZE\_K}
+  \end{itemize}
 
-      \begin{itemize}
-        \item Each program computes one output block
-        \item Iterate over $K$ dimension in chunks of \texttt{BLOCK\_SIZE\_K}
-        \item Accumulate partial results in registers (FP32)
-        \item Write final result to HBM
-      \end{itemize}
-    \end{column}
-    \begin{column}{0.42\textwidth}
-      \centering
-      \includegraphics[width=\linewidth]{ADL_SS2025/FlashAttention/block_matrix_multiplication.png}
-    \end{column}
-  \end{columns}
+  \vspace{0.2em}
+  \centering
+  \begin{tikzpicture}[
+    font=\tiny,
+    cell/.style={draw=fagray!50, line width=0.1pt},
+    block/.style={draw=black, line width=0.7pt},
+  ]
+    \def\sa{0.55}  % cell size in cm (uniform scale for A, B, and C)
+
+    % --- Matrix A: 8x4 elements, 2x2 blocks (each block 4x2 cells) ---
+    \begin{scope}[shift={(0, 0)}]
+      \foreach \i in {0,...,7} \foreach \j in {0,...,3} {
+        \draw[cell, fill=fablue!12]
+          (\j*\sa, 7*\sa - \i*\sa) rectangle (\j*\sa + \sa, 8*\sa - \i*\sa);
+      }
+      \draw[block] (0, 0) rectangle (4*\sa, 8*\sa);
+      \draw[block] (0, 4*\sa) -- (4*\sa, 4*\sa);
+      \draw[block] (2*\sa, 0) -- (2*\sa, 8*\sa);
+      \node[font=\scriptsize] at (1*\sa, 6*\sa) {$A_{11}$};
+      \node[font=\scriptsize] at (3*\sa, 6*\sa) {$A_{12}$};
+      \node[font=\scriptsize] at (1*\sa, 2*\sa) {$A_{21}$};
+      \node[font=\scriptsize] at (3*\sa, 2*\sa) {$A_{22}$};
+      \node[anchor=north, font=\scriptsize] at (2*\sa, -0.05) {$A:\, M{\times}K$};
+    \end{scope}
+
+    \node[font=\large] at (4*\sa + 0.3, 4*\sa) {$\times$};
+
+    % --- Matrix B: 4x6 elements, 2x3 blocks (each block 2x2 cells) ---
+    \begin{scope}[shift={(4*\sa + 0.6, 2*\sa)}]
+      \foreach \i in {0,...,3} \foreach \j in {0,...,5} {
+        \draw[cell, fill=fagreen!12]
+          (\j*\sa, 3*\sa - \i*\sa) rectangle (\j*\sa + \sa, 4*\sa - \i*\sa);
+      }
+      \draw[block] (0, 0) rectangle (6*\sa, 4*\sa);
+      \draw[block] (0, 2*\sa) -- (6*\sa, 2*\sa);
+      \foreach \k in {1,2} {
+        \draw[block] (2*\k*\sa, 0) -- (2*\k*\sa, 4*\sa);
+      }
+      \foreach \kc/\bj in {0/1, 1/2, 2/3} {
+        \pgfmathsetmacro{\xc}{(2*\kc + 1)*\sa}
+        \node[font=\scriptsize] at (\xc, 3*\sa) {$B_{1\bj}$};
+        \node[font=\scriptsize] at (\xc, 1*\sa) {$B_{2\bj}$};
+      }
+      \node[anchor=north, font=\scriptsize] at (3*\sa, -0.05) {$B:\, K{\times}N$};
+    \end{scope}
+
+    \node[font=\large] at (4*\sa + 0.6 + 6*\sa + 0.3, 4*\sa) {$=$};
+
+    % --- Matrix C: 2x3 grid of blocks. Each C block has the exact
+    %     dimensions of (A block height) x (B block width) =
+    %     (4 cells) x (2 cells) at the same \sa scale.
+    \begin{scope}[shift={(4*\sa + 1.2 + 6*\sa, 0)}]
+      \pgfmathsetmacro{\bw}{2*\sa}    % width  = 2 cells (= width of a B block)
+      \pgfmathsetmacro{\bh}{4*\sa}    % height = 4 cells (= height of an A block)
+      \foreach \i in {0,1} \foreach \j in {0,...,2} {
+        \pgfmathtruncatemacro{\ii}{\i+1}
+        \pgfmathtruncatemacro{\jj}{\j+1}
+        \draw[block, fill=fasram!18]
+          (\j*\bw, \bh - \i*\bh) rectangle (\j*\bw + \bw, 2*\bh - \i*\bh);
+        \node[align=center, font=\tiny] at (\j*\bw + 0.5*\bw, 1.5*\bh - \i*\bh)
+          {$A_{\ii 1}B_{1\jj}$\\$+$\\$A_{\ii 2}B_{2\jj}$};
+      }
+      \node[anchor=north, font=\scriptsize] at (1.5*\bw, -0.05) {$C = AB:\, M{\times}N$};
+    \end{scope}
+  \end{tikzpicture}
 \end{frame}
 
 \begin{frame}{Tensor Memory Layout}
 
-  \begin{columns}
-    \begin{column}{0.48\textwidth}
-      Tensors are stored as flat arrays with \textbf{shape} and \textbf{strides}:
-      \begin{itemize}
-        \item \textbf{Shape}: number of elements per dimension
-        \item \textbf{Strides}: number of elements to skip to move one step in each dimension
-      \end{itemize}
+  Tensors are flat arrays in memory, described by \textbf{shape} and \textbf{strides}:
+  \begin{itemize}\small
+    \item \textbf{shape}: number of elements per dimension
+    \item \textbf{stride}: number of elements to skip in memory to advance one step in that dimension
+  \end{itemize}
 
-      \vspace{0.3em}
-      \centering
-      \includegraphics[width=\linewidth]{ADL_SS2025/FlashAttention/vector_memory_layout.png}
+  \vspace{0.4em}
+  \centering
+  % --- Vector layout ---
+  \begin{tikzpicture}[
+    font=\scriptsize,
+    cell/.style={draw=fagray!70, minimum width=6mm, minimum height=6mm, inner sep=0pt, font=\scriptsize},
+  ]
+    \node[anchor=east, font=\small] at (-0.15, 0.8) {logical:};
+    \foreach \i/\v in {0/1, 1/2, 2/3, 3/5, 4/8, 5/13, 6/21} {
+      \node[cell, fill=fablue!15] (l\i) at (\i*0.7, 0.8) {$\v$};
+    }
+    \foreach \i in {0,...,6} {
+      \node[font=\tiny, fagray, above=-1pt of l\i] {[\i]};
+    }
+    \node[anchor=east, font=\small] at (-0.15, -0.8) {memory:};
+    \foreach \i/\v in {0/1, 1/2, 2/3, 3/5, 4/8, 5/13, 6/21} {
+      \node[cell, fill=fagreen!15] (p\i) at (\i*0.7, -0.8) {$\v$};
+    }
+    \foreach \i/\addr in {0/100, 1/104, 2/108, 3/112, 4/116, 5/120, 6/124} {
+      \node[font=\tiny, fagray, below=-1pt of p\i] {\addr};
+    }
+    \node[anchor=west, font=\small] at (5.4, 0.4) {1D vector:\; shape $= [7]$};
+    \node[anchor=west, font=\small] at (5.4, -0.4) {\hphantom{1D vector:\;} stride $= [1]$};
+  \end{tikzpicture}
 
-      \vspace{0.3em}
-      \includegraphics[width=\linewidth]{ADL_SS2025/FlashAttention/matrix_memory_layout.png}
-    \end{column}
-    \begin{column}{0.48\textwidth}
-      \textbf{Transpose via strides:}
-      \begin{itemize}
-        \item Exchange the strides $\to$ transpose without copying
-        \item Tensor becomes non-contiguous
-        \item Used in Flash Attention: $K$ is loaded transposed by swapping strides
-      \end{itemize}
+  \vspace{0.5em}
+  % --- Matrix layout (row-major) ---
+  \begin{tikzpicture}[
+    font=\scriptsize,
+    cell/.style={draw=fagray!70, minimum width=6mm, minimum height=6mm, inner sep=0pt, font=\scriptsize},
+  ]
+    \node[anchor=south, font=\small] at (0.7, 1.55) {logical $(2{\times}3)$};
+    \foreach \j/\v in {0/1, 1/2, 2/3} {
+      \node[cell, fill=fablue!25] (m0\j) at (\j*0.7, 0.85) {$\v$};
+    }
+    \foreach \j/\v in {0/5, 1/8, 2/13} {
+      \node[cell, fill=fasram!35] (m1\j) at (\j*0.7, 0.15) {$\v$};
+    }
+    \node[font=\tiny, fagray, left=2pt of m00] {row 0};
+    \node[font=\tiny, fagray, left=2pt of m10] {row 1};
 
-      \vspace{0.3em}
-      \centering
-      \includegraphics[width=\linewidth]{ADL_SS2025/FlashAttention/matrix_stride_transpose.png}
-    \end{column}
-  \end{columns}
+    \node[anchor=south, font=\small] at (5.5, 1.55) {memory (row-major)};
+    \foreach \i/\v/\c in {0/1/fablue!25, 1/2/fablue!25, 2/3/fablue!25, 3/5/fasram!35, 4/8/fasram!35, 5/13/fasram!35} {
+      \node[cell, fill=\c] (p\i) at (3.4 + \i*0.7, 0.5) {$\v$};
+    }
+    \foreach \i/\addr in {0/62, 1/66, 2/70, 3/74, 4/78, 5/82} {
+      \node[font=\tiny, fagray, below=-1pt of p\i] {\addr};
+    }
+    \draw[decorate, decoration={brace, amplitude=2pt}, fagray]
+      (p0.north west) -- node[above=2pt, font=\tiny] {row 0} (p2.north east);
+    \draw[decorate, decoration={brace, amplitude=2pt}, fagray]
+      (p3.north west) -- node[above=2pt, font=\tiny] {row 1} (p5.north east);
+
+    \node[anchor=west, font=\small] at (8.0, 0.85) {2D matrix:\; shape $= [2,3]$};
+    \node[anchor=west, font=\small] at (8.0, 0.30) {\hphantom{2D matrix:\;} stride $= [3,1]$};
+    \node[anchor=west, font=\tiny, fagray, align=left] at (8.0, -0.30)
+      {next row $\to +3$, next col $\to +1$};
+  \end{tikzpicture}
 \end{frame}
 
-% -----------------------------------------------------------------------
-\subsection{The Flash Attention Algorithm}
+\begin{frame}{Transpose via Strides}
 
-\begin{frame}{Attention with Two Blocks}
+  \textbf{Key trick:} Transposing a tensor only swaps its \emph{shape} and \emph{strides}. The physical memory is untouched, so the operation costs nothing.
 
-  \begin{columns}
-    \begin{column}{0.58\textwidth}
-      Consider a single query block $Q$ attending to keys and values split into two blocks.
-      The score matrix and values are partitioned as:
-      \[
-        S = \begin{bmatrix} S^{(1)} & S^{(2)} \end{bmatrix}, \qquad
-        V = \begin{bmatrix} V^{(1)} \\ V^{(2)} \end{bmatrix}
-      \]
+  \vspace{0.6em}
+  \centering
+  \begin{tikzpicture}[
+    font=\scriptsize,
+    cell/.style={draw=fagray!70, minimum width=6mm, minimum height=6mm, inner sep=0pt, font=\scriptsize},
+  ]
+    % --- M: 3 cols x 2 rows, vertically centered around y=1.65 ---
+    \node[font=\small] at (0.7, 2.85) {$M$};
+    \foreach \i/\j/\v in {0/0/1, 0/1/2, 0/2/3, 1/0/5, 1/1/8, 1/2/13} {
+      \node[cell, fill=fablue!20] at (\j*0.7, 2.0 - \i*0.7) {$\v$};
+    }
+    \node[font=\tiny, align=center, anchor=north] at (0.7, 0.55)
+      {shape $[2,3]$\\stride $[3,1]$};
 
-      To compute softmax over the full row we need the \textbf{global} max and sum:
-      \begin{align*}
-        m   &= \max\!\big(\text{rowmax}(S^{(1)}),\; \text{rowmax}(S^{(2)})\big) \\
-        \ell &= \text{rowsum}(e^{S^{(1)} - m}) + \text{rowsum}(e^{S^{(2)} - m})
-      \end{align*}
+    % --- swap arrow between M and M^T ---
+    \draw[->, very thick, fared] (1.85, 1.65) -- (3.15, 1.65);
+    \node[font=\tiny, fared, anchor=south] at (2.5, 1.72) {swap strides};
+    \node[font=\tiny, fared, anchor=north] at (2.5, 1.55) {(no copy)};
 
-      The softmax-weighted output becomes:
-      \[
-        O = \text{diag}(\ell)^{-1}\!\Big(e^{S^{(1)} - m} V^{(1)} + e^{S^{(2)} - m} V^{(2)}\Big)
-      \]
-    \end{column}
-    \begin{column}{0.40\textwidth}
-      \centering
-      % Flow diagram: S → (m, ℓ) → weighted sum with V → O
-      \begin{tikzpicture}[
-        blk/.style={draw, thick, inner sep=2pt, font=\scriptsize\bfseries,
-                     minimum height=0.7cm},
-        arr/.style={-Stealth, thick, gray!70},
-        lbl/.style={font=\tiny, text=fagray},
-      ]
-        % --- S blocks (top): scores, side by side ---
-        \node[blk, fill=orange!25, minimum width=1.3cm] (S1) at (0, 0) {$S^{(1)}$};
-        \node[blk, fill=orange!50, minimum width=1.3cm, anchor=west]
-          (S2) at (S1.east) {$S^{(2)}$};
-        \node[lbl, above=2pt] at ($(S1.north)!0.5!(S2.north)$)
-          {$S = QK^\top$};
-        \draw[decorate, decoration={brace, amplitude=3pt}, thick]
-          (S1.north west) -- (S1.south west)
-          node[midway, left=3pt, font=\tiny] {$B_r$};
-        \draw[decorate, decoration={brace, mirror, amplitude=3pt}, thick]
-          (S1.south west) -- (S2.south east)
-          node[midway, below=3pt, font=\tiny] {$2B_c$};
+    % --- M^T: 2 cols x 3 rows, vertically centered around y=1.65 ---
+    \node[font=\small] at (3.85, 2.85) {$M^\top$};
+    \foreach \i/\j/\v in {0/0/1, 0/1/5, 1/0/2, 1/1/8, 2/0/3, 2/1/13} {
+      \node[cell, fill=fasram!30] at (3.5 + \j*0.7, 2.35 - \i*0.7) {$\v$};
+    }
+    \node[font=\tiny, align=center, anchor=north] at (3.85, 0.55)
+      {shape $[3,2]$\\stride $[1,3]$};
 
-        % --- m and ℓ (right of S) ---
-        \node[lbl, anchor=west] (mlbl) at ($(S2.east) + (0.2, 0.15)$)
-          {$\to m$};
-        \node[lbl, anchor=west] (llbl) at ($(S2.east) + (0.2,-0.15)$)
-          {$\to \ell$};
+    % --- shared physical memory ---
+    \node[font=\small] at (7.4, 2.85) {shared physical memory};
+    \foreach \i/\v in {0/1, 1/2, 2/3, 3/5, 4/8, 5/13} {
+      \node[cell, fill=fagreen!15] (p\i) at (5.3 + \i*0.7, 1.65) {$\v$};
+    }
+    \foreach \i/\addr in {0/62, 1/66, 2/70, 3/74, 4/78, 5/82} {
+      \node[font=\tiny, fagray, below=-1pt of p\i] {\addr};
+    }
+    \node[font=\tiny, fagray, align=center, anchor=north] at (7.4, 0.95)
+      {physical bytes \emph{unchanged}};
+  \end{tikzpicture}
 
-        % --- Arrow down: exponentiate & weight ---
-        \draw[arr] (S1.south) -- ++(0, -0.45)
-          node[midway, left, font=\tiny] {$e^{\cdot\, - m}$};
-        \draw[arr] (S2.south) -- ++(0, -0.45)
-          node[midway, right, font=\tiny] {$e^{\cdot\, - m}$};
-
-        % --- V blocks (middle row): e^{S-m} * V ---
-        \node[blk, fill=vcol, minimum width=0.9cm, minimum height=0.6cm]
-          (V1) at ($(S1.south) + (0, -0.85)$) {$V^{(1)}$};
-        \node[blk, fill=vcol!60, minimum width=0.9cm, minimum height=0.6cm]
-          (V2) at ($(S2.south) + (0, -0.85)$) {$V^{(2)}$};
-        \node[font=\tiny, gray] at ($(V1.east)!0.5!(V2.west)$) {$\times$};
-        \node[lbl, right=2pt] at (V2.east) {$B_c \!\times\! d$};
-
-        % --- Arrows converging to sum node ---
-        \node[circle, draw, thick, fill=white, inner sep=1pt,
-              font=\scriptsize]
-          (plus) at ($(V1.south)!0.5!(V2.south) + (0, -0.6)$) {$+$};
-        \draw[arr] (V1.south) -- (plus);
-        \draw[arr] (V2.south) -- (plus);
-
-        % --- O block (bottom) ---
-        \node[blk, fill=pink!40, minimum width=0.9cm]
-          (O) at ($(plus) + (0, -0.7)$) {$O$};
-        \draw[arr] (plus) -- (O)
-          node[midway, right, font=\tiny] {$\text{diag}(\ell)^{-1}$};
-        \node[lbl, right=2pt] at (O.east) {$B_r \!\times\! d$};
-      \end{tikzpicture}
-
-    \end{column}
-  \end{columns}
-
-  \vspace{0.3em}
-  \begin{alertblock}{Challenge}
-    Softmax needs $m$ and $\ell$ across \emph{all} blocks, but we want to process one block at a time.
-  \end{alertblock}
-\end{frame}
-
-\begin{frame}{Online Softmax for Blocked Attention}
-
-  \textbf{Solution:} Apply streaming softmax to process one block at a time.
-
-  \vspace{0.3em}
-  \textbf{After block 1:} local statistics and partial output
-  \begin{align*}
-    m^{(1)} &= \text{rowmax}(S^{(1)}) \\
-    \ell^{(1)} &= \text{rowsum}(e^{S^{(1)} - m^{(1)}}) \\
-    O^{(1)} &= \text{diag}(\ell^{(1)})^{-1}\, e^{S^{(1)} - m^{(1)}}\, V^{(1)}
-  \end{align*}
-
-  \textbf{After block 2:} update statistics using correction factor $e^{m^{(1)} - m^{(2)}}$
-  \begin{align*}
-    m^{(2)} &= \max(m^{(1)},\; \text{rowmax}(S^{(2)})) = m \\
-    \ell^{(2)} &= e^{m^{(1)} - m^{(2)}}\, \ell^{(1)} + \text{rowsum}(e^{S^{(2)} - m^{(2)}}) = \ell \\
-    O^{(2)} &= \text{diag}(\ell^{(1)}\!/\ell^{(2)})^{-1}\, O^{(1)}
-             + \text{diag}(\ell^{(2)})^{-1}\, e^{S^{(2)} - m^{(2)}}\, V^{(2)} = O
-  \end{align*}
-
-  After the last block, $m^{(2)} = m$, $\ell^{(2)} = \ell$, $O^{(2)} = O$ --- the exact result.
-\end{frame}
-
-\begin{frame}{Two Efficiency Tricks}
-
-  \begin{columns}
-    \begin{column}{0.55\textwidth}
-      \textbf{Trick 1: $O$ scaling}
-
-      Instead of dividing by $\ell_i$ at every step, accumulate the unnormalized output and divide once at the end:
-
-      \centering
-      \includegraphics[width=\linewidth]{ADL_SS2025/FlashAttention/O_scaling_trick.png}
-    \end{column}
-    \begin{column}{0.42\textwidth}
-      \textbf{Trick 2: Store $L = m + \log \ell$}
-
-      For the backward pass, store the logsumexp $L_i = m_i + \log(\ell_i)$ instead of both $m_i$ and $\ell_i$ separately:
-
-      \centering
-      \includegraphics[width=0.5\linewidth]{ADL_SS2025/FlashAttention/L_saving_trick.png}
-    \end{column}
-  \end{columns}
-\end{frame}
-
-\begin{frame}{Flash Attention 2: Forward Pass Algorithm}
-
-  \begin{columns}
-    \begin{column}{0.58\textwidth}
-      \begin{tcolorbox}[colback=white, colframe=gray!60, boxrule=0.5pt,
-        title={\footnotesize\textsc{FlashAttention-2 Forward}}, fonttitle=\bfseries,
-        left=2pt, right=2pt, top=2pt, bottom=2pt]
-      \scriptsize
-      \textbf{Input:} $Q, K, V \in \mathbb{R}^{T \times d}$ in HBM; block sizes $B_r, B_c$\\[2pt]
-      Divide $Q$ into $T_r = \lceil T/B_r \rceil$ blocks; $K, V$ into $T_c = \lceil T/B_c \rceil$ blocks\\[2pt]
-      \textbf{for} $i = 1, \ldots, T_r$ \textbf{do}\\
-      \quad Load $Q_i$ from HBM to SRAM\\
-      \quad Init $O_i = 0$,\; $\ell_i = 0$,\; $m_i = -\infty$\\
-      \quad \textbf{for} $j = 1, \ldots, T_c$ \textbf{do}\\
-      \quad\quad Load $K_j, V_j$ from HBM to SRAM\\
-      \quad\quad $S_{ij} = Q_i K_j^\top$\\
-      \quad\quad $\tilde{m}_i = \max(m_i,\; \text{rowmax}(S_{ij}))$\\
-      \quad\quad $\tilde{P}_{ij} = \exp(S_{ij} - \tilde{m}_i)$\\
-      \quad\quad $\ell_i \leftarrow e^{m_i - \tilde{m}_i}\, \ell_i + \text{rowsum}(\tilde{P}_{ij})$\\
-      \quad\quad $O_i \leftarrow \text{diag}(e^{m_i - \tilde{m}_i})\, O_i + \tilde{P}_{ij}\, V_j$\\
-      \quad\quad $m_i \leftarrow \tilde{m}_i$\\
-      \quad \textbf{end for}\\
-      \quad $O_i \leftarrow \text{diag}(\ell_i)^{-1}\, O_i$\\
-      \quad $L_i \leftarrow m_i + \log(\ell_i)$\\
-      \quad Write $O_i$, $L_i$ to HBM\\
-      \textbf{end for}\\[2pt]
-      \textbf{Return} $O$, $L$
-      \end{tcolorbox}
-    \end{column}
-    \begin{column}{0.40\textwidth}
-      \textbf{Key properties:}
-      \begin{itemize}
-        \item Outer loop over $Q$ blocks (one per GPU program)
-        \item Inner loop over $K, V$ blocks --- loaded from HBM one at a time
-        \item $Q_i$ stays in SRAM throughout its inner loop
-        \item $O(T)$ memory instead of $O(T^2)$
-        \item No $T \times T$ matrix ever materialized
-        \item $L_i$ stores logsumexp for the backward pass
-      \end{itemize}
-    \end{column}
-  \end{columns}
+  \vspace{0.4em}
+  \begin{itemize}\small
+    \item Resulting view is non-contiguous: stride along the new fastest axis is no longer $1$
+    \item Flash Attention uses this to load $K^\top$ for free by swapping the last two strides of $K$
+  \end{itemize}
 \end{frame}
 
 % -----------------------------------------------------------------------
@@ -658,6 +1208,75 @@ def _attn_fwd(Q, K, V, softmax_scale, M, O,
   Each program processes one $Q$-block for one head of one batch element.
 \end{frame}
 
+\begin{frame}[fragile]{Backward Pass: Inner Loop}
+
+\begin{lstlisting}
+@triton.jit
+def _attn_bwd_inner(dQ_block, Q_block, K_block_ptr, V_block_ptr,
+                     softmax_scale, L_i, D_i, dO_block,
+                     BLOCK_SIZE_Q: tl.constexpr,
+                     BLOCK_SIZE_KV: tl.constexpr,
+                     SEQ_LEN: tl.constexpr):
+    lo, hi = 0, SEQ_LEN
+    K_block_ptr = tl.advance(K_block_ptr, (0, lo))
+    V_block_ptr = tl.advance(V_block_ptr, (lo, 0))
+    for start_kv in range(lo, hi, BLOCK_SIZE_KV):
+        K_block = tl.load(K_block_ptr)
+        V_block = tl.load(V_block_ptr)
+        # Recompute P from Q, K and saved logsumexp L
+        QK_block = tl.dot(Q_block, K_block)
+        P_block = tl.math.exp(QK_block * softmax_scale - L_i[:, None])
+        # dS = P * (dO @ V^T - D)
+        dP_block = tl.dot(dO_block, tl.trans(V_block))
+        dS_block = P_block * (dP_block - D_i[:, None])
+        # Accumulate dQ
+        dQ_block += tl.dot(dS_block.to(tl.float16), tl.trans(K_block))
+        K_block_ptr = tl.advance(K_block_ptr, (0, BLOCK_SIZE_KV))
+        V_block_ptr = tl.advance(V_block_ptr, (BLOCK_SIZE_KV, 0))
+    return dQ_block
+\end{lstlisting}
+\end{frame}
+
+\begin{frame}[fragile]{Backward Pass: Main Kernel}
+
+\begin{lstlisting}
+@triton.jit
+def _attn_bwd(Q, K, V, softmax_scale, dO, dQ, dK, dV, M,
+              SEQ_LEN: tl.constexpr, HEAD_DIM: tl.constexpr,
+              BLOCK_SIZE_Q: tl.constexpr, BLOCK_SIZE_KV: tl.constexpr,
+              ... ):  # stride arguments omitted
+    # Phase 1: compute dQ (outer loop over Q blocks)
+    block_index_q = tl.program_id(0)
+    Q_block = tl.load(Q_block_ptr)
+    dO_block = tl.load(dO_block_ptr)
+    L_i = tl.load(M + offs_q)                 # saved logsumexp
+    D_i = tl.sum(dO_block * tl.load(O_ptr), 1) # D = rowsum(dO * O)
+    dQ_block = tl.zeros([BLOCK_SIZE_Q, HEAD_DIM], dtype=tl.float32)
+    dQ_block = _attn_bwd_inner(dQ_block, Q_block, K_ptr, V_ptr,
+                                softmax_scale, L_i, D_i, dO_block, ...)
+    tl.store(dQ_block_ptr, dQ_block.to(tl.float16))
+    # Phase 2: compute dK, dV (outer loop over KV blocks)
+    block_index_kv = tl.program_id(0)
+    K_block = tl.load(K_block_ptr)
+    V_block = tl.load(V_block_ptr)
+    dK_block = tl.zeros([BLOCK_SIZE_KV, HEAD_DIM], dtype=tl.float32)
+    dV_block = tl.zeros([BLOCK_SIZE_KV, HEAD_DIM], dtype=tl.float32)
+    for start_q in range(0, SEQ_LEN, BLOCK_SIZE_Q):
+        Q_block = tl.load(Q_block_ptr)  # stream Q blocks
+        dO_block = tl.load(dO_block_ptr)
+        L_i = tl.load(M + offs_q)
+        D_i = ...  # precomputed or recomputed
+        QK_block = tl.dot(tl.trans(K_block), Q_block) # K^T @ Q
+        P_block = tl.math.exp(QK_block * softmax_scale - L_i[None, :])
+        dV_block += tl.dot(P_block, dO_block)         # P^T @ dO
+        dP_block = tl.dot(V_block, tl.trans(dO_block)) # V @ dO^T
+        dS_block = P_block * (dP_block - D_i[None, :])
+        dK_block += tl.dot(dS_block, Q_block)          # dS^T @ Q
+    tl.store(dK_block_ptr, dK_block.to(tl.float16))
+    tl.store(dV_block_ptr, dV_block.to(tl.float16))
+\end{lstlisting}
+\end{frame}
+
 \begin{frame}[fragile]{PyTorch Integration}
 
 \begin{lstlisting}
@@ -669,26 +1288,27 @@ class TritonAttention(torch.autograd.Function):
         M = torch.empty((BATCH_SIZE, NUM_HEADS, SEQ_LEN),
                         device=Q.device, dtype=torch.float32)
         stage = 3 if causal else 1
-        grid = lambda args: (
-            triton.cdiv(SEQ_LEN, args["BLOCK_SIZE_Q"]),
-            BATCH_SIZE * NUM_HEADS, 1)
-        _attn_fwd[grid](
-            Q=Q, K=K, V=V, softmax_scale=softmax_scale, M=M, O=O,
-            stride_Q_batch=Q.stride(0), stride_Q_head=Q.stride(1),
-            stride_Q_seq=Q.stride(2), stride_Q_dim=Q.stride(3),
-            # ... same for K, V, O strides ...
-            BATCH_SIZE=BATCH_SIZE, NUM_HEADS=NUM_HEADS,
-            SEQ_LEN=SEQ_LEN, HEAD_DIM=HEAD_DIM, STAGE=stage)
+        grid = lambda args: (triton.cdiv(SEQ_LEN, args["BLOCK_SIZE_Q"]),
+                             BATCH_SIZE * NUM_HEADS, 1)
+        _attn_fwd[grid](Q=Q, K=K, V=V, softmax_scale=softmax_scale,
+            M=M, O=O, ..., STAGE=stage)  # strides omitted
         ctx.save_for_backward(Q, K, V, O, M)
+        ctx.softmax_scale = softmax_scale
+        ctx.causal = causal
         return O
-\end{lstlisting}
 
-  \vspace{0.3em}
-  \begin{itemize}
-    \item $M$ stores the logsumexp values needed for the backward pass
-    \item Causal attention uses \texttt{STAGE=3} (processes left-of-diagonal + diagonal blocks)
-    \item Non-causal uses \texttt{STAGE=1} (processes all blocks)
-  \end{itemize}
+    @staticmethod
+    def backward(ctx, dO):
+        Q, K, V, O, M = ctx.saved_tensors
+        dQ = torch.empty_like(Q)
+        dK = torch.empty_like(K)
+        dV = torch.empty_like(V)
+        grid = lambda args: (triton.cdiv(SEQ_LEN, args["BLOCK_SIZE_Q"]),
+                             BATCH_SIZE * NUM_HEADS, 1)
+        _attn_bwd[grid](Q=Q, K=K, V=V, softmax_scale=ctx.softmax_scale,
+            dO=dO, dQ=dQ, dK=dK, dV=dV, M=M, ...)
+        return dQ, dK, dV, None, None
+\end{lstlisting}
 \end{frame}
 
 \begin{frame}{Causal vs.\ Non-Causal Attention}
@@ -705,7 +1325,7 @@ class TritonAttention(torch.autograd.Function):
       \end{enumerate}
 
       \vspace{0.3em}
-      Blocks fully \emph{right} of the diagonal are skipped entirely --- saving computation.
+      Blocks fully \emph{right} of the diagonal are skipped entirely, saving computation.
     \end{column}
     \begin{column}{0.42\textwidth}
       \begin{center}
@@ -740,7 +1360,7 @@ class TritonAttention(torch.autograd.Function):
     \item \textbf{Problem}: Standard attention is \emph{memory-bound} due to materializing $T \times T$ matrices in HBM
     \item \textbf{Solution}: Tile the computation, keep blocks in SRAM, use online softmax to avoid materializing the full attention matrix
     \item \textbf{Streaming softmax}: Enables incremental softmax computation across blocks with a running max and sum
-    \item \textbf{Kernel fusion}: Single fused kernel for the entire forward pass --- no intermediate HBM writes
+    \item \textbf{Kernel fusion}: Single fused kernel for the entire forward pass. No intermediate HBM writes
     \item \textbf{Backward pass}: Recompute attention weights from $Q, K$ instead of storing them; use saved logsumexp $L$
     \item \textbf{Result}: Exact attention (not an approximation!) with $O(T)$ memory and significantly faster wall-clock time
   \end{enumerate}

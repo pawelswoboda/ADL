@@ -1,56 +1,55 @@
-\frametitle{Mask2Former: Masked Attention for Universal Segmentation}
+\frametitle{ReAct: Reason + Act}
 
-  \cite{cheng2022mask2former}: Improve MaskFormer with \textbf{masked cross-attention} (restrict attention to predicted mask region) and \textbf{multi-scale} decoder features.
+  \cite{yao2023react}: Interleave \emphdef{Thought} (internal reasoning),
+  \emphdef{Action} (tool call), and \emphdef{Observation} (tool result) inside a single
+  rolling context. The LLM drives its own control flow.
 
   \vspace{0.3em}
-  \begin{center}
-    \begin{tikzpicture}[
-      scale=0.72, every node/.style={scale=0.72},
-      box/.style={draw, rounded corners, fill=#1, minimum width=2.0cm, minimum height=0.45cm, align=center, font=\small},
-      arr/.style={-Stealth, thick},
-    ]
-      % --- Masked Attention Illustration ---
-      \node[font=\small\bfseries] at (0, 5.5) {Standard Cross-Attention};
+  \begin{columns}
+    \begin{column}{0.55\textwidth}
+      {\scriptsize\textbf{ReAct trace (HotpotQA-style)}}
+\begin{lstlisting}[basicstyle=\scriptsize\ttfamily, frame=single, backgroundcolor=\color{blue!3}, rulecolor=\color{blue!50!black}, keywordstyle={}, commentstyle={}, stringstyle={}, xleftmargin=0.3em, xrightmargin=0.3em, mathescape=false]
+Q: Who directed the 1982 film
+   that won Best Picture?
 
-      % Standard: attend to all
-      \begin{scope}[shift={(-2, 0.5)}]
-        \draw[thick] (0, 0) rectangle (4, 4);
-        % All pixels highlighted
-        \fill[blue!10] (0, 0) rectangle (4, 4);
-        % Object region
-        \fill[blue!30] (1.2, 1.0) -- (1.5, 3.0) -- (2.8, 3.2) -- (3.0, 1.2) -- cycle;
-        \draw[thick, blue] (1.2, 1.0) -- (1.5, 3.0) -- (2.8, 3.2) -- (3.0, 1.2) -- cycle;
-        % Query arrow
-        \fill[red] (2.0, 2.0) circle (3pt);
-        \draw[thick] (0, 0) rectangle (4, 4);
-        \node[font=\tiny, text=blue!60!black] at (2.0, -0.4) {attends to \textbf{all} pixels};
-      \end{scope}
+Thought: I need to find the 1982
+Best Picture, then its director.
+Action: search("1982 Best Picture")
+Observation: "Gandhi"
 
-      \node[font=\small\bfseries] at (7, 5.5) {Masked Cross-Attention};
+Thought: Now find Gandhi's director.
+Action: search("Gandhi 1982 director")
+Observation: "Richard Attenborough"
 
-      % Masked: attend to predicted region only
-      \begin{scope}[shift={(5, 0.5)}]
-        \draw[thick] (0, 0) rectangle (4, 4);
-        % Background grayed out
-        \fill[gray!10] (0, 0) rectangle (4, 4);
-        % Object region highlighted
-        \fill[blue!30] (1.2, 1.0) -- (1.5, 3.0) -- (2.8, 3.2) -- (3.0, 1.2) -- cycle;
-        \draw[thick, blue] (1.2, 1.0) -- (1.5, 3.0) -- (2.8, 3.2) -- (3.0, 1.2) -- cycle;
-        % X marks on background
-        \foreach \x/\y in {0.5/0.5, 0.5/3.5, 3.5/0.5, 3.5/3.5, 0.5/2.0, 3.5/2.0} {
-          \node[font=\tiny, text=red!50] at (\x, \y) {$\times$};
-        }
-        \fill[red] (2.0, 2.0) circle (3pt);
-        \draw[thick] (0, 0) rectangle (4, 4);
-        \node[font=\tiny, text=blue!60!black] at (2.0, -0.4) {attends to \textbf{predicted mask} only};
-      \end{scope}
-    \end{tikzpicture}
-  \end{center}
+Thought: I have the answer.
+Action: finish("Richard Attenborough")
+\end{lstlisting}
+    \end{column}
+    \begin{column}{0.43\textwidth}
+      \begin{center}
+        \begin{tikzpicture}[
+          scale=0.85, every node/.style={scale=0.85},
+          stage/.style={draw, rounded corners, minimum width=1.9cm, minimum height=0.55cm, font=\scriptsize},
+          arr/.style={-Stealth, thick},
+        ]
+          \node[stage, fill=violet!15] (think) at (0,2.2) {Thought};
+          \node[stage, fill=blue!15]   (act)   at (0,1.0) {Action};
+          \node[stage, fill=green!15]  (obs)   at (0,-0.2) {Observation};
+          \node[stage, fill=orange!15] (done)  at (0,-1.4) {Final answer};
 
-  \vspace{0.2em}
-  \textbf{Masked cross-attention}:
-  \[
-    X_\ell = \operatorname{softmax}\!\Bigl(\mathcal{M}_{\ell-1} + \frac{Q_\ell K_\ell^\top}{\sqrt{d}}\Bigr) V_\ell + X_{\ell-1}
-  \]
-  where $\mathcal{M}_{\ell-1}(i, h, w) = \begin{cases} 0 & \text{if } \sigma(m_{\ell-1}(h,w)) \geq 0.5 \\ -\infty & \text{otherwise}\end{cases}$
-  \quad ($m_{\ell-1}$: predicted mask from previous layer)
+          \draw[arr] (think) -- (act);
+          \draw[arr] (act) -- (obs);
+          \draw[arr] (obs.west) to[out=180, in=180, looseness=2.2] (think.west);
+          \draw[arr] (obs) -- (done);
+
+          \node[font=\tiny, gray, anchor=west] at (1.2, 1.0) {LLM};
+          \node[font=\tiny, gray, anchor=west] at (1.2, -0.2) {tool / env};
+        \end{tikzpicture}
+      \end{center}
+    \end{column}
+  \end{columns}
+
+  \vspace{0.3em}
+  Reasoning helps decide \emph{which} action; observations ground reasoning in real
+  facts. Without reasoning, tool selection degrades; without acting, the model is stuck
+  in its head.

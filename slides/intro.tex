@@ -41,12 +41,6 @@
       \end{itemize}
     \end{column}
     \begin{column}{0.48\textwidth}
-      \textbf{RL Resources}
-      \begin{itemize}
-        \item \cite{silver2015rl}
-        \item \cite{schneider2023rl}
-        \item \cite{sutton2018rl}
-      \end{itemize}
     \end{column}
   \end{columns}
 
@@ -62,7 +56,7 @@
 
   \vspace{1em}
   \begin{alertblock}{Expectation}
-    I expect a big time investment from students. I also invest effort.
+    I expect a significant time investment from students. I also invest effort.
   \end{alertblock}
 
   \vspace{1em}
@@ -70,6 +64,36 @@
 	  Do not use LLMs for writing code! Looking up function definitions, helping to learn etc.\ is of course alright.
 	  Cognitive offloading to LLMs is going to be counterproductive, when you want to learn and understand in depth.
   \end{alertblock}
+\end{frame}
+
+\begin{frame}{Literature}
+  \begin{columns}
+    \begin{column}{0.48\textwidth}
+      \textbf{Deep Learning}
+      \begin{itemize}
+        \item \cite{goodfellow2016deep} -- the classic
+        \item \cite{prince2023understanding} -- modern, visual
+        \item \cite{bishop2024deep} -- thorough, updated, my favorite
+        \item \cite{fleuret2023little} -- concise handbook
+      \end{itemize}
+
+      \vspace{0.8em}
+      \textbf{Machine Learning}
+      \begin{itemize}
+        \item \cite{murphy2022pml} -- broad introduction
+        \item \cite{murphy2023pml2} -- advanced topics
+        \item \cite{bishop2006pattern} -- a classic reference
+      \end{itemize}
+    \end{column}
+    \begin{column}{0.48\textwidth}
+      \textbf{Reinforcement Learning}
+      \begin{itemize}
+        \item \cite{sutton2018rl}
+        \item \cite{silver2015rl}
+        \item \cite{schneider2023rl}
+      \end{itemize}
+    \end{column}
+  \end{columns}
 \end{frame}
 
 \begin{frame}{Organization}
@@ -122,6 +146,7 @@
 \end{frame}
 
 \begin{frame}{Topics}
+  \small
   \begin{columns}
     \begin{column}{0.48\textwidth}
       \textbf{Transformers}
@@ -129,9 +154,7 @@
         \item GPT-2 reimplementation ({\`a} la Karpathy)
 	\item Recent architectural improvements
 	\item Positional Encodings: RoPE, YaRN
-	\item Muon optimizer
-	\item Training: Pre-training, SFT, RLHF \& post-training
-	\item Efficient attention: \{Flash$|$Tind$|$Tree\} attention
+	\item Efficient attention: \{Flash$|$Ring$|$Tree\} attention
 	\item KV-Cache: Multi-head latent attention, grouped query attention
 	\item Mixture of experts, load balancing
 	\item Transformers for computer vision: ViT, DETR, TrackFormer, MaskFormer, SWin, $\ldots$
@@ -143,12 +166,22 @@
 	      \item RNNs, LSTM, GRU
 	      \item Mamba\{1$|$2\}: Efficient computation with prefix sum \& chunked matrix multiplication
       \end{itemize}
+
+      \textbf{Agentic}
+      \begin{itemize}
+	      \item Prompting: In-context learning, \{chain$|$tree\} of thought
+	      \item Memory
+	      \item Reasoning
+      \end{itemize}
+
     \end{column}
 
     \begin{column}{0.48\textwidth}
       \textbf{Training}
       \begin{itemize}
+	      \item Training: Pre-training, SFT, RLHF \& post-training
 	      \item Efficiency: Mixed precision, kernel fusion 
+	      \item Muon optimizer
 	      \item Parallelism: Distributed training, Data/model/pipeline parallelism, sharding
           \item Hyperparameters
 	      \item Fine-tuning: LoRA, Adapters
@@ -158,13 +191,6 @@
       \end{itemize}
 
 
-      \textbf{Agentic}
-      \begin{itemize}
-	      \item Prompting: In-context learning, \{chain$|$tree\} of thought
-	      \item Memory
-	      \item Reasoning
-      \end{itemize}
-
   \begin{alertblock}{Theme}
 	  I hope to cover all the essential technical content that allows deep technical understanding of the current iteration of intelligent machines.
   \end{alertblock}
@@ -172,26 +198,256 @@
   \end{columns}
 \end{frame}
 
+% ============================================================
+% Historical Introduction to Language Models
+% ============================================================
+
+\begin{frame}{Language Models: The Core Idea}
+  A \textbf{language model} assigns probabilities to sequences of words (or tokens):
+  \[
+    P(w_1, w_2, \ldots, w_T) = \prod_{t=1}^{T} P(w_t \mid w_1, \ldots, w_{t-1})
+  \]
+
+  \begin{description}[style=nextline]
+    \item[Claude Shannon (1951)] Modeled English as a stochastic process; estimated per-character entropy at $\sim$1 bit~\cite{shannon1951prediction}.
+    \item[N-gram models] $P(w_t \mid w_{t-n+1}, \ldots, w_{t-1})$: count-based, with smoothing techniques like Kneser-Ney~\cite{kneser1995smoothing}. Dominated NLP for decades.
+    \item[Fundamental limitation] N-grams cannot generalize to unseen word combinations. Not scalable, no semantic understanding.
+  \end{description}
+\end{frame}
+
+\begin{frame}{Approaches That Did Not Scale}
+  \textbf{Pattern:} Encode human knowledge into the system $\to$ initial success $\to$ plateau $\to$ superseded by learning from data.
+
+  \begin{description}[style=nextline]
+    \item[Symbolic / grammar-based] Hand-written grammars, rule-based parsers, knowledge bases. Linguists formalized syntax~\cite{chomsky1957syntactic}, annotated treebanks~\cite{marcus1993treebank}, built rule-based MT systems. Brittle, expensive to maintain, poor on out-of-domain text.
+  \end{description}
+  \vspace{0.3em}
+  {\small ``Every time I fire a linguist, the performance of the speech recognizer goes up.''\\
+  \hfill -- Frederick Jelinek, IBM (c.\ 1988)~\cite{jelinek2005history}}
+  \begin{description}
+    \item[Feature-engineered ML] SVMs, CRFs (Conditional Random Fields), $\ldots$ with hand-crafted features (bag-of-words, TF-IDF, POS tags)~\cite{joachims1998text}. Each NLP task required a separate pipeline with separately engineered features. No transfer, no shared representations, error propagation.
+    \item[The transition] Statistical methods beat symbolic ones. Neural networks~\cite{collobert2011nlp} then replaced feature engineering entirely by learning representations end-to-end from raw text.
+  \end{description}
+\end{frame}
+
+\begin{frame}{From N-grams to Neural Language Models}
+  \textbf{Core shift:} Replace discrete, count-based representations with continuous, \emph{learned} ones.
+
+  \begin{description}[style=nextline]
+    \item[Learned word embeddings (2003--2014)] Neural networks learn to map words to dense vectors where proximity encodes semantic similarity~\cite{bengio2003neural, mikolov2013word2vec, pennington2014glove}.
+      Representations emerge from the training objective, not from human annotation.
+    \item[Sequence-to-sequence (2014)] Encoder-decoder architectures compress an entire input sequence into a vector, then decode it into an output sequence~\cite{sutskever2014seq2seq}. Enabled end-to-end learning for translation, summarization, etc.
+    \item[Attention (2015)] Instead of compressing everything into a single vector, let the decoder attend to all encoder states~\cite{bahdanau2015attention}. Removes the information bottleneck. Precursor to the Transformer.
+  \end{description}
+
+  \begin{alertblock}{Recurring theme}
+    Each advance removes a hand-designed component (feature engineering $\to$ embeddings, fixed context $\to$ attention) and replaces it with something learned.
+  \end{alertblock}
+\end{frame}
+
+\begin{frame}{The Transformer Revolution}
+  \begin{description}[style=nextline]
+    \item[Transformer (2017)] Vaswani et al.\ replaced recurrence entirely with \textbf{self-attention}~\cite{vaswani2017attention}. Parallel training, long-range dependencies, superior scaling.
+    \item[ELMo (2018)] Peters et al.\ introduced \emph{contextualized} word representations from bidirectional LSTMs~\cite{peters2018elmo}. Same word gets different embeddings in different contexts.
+    \item[GPT (2018)] Radford et al.\ showed that \emph{unsupervised pre-training} of a Transformer decoder, followed by fine-tuning, achieves strong results across many tasks~\cite{radford2018gpt1}.
+    \item[BERT (2019)] Devlin et al.\ pre-trained a bidirectional Transformer encoder with masked language modeling~\cite{devlin2019bert}. Dominated NLU benchmarks.
+    \item[GPT-2 (2019)] Scaling up GPT to 1.5B parameters demonstrated impressive zero-shot text generation~\cite{radford2019gpt2}. ``Too dangerous to release.''
+  \end{description}
+
+  \begin{alertblock}{Paradigm shift}
+    Pre-train a large model on massive text corpora, then adapt to downstream tasks. The era of ``foundation models'' begins.
+  \end{alertblock}
+\end{frame}
+
+\begin{frame}{The Scaling Era}
+  \begin{description}[style=nextline]
+    \item[GPT-3 (2020)] 175B parameters. In-context learning: the model performs tasks from a few examples in the prompt, no fine-tuning needed~\cite{brown2020gpt3}.
+    \item[Scaling laws (2020)] Kaplan et al.\ showed predictable power-law relationships between compute, data, model size, and loss~\cite{kaplan2020scaling}.
+    \item[PaLM (2022)] 540B parameters. Breakthrough reasoning and code generation~\cite{chowdhery2023palm}.
+    \item[Chinchilla (2022)] Hoffmann et al.\ showed prior models were \emph{undertrained}: optimal allocation balances model size and data volume~\cite{hoffmann2022chinchilla}.
+    \item[GPT-4 (2023)] Multimodal. Human-level on many professional exams~\cite{achiam2023gpt4}.
+    \item[Open models] LLaMA~\cite{touvron2023llama}, Llama 2~\cite{touvron2023llama2}, Llama 3~\cite{grattafiori2024llama3}, Mistral~\cite{jiang2023mistral}, DeepSeek~\cite{deepseekai2024deepseekv3} democratized access.
+  \end{description}
+\end{frame}
+
+\begin{frame}{The Reasoning Era (2024--)}
+  Pre-training scaling is slowing down. The new frontier: \textbf{test-time compute} and \textbf{reinforcement learning on verifiable rewards (RLVR)}.
+
+  \begin{description}[style=nextline]
+    \item[Chain-of-thought] Models reason step-by-step before answering. Unlocks multi-step math, logic, and coding tasks~\cite{wei2022cot}.
+    \item[o1 / o3 (OpenAI, 2024--25)] Trained with large-scale RL to ``think'' internally before responding~\cite{openai2024o1, openai2025o3}. Spend more compute at inference time for harder problems.
+    \item[DeepSeek-R1 (2025)] Open-weight reasoning model. Emergent chain-of-thought arises purely from RL on verifiable math/code rewards~\cite{deepseek_r1_2025}.
+    \item[RLVR] RL with \emph{verifiable} rewards (unit tests, proof checkers, math verification) instead of human preference labels. Scalable, objective, no reward hacking.
+  \end{description}
+
+  \begin{alertblock}{Shift in scaling axis}
+    Pre-training: scale parameters and data (fixed compute at inference).\\
+    Reasoning: scale \emph{inference-time compute} via RL-trained thinking (variable cost per query).
+  \end{alertblock}
+\end{frame}
+
+\begin{frame}{The Agentic Era (2025--)}
+  LLMs move from passive text generators to \textbf{autonomous agents} that use tools, write code, and complete multi-step tasks.
+
+  \begin{description}[style=nextline]
+    \item[Code agents] LLMs integrated into development environments that read, write, and debug code autonomously.
+      Claude Code (Anthropic), Codex (OpenAI), Gemini CLI (Google), Copilot (GitHub).
+    \item[Tool use] Models learn to call APIs, execute shell commands, browse the web, and manipulate files.
+      Enables open-ended problem solving beyond text completion.
+    \item[Agentic loops] The model operates in a loop: observe $\to$ plan $\to$ act $\to$ observe.
+      Requires grounding (tool results), memory (context management), and self-correction.
+    \item[Computer use] Agents that interact with GUIs: clicking, typing, navigating applications like a human user~\cite{anthropic2024computeruse}.
+    \item[Multi-agent systems] Multiple specialized agents collaborate on complex tasks.
+      Orchestration, delegation, and communication between agents.
+  \end{description}
+
+  \begin{alertblock}{Shift}
+    From ``model as oracle'' to ``model as worker'': the bottleneck moves from capability to reliability and trust.
+  \end{alertblock}
+\end{frame}
+
+\begin{frame}{Historical Timeline}
+  \centering
+  \begin{tikzpicture}[
+    x=1.15cm, y=0cm,
+    event/.style={fill=slide_blue!60, rounded corners=2pt, inner sep=1.5pt, font=\fontsize{5}{6}\selectfont, text width=1.05cm, align=center},
+    yearmark/.style={font=\tiny\bfseries, below},
+  ]
+    % Timeline
+    \draw[->, thick] (-0.3,0) -- (10.7,0);
+    \foreach \x/\yr in {0/1951, 1/2003, 2/2013, 3/2014, 4/2015, 5/2017, 6/2018, 7/2019, 8/2020, 9/2023, 10/2025} {
+      \draw (\x, 0.12) -- (\x, -0.12);
+      \node[yearmark] at (\x, -0.12) {\yr};
+    }
+
+    % Events above (alternating heights to avoid overlap)
+    \node[event, above=0.35cm] at (0,0) {Shannon\\Entropy};
+    \node[event, above=0.35cm] at (1,0) {Neural LM\\Bengio};
+    \node[event, above=0.35cm] at (2,0) {Word2Vec\\Mikolov};
+    \node[event, above=0.35cm] at (3,0) {Seq2Seq\\GloVe};
+    \node[event, above=0.35cm] at (4,0) {Attention\\Bahdanau};
+    \node[event, above=0.35cm] at (5,0) {Transformer\\Vaswani};
+    \node[event, above=0.35cm] at (6,0) {GPT, BERT\\ELMo};
+
+    % Events below
+    \node[event, below=0.4cm] at (7,0) {GPT-2\\1.5B};
+    \node[event, below=0.4cm] at (8,0) {GPT-3\\175B};
+    \node[event, below=0.4cm] at (9,0) {GPT-4\\LLaMA};
+    \node[event, below=0.4cm] at (10,0) {o1, R1\\Reasoning};
+
+    % Arrows
+    \foreach \x in {0,...,6} {
+      \draw[->, thin, gray] (\x, 0.12) -- (\x, 0.35);
+    }
+    \foreach \x in {7,...,10} {
+      \draw[->, thin, gray] (\x, -0.12) -- (\x, -0.4);
+    }
+  \end{tikzpicture}
+
+  \vspace{0.5em}
+  \begin{alertblock}{Trend}
+    Hand-crafted features $\to$ learned representations $\to$ pre-trained foundation models $\to$ scaling $\to$ reasoning via RL.
+  \end{alertblock}
+\end{frame}
+
+% \begin{frame}{Progress on AI Benchmarks~\cite{wei2025benchmarks}}
+%   \centering
+%   \begin{tikzpicture}
+%     \begin{axis}[
+%       width=0.95\textwidth,
+%       height=0.75\textheight,
+%       xlabel={Year},
+%       ylabel={Accuracy (\%)},
+%       xmin=2019.5, xmax=2025.5,
+%       ymin=0, ymax=105,
+%       grid=major,
+%       grid style={gray!30},
+%       legend style={at={(0.02,0.98)}, anchor=north west, font=\tiny, fill=white, fill opacity=0.9, draw=gray},
+%       xtick={2020, 2021, 2022, 2023, 2024, 2025},
+%       xticklabel style={font=\small},
+%       yticklabel style={font=\small},
+%       ylabel style={font=\small},
+%       xlabel style={font=\small},
+%       every axis plot/.append style={thick, mark size=1.5pt, mark options={solid}},
+%     ]
+%
+%     % TriviaQA
+%     \addplot[color=orange!80!black, mark=*] coordinates {
+%       (2020, 72) (2021, 80) (2022, 86) (2023, 93) (2024, 97) (2025, 98)
+%     };
+%     \addlegendentry{TriviaQA}
+%
+%     % MMLU
+%     \addplot[color=green!60!black, mark=square*] coordinates {
+%       (2021, 52) (2022, 65) (2023, 75) (2024, 88) (2025, 90)
+%     };
+%     \addlegendentry{MMLU (exams)}
+%
+%     % GSM8K
+%     \addplot[color=magenta!80!black, mark=triangle*] coordinates {
+%       (2022, 42) (2023, 85) (2024, 96) (2025, 97)
+%     };
+%     \addlegendentry{GSM8K (grade math)}
+%
+%     % MATH
+%     \addplot[color=violet, mark=diamond*] coordinates {
+%       (2022, 35) (2023, 50) (2024, 85) (2025, 95)
+%     };
+%     \addlegendentry{MATH (competition)}
+%
+%     % GPQA
+%     \addplot[color=cyan!70!black, mark=pentagon*] coordinates {
+%       (2024, 55) (2024.5, 70) (2025, 85)
+%     };
+%     \addlegendentry{GPQA (grad STEM)}
+%
+%     % AIME
+%     \addplot[color=red!70!yellow, mark=star, mark size=2.5pt] coordinates {
+%       (2024, 15) (2024.5, 40) (2025, 87)
+%     };
+%     \addlegendentry{AIME (math olympiad)}
+%
+%     % SWE-bench
+%     \addplot[color=gray!70!black, mark=otimes*] coordinates {
+%       (2024, 5) (2024.5, 50) (2025, 70)
+%     };
+%     \addlegendentry{SWE-bench (coding)}
+%
+%     % Humanity's Last Exam
+%     \addplot[color=blue!50!cyan, mark=|, mark size=3pt] coordinates {
+%       (2025, 18)
+%     };
+%     \addlegendentry{Humanity's Last Exam}
+%
+%     % Saturation line
+%     \draw[dashed, gray, thin] (axis cs:2019.5, 100) -- (axis cs:2025.5, 100);
+%
+%     \end{axis}
+%   \end{tikzpicture}
+%
+%   {\scriptsize Benchmarks saturate within 1--3 years. New, harder benchmarks keep being introduced.}
+% \end{frame}
+
 \begin{frame}{The Bitter Lesson~\cite{sutton2019bitter}}
-  \textbf{Core thesis:} General methods leveraging computation beat methods leveraging human knowledge --- and by a large margin.
+  \textbf{Core thesis:} General methods leveraging computation beat methods leveraging human knowledge, and by a large margin.
 
   \begin{description}[style=nextline]
     \item[Chess] Human-crafted evaluation functions dominated for decades, but massive brute-force search defeated Kasparov in 1997~\cite{campbell2002deep}.
     \item[Go] Initial efforts exploited human knowledge of the game. AlphaGo~Zero learned tabula rasa via self-play + search, surpassing all predecessors~\cite{silver2017mastering}.
     \item[Speech] Hand-engineered phoneme/vocal-tract models lost to statistical HMMs in the 1970s DARPA competition. Deep learning pushed this further~\cite{hinton2012deep}.
-    \item[Vision] Edge detectors, SIFT features, generalized cylinders --- all replaced by learned convolutions~\cite{krizhevsky2012imagenet}.
+    \item[Vision] Edge detectors, SIFT features, all replaced by learned convolutions~\cite{krizhevsky2012imagenet}.
   \end{description}
 
   \begin{alertblock}{The Lesson}
     \begin{enumerate}
-      \item Researchers build domain knowledge into agents --- helps short-term, satisfying personally.
+      \item Researchers build domain knowledge into agents. Helps short-term, satisfying personally.
       \item In the long run it plateaus and \emph{inhibits} further progress.
       \item Breakthroughs come from scaling computation via \textbf{search} and \textbf{learning}.
     \end{enumerate}
   \end{alertblock}
 
   \vspace{0.3em}
-  {\small ``We want AI agents that can \emph{discover} like we can, not which contain what we have discovered.'' --- R.~Sutton}
+  {\small ``We want AI agents that can \emph{discover} like we can, not which contain what we have discovered.'' -- R.~Sutton}
 \end{frame}
 
 \begin{frame}{Philosophical/Speculation}
@@ -203,7 +459,7 @@
 		\item \underline{Criticism}: Some people do not believe in LLMs:
 			\begin{itemize}
 				\item \underline{World models}: Yann LeCun thinks world models are necessary: Causal and physical understanding of the world is not present in LLMs.
-				\item \underline{Bitter lesson}: Richard Sutton thinks that LLMs and transformers are not bitter-pilled enough. We only scale through pre- and post-training, in a higly complex manner. A truly bitter-lesson pilled approach would require a single fundamental principle that learns through general interaction with the world, i.e.\ test-time training.
+				\item \underline{Bitter lesson}: Richard Sutton thinks that LLMs and transformers are not bitter-pilled enough. We only scale through pre- and post-training, in ah higly complex manner. A truly bitter-lesson pilled approach would require a single fundamental principle that learns through general interaction with the world, i.e.\ test-time training.
 				\item \underline{Jagged Intelligence}: Right now LLMs have jagged intelligence: Superhuman at some complex tasks, struggling with some simple ones. I think that humans suffer from the same, though.
 			\end{itemize}
 	\end{itemize}

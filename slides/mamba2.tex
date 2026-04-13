@@ -111,7 +111,7 @@
     \end{column}
     \begin{column}{0.42\textwidth}
       \begin{block}{Linear Time-Invariance (LTI)}
-        $(\bar{A}, \bar{B}, C)$ are \emph{constant} --- they do not depend on the input.
+        $(\bar{A}, \bar{B}, C)$ are \emph{constant}: they do not depend on the input.
       \end{block}
     \end{column}
   \end{columns}
@@ -217,7 +217,7 @@
   \end{center}
 
   \begin{itemize}
-    \item Looks like a linear RNN --- but with structured matrices $A, B, C$
+    \item Looks like a linear RNN, but with structured matrices $A, B, C$
     \item The step size $\Delta$ controls the resolution: how much continuous time each discrete step represents
     \item A large $\Delta$ focuses on coarse/slow features; a small $\Delta$ on fine/fast features
   \end{itemize}
@@ -361,14 +361,14 @@
       \textbf{Recurrent mode}
       \begin{itemize}
         \item $O(N)$ per step
-        \item Sequential --- good for inference
+        \item Sequential: good for inference
       \end{itemize}
     \end{column}
     \begin{column}{0.48\textwidth}
       \textbf{Convolutional mode}
       \begin{itemize}
         \item Compute $\bar{K}$, then use FFT
-        \item $O(T \log T)$ --- good for training
+        \item $O(T \log T)$: good for training
       \end{itemize}
     \end{column}
   \end{columns}
@@ -409,7 +409,7 @@
   \end{center}
 
   \begin{itemize}
-    \item An LTI model treats every token identically --- it cannot \emph{selectively} remember some tokens and ignore others based on content
+    \item An LTI model treats every token identically. It cannot \emph{selectively} remember some tokens and ignore others based on content
     \item A fixed kernel is fundamentally \alert{content-agnostic}
     \item Transformers solve this via content-dependent attention weights
   \end{itemize}
@@ -417,7 +417,7 @@
   \vspace{0.3em}
   \begin{alertblock}{Insight}
     To make SSMs truly powerful, the parameters must be \textbf{input-dependent}.
-    This breaks LTI and the convolutional mode --- but enables \emph{selectivity}.
+    This breaks LTI and the convolutional mode, but enables \emph{selectivity}.
   \end{alertblock}
 \end{frame}
 
@@ -447,7 +447,7 @@
   \end{itemize}
 
   \vspace{0.3em}
-  The model learns \emph{when} to update its state --- this is the selection mechanism.
+  The model learns \emph{when} to update its state. This is the selection mechanism.
 \end{frame}
 
 % -----------------------------------------------------------------------
@@ -460,7 +460,7 @@
   \end{itemize}
 
   \vspace{0.5em}
-  \textbf{The problem is not FLOPs --- it's memory access.}
+  \textbf{The problem is not FLOPs; it's memory access.}
 
   Modern GPUs have:
   \begin{center}
@@ -511,7 +511,7 @@
 
   \begin{itemize}
     \item Discretization + scan + output projection all happen \textbf{in SRAM}
-    \item Intermediate states $h_t$ never written to HBM --- only final output $y$
+    \item Intermediate states $h_t$ never written to HBM. Only the final output $y$
     \item Recomputation in backward pass instead of storing activations
   \end{itemize}
 \end{frame}
@@ -592,10 +592,10 @@
   \vspace{0.5em}
   \begin{alertblock}{Remaining issues}
     \begin{itemize}
-      \item Training uses a \textbf{sequential scan} --- no matrix multiplications
+      \item Training uses a \textbf{sequential scan}, no matrix multiplications
       \item GPUs/TPUs are optimized for matmuls, not sequential operations
       \item Despite kernel fusion, training throughput is \alert{lower than Transformers}
-      \item Each channel has an independent SSM ($P = 1$) --- limited parameter sharing
+      \item Each channel has an independent SSM ($P = 1$), limited parameter sharing
     \end{itemize}
   \end{alertblock}
 \end{frame}
@@ -655,7 +655,7 @@
   \]
 
   \begin{itemize}
-    \item Fewer parameters per step --- but enables a fundamentally new algorithm
+    \item Fewer parameters per step, but enables a fundamentally new algorithm
     \item Opens the door to the \textbf{quadratic (attention) mode}
   \end{itemize}
 \end{frame}
@@ -737,7 +737,7 @@
     \end{column}
     \begin{column}{0.42\textwidth}
       \begin{alertblock}{Interpretation of $a_t$}
-        The scalar decays $a_t \in (0,1)$ act as \textbf{input-dependent relative positional encodings} --- they control how much past information is retained at each step.
+        The scalar decays $a_t \in (0,1)$ act as \textbf{input-dependent relative positional encodings}: they control how much past information is retained at each step.
       \end{alertblock}
     \end{column}
   \end{columns}
@@ -844,7 +844,7 @@
     \item \textbf{Intra-chunk} (quadratic/attention mode):
       \begin{itemize}
         \item Within each chunk, compute $Y_{\text{intra}} = (L \circ CB^\top) X$ via matmul
-        \item Cost: $O(C^2 \cdot P)$ per chunk --- parallelizable across batch and heads
+        \item Cost: $O(C^2 \cdot P)$ per chunk, parallelizable across batch and heads
       \end{itemize}
     \item \textbf{Inter-chunk} (SSM/linear mode):
       \begin{itemize}
@@ -856,7 +856,7 @@
   \end{enumerate}
 
   \vspace{0.3em}
-  Overall cost: $O\!\left(\frac{T}{C} \cdot C^2 N\right) = O(TCN)$ --- optimal for $C = \sqrt{T}$.
+  Overall cost: $O\!\left(\frac{T}{C} \cdot C^2 N\right) = O(TCN)$, optimal for $C = \sqrt{T}$.
 \end{frame}
 
 % -----------------------------------------------------------------------
@@ -1026,7 +1026,7 @@
     \item \textbf{State Space Models}: Linear systems discretized from continuous time; dual recurrent/convolutional view enables parallel training for LTI models
     \item \textbf{Mamba-1}: Makes SSM parameters \emph{input-dependent} (selective); hardware-aware scan keeps computation in SRAM; matches Transformer quality with linear-time inference
     \item \textbf{State Space Duality}: Scalar-structured SSMs and causal linear attention are the \emph{same} model viewed differently
-    \item \textbf{Mamba-2}: Chunked SSD algorithm --- $O(TCN)$ compute, constant inference state, full matmul utilization; 2--8$\times$ faster training than Mamba-1
+    \item \textbf{Mamba-2}: Chunked SSD algorithm: $O(TCN)$ compute, constant inference state, full matmul utilization; 2--8$\times$ faster training than Mamba-1
   \end{enumerate}
 
   \vspace{0.5em}

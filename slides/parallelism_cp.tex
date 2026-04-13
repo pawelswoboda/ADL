@@ -1,7 +1,7 @@
 % !TEX root=./adl.tex
 
 % -----------------------------------------------------------------------
-\begin{frame}{Context Parallelism --- Motivation}
+\begin{frame}{Context Parallelism: Motivation}
 
   \emphdef{Context Parallelism} (CP) splits the \textbf{input sequence} across GPUs to handle long contexts~\cite{liu2023ring}.
 
@@ -69,7 +69,7 @@
       \textbf{Problem: Activation memory}
       \begin{itemize}
         \item TP shards along $h$, but $s$ remains full
-        \item Sequence Parallelism (SP) only shards \emph{element-wise} ops --- attention requires every token to attend to every other, so SP cannot help there
+        \item Sequence Parallelism (SP) only shards \emph{element-wise} ops. Attention requires every token to attend to every other, so SP cannot help there
       \end{itemize}
     \end{column}
     \begin{column}{0.48\textwidth}
@@ -91,7 +91,7 @@
 \end{frame}
 
 % -----------------------------------------------------------------------
-\begin{frame}{Ring Attention --- Core Idea}
+\begin{frame}{Ring Attention: Core Idea}
 
   \emphdef{Ring Attention}: arrange CP group in a \textbf{ring}, pipeline $K,V$ transfers with local FlashAttn.
 
@@ -225,7 +225,7 @@
 \end{frame}
 
 % -----------------------------------------------------------------------
-\begin{frame}{Ring Attention --- Step-by-Step}
+\begin{frame}{Ring Attention: Step-by-Step}
 
   \vspace{0.2em}
   \begin{center}
@@ -309,7 +309,7 @@
   {\small
   \begin{itemize}
     \item This is \textbf{numerically stable} and produces the \textbf{exact same result} as computing attention over the full sequence
-    \item The merge is $O(s/N_{\text{CP}} \cdot d)$ per step --- negligible compared to the attention computation
+    \item The merge is $O(s/N_{\text{CP}} \cdot d)$ per step, negligible compared to the attention computation
     \item Same principle used inside Flash Attention across SRAM tiles, here applied across GPUs
   \end{itemize}}
 \end{frame}
@@ -407,7 +407,7 @@
 \end{frame}
 
 % -----------------------------------------------------------------------
-\begin{frame}{Context Parallelism --- Communication Analysis}
+\begin{frame}{Context Parallelism: Communication Analysis}
 
   Consider a single attention layer with $N_{\text{CP}}$ GPUs, sequence length $s$, hidden dim $d$, batch $b$.
 
@@ -427,7 +427,7 @@
 \end{frame}
 
 % -----------------------------------------------------------------------
-\begin{frame}{Context Parallelism --- Summary and Placement}
+\begin{frame}{Context Parallelism: Summary and Placement}
 
   \begin{columns}
     \begin{column}{0.48\textwidth}
@@ -435,7 +435,7 @@
       \begin{itemize}
         \item Enables training with very long sequences (100k--10M+ tokens)
         \item Linear memory reduction: activations per GPU $\propto s / N_{\text{CP}}$
-        \item Orthogonal to TP, DP, PP --- can be combined freely
+        \item Orthogonal to TP, DP, PP. Can be combined freely
         \item Ring variant: communication overlaps with compute
       \end{itemize}
 
@@ -489,7 +489,7 @@
     & \textbf{Sequence Parallelism (SP)} & \textbf{Context Parallelism (CP)} \\
     \midrule
     \textbf{Scope} & Shards \emph{non-TP regions} (LayerNorm, Dropout) along $s$ & Shards \emph{attention and the full forward pass} along $s$ \\
-    \textbf{Tied to TP?} & Yes --- always paired with TP & No --- orthogonal to TP \\
+    \textbf{Tied to TP?} & Yes, always paired with TP & No, orthogonal to TP \\
     \textbf{Communication} & AllGather / ReduceScatter within TP group & Point-to-point (ring) or AllToAll across CP group \\
     \textbf{Scales to} & Same node (TP limit) & Across nodes \\
     \textbf{Goal} & Reduce activation memory in non-TP ops & Enable very long sequences ($>$100k tokens) \\

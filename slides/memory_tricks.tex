@@ -22,15 +22,15 @@
 
   \vspace{0.3em}
   \begin{description}
-    \item[Reduce activation memory] \emphdef{Gradient checkpointing} --- discard intermediate activations during forward pass, recompute them during backward. Trades $\sim$33\% extra compute for $O(\sqrt{L})$ instead of $O(L)$ activation memory.
-    \item[Reduce parameter memory] \emphdef{Parameter-Efficient Fine-Tuning (PEFT)} --- freeze the pretrained weights, only train a small number of additional parameters ($\sim$0.1--1\% of $\Psi$). Gradients and optimizer states are only needed for the small trainable set $\Rightarrow$ massive memory savings with minimal quality loss.
+    \item[Reduce activation memory] \emphdef{Gradient checkpointing}: discard intermediate activations during forward pass, recompute them during backward. Trades $\sim$33\% extra compute for $O(\sqrt{L})$ instead of $O(L)$ activation memory.
+    \item[Reduce parameter memory] \emphdef{Parameter-Efficient Fine-Tuning (PEFT)}: freeze the pretrained weights, only train a small number of additional parameters ($\sim$0.1--1\% of $\Psi$). Gradients and optimizer states are only needed for the small trainable set $\Rightarrow$ massive memory savings with minimal quality loss.
   \end{description}
 \end{frame}
 
 % -----------------------------------------------------------------------
 \begin{frame}{Gradient Checkpointing (Activation Recomputation)}
 
-  \textbf{Problem:} Standard backpropagation stores all intermediate activations --- memory grows linearly with depth.
+  \textbf{Problem:} Standard backpropagation stores all intermediate activations. Memory grows linearly with depth.
 
   \vspace{0.3em}
   \begin{columns}
@@ -50,7 +50,7 @@
       \end{itemize}
 
       \vspace{0.3em}
-      \textbf{Selective recomputation}~\cite{korthikanti2023selective}: Only recompute attention (most memory-intensive) --- saves $\sim$70\% activation memory at only $\sim$2.7\% compute overhead.
+      \textbf{Selective recomputation}~\cite{korthikanti2023selective}: Only recompute attention (most memory-intensive). Saves $\sim$70\% activation memory at only $\sim$2.7\% compute overhead.
     \end{column}
     \begin{column}{0.44\textwidth}
       \centering
@@ -97,7 +97,7 @@
 \end{frame}
 
 % -----------------------------------------------------------------------
-\begin{frame}{Parameter-Efficient Fine-Tuning (PEFT) --- Overview}
+\begin{frame}{Parameter-Efficient Fine-Tuning (PEFT): Overview}
 
   Full fine-tuning updates \emph{all} parameters. For a 7B model, this means storing 7B gradients + optimizer states.
 
@@ -147,7 +147,7 @@
       \end{itemize}
 
       \vspace{0.3em}
-      \textbf{Inference:} Merge $W' = W + BA$ --- \emph{no extra latency}.
+      \textbf{Inference:} Merge $W' = W + BA$: \emph{no extra latency}.
     \end{column}
     \begin{column}{0.44\textwidth}
       \centering

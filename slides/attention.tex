@@ -25,14 +25,14 @@
     \textit{``The animal didn't cross the street because \textbf{it} was too tired.''}
   \end{center}
 
-  To understand what \textbf{it} refers to, a model must connect it to \textbf{animal} --- five tokens away.
+  To understand what \textbf{it} refers to, a model must connect it to \textbf{animal}, five tokens away.
 
   \vspace{0.5em}
   \textbf{The challenge:} When processing a sequence, each token must be able to selectively gather
   information from \emph{any} other token, regardless of distance.
 
   \begin{itemize}
-    \item RNNs pass information through a fixed-size hidden state --- a bottleneck for long-range dependencies.
+    \item RNNs pass information through a fixed-size hidden state, a bottleneck for long-range dependencies.
     \item \textbf{Attention} provides a direct, learnable connection between any two positions.
     \item Each token asks: \emph{``Which other tokens are relevant to me, and how much?''}
     \item The answer is computed dynamically from the content of the tokens themselves.
@@ -40,14 +40,19 @@
 
   \vspace{0.3em}
   \begin{block}{References}
-    \cite{vaswani2017attention} \quad \cite{alammar2018illustrated}
+    \begin{itemize}
+      \item \cite{vaswani2017attention}
+      \item \cite{alammar2018illustrated}
+    \end{itemize}
   \end{block}
 \end{frame}
 
 % -----------------------------------------------------------------------
 \begin{frame}{Token Embeddings}
-  Each token is mapped to a learnable feature vector --- its \textbf{token embedding}.
-  The embedding matrix $E \in \mathbb{R}^{V \times d}$ is a lookup table: row $i$ gives the embedding for token $i$.
+  \begin{itemize}
+    \item Each token is mapped to a learnable feature vector, its \textbf{token embedding}.
+    \item The embedding matrix $E \in \mathbb{R}^{V \times d}$ is a lookup table: row $i$ gives the embedding for token $i$.
+  \end{itemize}
 
   \begin{center}
   \begin{tikzpicture}[scale=0.95,
@@ -66,8 +71,12 @@
     \def\vecw{0.36} % cell width/height
     \def\nd{4}      % number of embedding dims shown
 
+    % ---- Token labels ----
+    \node[tok, font=\small\bfseries, text=green!60!black] (tokA) at (\tA, 3.15) {Thinking};
+    \node[tok, font=\small\bfseries, text=green!60!black] (tokB) at (\tB, 3.15) {Machines};
+
     % ---- Embedding matrix E on the left ----
-    \node[font=\small\bfseries, text=green!60!black] at (-1.18, 3.55) {$E$};
+    \node[font=\small\bfseries, text=green!60!black] at (-2.05, 3.55) {$E$};
     \foreach \ri in {0,...,6} {
       \foreach \ci in {0,...,3} {
         \pgfmathsetmacro{\cy}{2.90 - \ri*0.26 + 0.13}
@@ -81,8 +90,13 @@
       }
     }
     \node[font=\small, gray] at (-1.30, 1.01) {\vdots};
-    \node[font=\tiny, text=green!60!black, anchor=east] at (-1.75, 2.90-2*0.26+0.13) {$i_1$};
-    \node[font=\tiny, text=green!60!black, anchor=east] at (-1.75, 2.90-5*0.26+0.13) {$i_2$};
+    \node[font=\tiny, text=green!60!black, anchor=west] (idx1) at (-0.48, 2.90-2*0.26+0.13) {$i_1$};
+    \node[font=\tiny, text=green!60!black, anchor=west] (idx2) at (-0.48, 2.90-5*0.26+0.13) {$i_2$};
+    % Connect token IDs to their token labels
+    \draw[dashed, green!50!black, thin, -{Stealth[length=2.5pt]}]
+      (idx1.east) to[out=0, in=200] (tokA.south west);
+    \draw[dashed, green!50!black, thin, -{Stealth[length=2.5pt]}]
+      (idx2.east) to[out=0, in=210] (tokB.south west);
     % Top brace for d (columns)
     \draw[decorate, decoration={brace, amplitude=3pt}, gray, thin]
       (-1.70, 3.20) -- (-0.66, 3.20)
@@ -91,10 +105,6 @@
     \draw[decorate, decoration={brace, amplitude=3pt, mirror}, gray, thin]
       (-1.78, 3.16) -- (-1.78, 1.34)
       node[midway, left=5pt, font=\scriptsize, gray] {$V$};
-
-    % ---- Token labels ----
-    \node[tok, font=\small\bfseries, text=green!60!black] (tokA) at (\tA, 3.15) {Thinking};
-    \node[tok, font=\small\bfseries, text=green!60!black] (tokB) at (\tB, 3.15) {Machines};
 
     % ---- Embedding vectors (centred below each token label) ----
     % Token 1
@@ -860,7 +870,7 @@
       \[
         s_{ij} = \begin{cases} q_i^\top k_j / \sqrt{d_k} & j \le i \\ -\infty & j > i \end{cases}
       \]
-      After softmax, $-\infty$ becomes $0$ --- future positions receive zero weight.
+      After softmax, $-\infty$ becomes $0$, so future positions receive zero weight.
 
       \vspace{0.5em}
       \begin{alertblock}{Key property}
@@ -1141,7 +1151,7 @@
   \begin{itemize}
     \item \textbf{Encoder} processes the source sentence (French) into key/value representations.
     \item \textbf{Decoder} generates the target sentence (English) one token at a time, using cross-attention to query the encoder output.
-    \item Line thickness shows attention weight --- each decoder token focuses on the most relevant source token.
+    \item Line thickness shows attention weight: each decoder token focuses on the most relevant source token.
   \end{itemize}
 
   \begin{center}
@@ -1474,128 +1484,136 @@
     \end{column}
     \begin{column}{0.60\textwidth}
       \begin{center}
-      \begin{tikzpicture}[scale=0.55,
-          block/.style={draw=gray!60, rounded corners=5pt, minimum height=0.60cm,
-                        inner sep=5pt, font=\small},
+      \begin{tikzpicture}[scale=0.46,
+          block/.style={draw=gray!60, rounded corners=5pt, minimum height=0.55cm,
+                        inner sep=3pt, font=\footnotesize},
           arr/.style={-{Stealth[length=4pt]}, gray!70, thick},
         ]
         \def\cs{0.20}
-        \def\xA{-1.80}
-        \def\xB{1.80}
+        \def\xA{-2.10}
+        \def\xB{2.10}
 
-        % ======== INPUT TOKENS (decoder) ========
-        \node[font=\small\bfseries, text=violet!70!black] at (\xA, -0.40) {\textit{tok$_1$}};
-        \node[font=\small\bfseries, text=violet!70!black] at (\xB, -0.40) {\textit{tok$_2$}};
+        % Block centers (uniform vertical spacing of 1.65)
+        \def\ycsa{1.30}
+        \def\yana{2.95}
+        \def\yca{4.60}
+        \def\yanb{6.25}
+        \def\yff{7.90}
+        \def\yanc{9.55}
 
-        \node[font=\tiny, text=violet!70!black, anchor=east] at (\xA-0.30, 0.10) {$y_1$};
+        % ======== INPUT TOKENS (outside the outer block) ========
+        \node[font=\small\bfseries, text=violet!70!black] at (\xA, -0.80) {\textit{tok$_1$}};
+        \node[font=\small\bfseries, text=violet!70!black] at (\xB, -0.80) {\textit{tok$_2$}};
+
+        \node[font=\tiny, text=violet!70!black, anchor=east] at (\xA-0.30, -0.20) {$y_1$};
         \foreach \ci in {0,...,3} {
           \pgfmathsetmacro{\cx}{\xA - 2*\cs + \ci*\cs + \cs/2}
           \node[acell, minimum width=\cs cm, minimum height=\cs cm,
-                fill=qcol!50] at (\cx, 0.10) {};
+                fill=qcol!50] at (\cx, -0.20) {};
         }
-        \node[font=\tiny, text=violet!70!black, anchor=east] at (\xB-0.30, 0.10) {$y_2$};
+        \node[font=\tiny, text=violet!70!black, anchor=east] at (\xB-0.30, -0.20) {$y_2$};
         \foreach \ci in {0,...,3} {
           \pgfmathsetmacro{\cx}{\xB - 2*\cs + \ci*\cs + \cs/2}
           \node[acell, minimum width=\cs cm, minimum height=\cs cm,
-                fill=qcol!50] at (\cx, 0.10) {};
+                fill=qcol!50] at (\cx, -0.20) {};
         }
-
-        \draw[arr] (\xA, 0.30) -- (\xA, 0.75);
-        \draw[arr] (\xB, 0.30) -- (\xB, 0.75);
 
         % ======== CAUSAL SELF-ATTENTION ========
         \node[block, fill=orange!12, draw=orange!40,
               minimum width=4.8cm, text=orange!80!black]
-          (csa) at (0, 1.05) {Causal Self-Attention};
+          (csa) at (0, \ycsa) {Causal Self-Attention};
 
-        \draw[arr] (\xA, 1.38) -- (\xA, 2.45);
-        \draw[arr] (\xB, 1.38) -- (\xB, 2.45);
+        \draw[arr] let \p1=(csa.south) in (\xA, 0.05) -- (\xA, \y1);
+        \draw[arr] let \p1=(csa.south) in (\xB, 0.05) -- (\xB, \y1);
 
         % ======== ADD & NORM 1 ========
         \node[block, fill=yellow!15, draw=yellow!50!black,
-              minimum width=4.8cm, font=\small, text=yellow!50!black]
-          (an1) at (0, 2.75) {Add \& LN};
+              minimum width=4.8cm, font=\footnotesize, text=yellow!50!black]
+          (an1) at (0, \yana) {Add \& LN};
 
-        % Residual 1
-        \draw[gray!50, thin, dashed, rounded corners=3pt]
-          (\xA, 0.55) -- (-5.00, 0.55) -- (-5.00, 2.75) -- (an1.west);
-        \draw[gray!50, thin, dashed, rounded corners=3pt]
-          (\xB, 0.55) -- (5.00, 0.55) -- (5.00, 2.75) -- (an1.east);
+        \draw[arr] let \p1=(csa.north),\p2=(an1.south) in (\xA, \y1) -- (\xA, \y2);
+        \draw[arr] let \p1=(csa.north),\p2=(an1.south) in (\xB, \y1) -- (\xB, \y2);
 
-        \draw[arr] (\xA, 3.05) -- (\xA, 3.80);
-        \draw[arr] (\xB, 3.05) -- (\xB, 3.80);
+        % Residual 1 (around causal self-attention)
+        \draw[gray!50, thin, dashed, rounded corners=3pt]
+          (\xA, 0.55) -- (-5.65, 0.55) -- (-5.65, \yana) -- (an1.west);
+        \draw[gray!50, thin, dashed, rounded corners=3pt]
+          (\xB, 0.55) -- (5.65, 0.55) -- (5.65, \yana) -- (an1.east);
 
         % ======== CROSS-ATTENTION ========
         \node[block, fill=green!10, draw=green!40!black,
               minimum width=4.8cm, text=green!50!black]
-          (ca) at (0, 4.10) {Cross-Attention};
+          (ca) at (0, \yca) {Cross-Attention};
 
-        % Encoder input arrow from the left
-        \node[font=\tiny, text=green!60!black, anchor=east] at (-5.60, 4.10)
+        \draw[arr] let \p1=(an1.north),\p2=(ca.south) in (\xA, \y1) -- (\xA, \y2);
+        \draw[arr] let \p1=(an1.north),\p2=(ca.south) in (\xB, \y1) -- (\xB, \y2);
+
+        % Encoder input arrow from the left (outside the new wider border)
+        \node[font=\tiny, text=green!60!black, anchor=east] at (-6.10, \yca)
           {$K,V$ from encoder $\rightarrow$};
-        \draw[arr, green!50!black] (-5.10, 4.10) -- (ca.west);
-
-        \draw[arr] (\xA, 4.43) -- (\xA, 5.50);
-        \draw[arr] (\xB, 4.43) -- (\xB, 5.50);
+        \draw[arr, green!50!black] (-5.95, \yca) -- (ca.west);
 
         % ======== ADD & NORM 2 ========
         \node[block, fill=yellow!15, draw=yellow!50!black,
-              minimum width=4.8cm, font=\small, text=yellow!50!black]
-          (an2) at (0, 5.80) {Add \& LN};
+              minimum width=4.8cm, font=\footnotesize, text=yellow!50!black]
+          (an2) at (0, \yanb) {Add \& LN};
 
-        % Residual 2
-        \draw[gray!50, thin, dashed, rounded corners=3pt]
-          (\xA, 3.40) -- (-5.00, 3.40) -- (-5.00, 5.80) -- (an2.west);
-        \draw[gray!50, thin, dashed, rounded corners=3pt]
-          (\xB, 3.40) -- (5.00, 3.40) -- (5.00, 5.80) -- (an2.east);
+        \draw[arr] let \p1=(ca.north),\p2=(an2.south) in (\xA, \y1) -- (\xA, \y2);
+        \draw[arr] let \p1=(ca.north),\p2=(an2.south) in (\xB, \y1) -- (\xB, \y2);
 
-        \draw[arr] (\xA, 6.10) -- (\xA, 6.85);
-        \draw[arr] (\xB, 6.10) -- (\xB, 6.85);
+        % Residual 2 (around cross-attention)
+        \draw[gray!50, thin, dashed, rounded corners=3pt]
+          (\xA, 3.78) -- (-5.65, 3.78) -- (-5.65, \yanb) -- (an2.west);
+        \draw[gray!50, thin, dashed, rounded corners=3pt]
+          (\xB, 3.78) -- (5.65, 3.78) -- (5.65, \yanb) -- (an2.east);
 
         % ======== FEED-FORWARD ========
         \node[block, fill=cyan!12, draw=cyan!40,
               minimum width=1.8cm, text=cyan!60!black]
-          (ff1) at (\xA, 7.15) {Feed-Forward};
+          (ff1) at (\xA, \yff) {Feed-Forward};
         \node[block, fill=cyan!12, draw=cyan!40,
               minimum width=1.8cm, text=cyan!60!black]
-          (ff2) at (\xB, 7.15) {Feed-Forward};
+          (ff2) at (\xB, \yff) {Feed-Forward};
 
-        \draw[arr] (\xA, 7.48) -- (\xA, 8.20);
-        \draw[arr] (\xB, 7.48) -- (\xB, 8.20);
+        \draw[arr] let \p1=(an2.north),\p2=(ff1.south) in (\xA, \y1) -- (\xA, \y2);
+        \draw[arr] let \p1=(an2.north),\p2=(ff2.south) in (\xB, \y1) -- (\xB, \y2);
 
         % ======== ADD & NORM 3 ========
         \node[block, fill=yellow!15, draw=yellow!50!black,
-              minimum width=4.8cm, font=\small, text=yellow!50!black]
-          (an3) at (0, 8.50) {Add \& LN};
+              minimum width=4.8cm, font=\footnotesize, text=yellow!50!black]
+          (an3) at (0, \yanc) {Add \& LN};
 
-        % Residual 3
+        \draw[arr] let \p1=(ff1.north),\p2=(an3.south) in (\xA, \y1) -- (\xA, \y2);
+        \draw[arr] let \p1=(ff2.north),\p2=(an3.south) in (\xB, \y1) -- (\xB, \y2);
+
+        % Residual 3 (around feed-forward)
         \draw[gray!50, thin, dashed, rounded corners=3pt]
-          (\xA, 6.45) -- (-5.00, 6.45) -- (-5.00, 8.50) -- (an3.west);
+          (\xA, 7.08) -- (-5.65, 7.08) -- (-5.65, \yanc) -- (an3.west);
         \draw[gray!50, thin, dashed, rounded corners=3pt]
-          (\xB, 6.45) -- (5.00, 6.45) -- (5.00, 8.50) -- (an3.east);
+          (\xB, 7.08) -- (5.65, 7.08) -- (5.65, \yanc) -- (an3.east);
 
-        % Output
-        \draw[arr] (\xA, 8.80) -- (\xA, 9.15);
-        \draw[arr] (\xB, 8.80) -- (\xB, 9.15);
+        % Output (cells outside the outer block)
+        \draw[arr] let \p1=(an3.north) in (\xA, \y1) -- (\xA, 10.48);
+        \draw[arr] let \p1=(an3.north) in (\xB, \y1) -- (\xB, 10.48);
 
-        \node[font=\tiny, text=blue!60!black, anchor=east] at (\xA-0.30, 9.35) {$o_1$};
+        \node[font=\tiny, text=blue!60!black, anchor=east] at (\xA-0.30, 10.70) {$o_1$};
         \foreach \ci in {0,...,3} {
           \pgfmathsetmacro{\cx}{\xA - 2*\cs + \ci*\cs + \cs/2}
           \node[acell, minimum width=\cs cm, minimum height=\cs cm,
-                fill=blue!20, draw=blue!40] at (\cx, 9.35) {};
+                fill=blue!20, draw=blue!40] at (\cx, 10.70) {};
         }
-        \node[font=\tiny, text=blue!60!black, anchor=east] at (\xB-0.30, 9.35) {$o_2$};
+        \node[font=\tiny, text=blue!60!black, anchor=east] at (\xB-0.30, 10.70) {$o_2$};
         \foreach \ci in {0,...,3} {
           \pgfmathsetmacro{\cx}{\xB - 2*\cs + \ci*\cs + \cs/2}
           \node[acell, minimum width=\cs cm, minimum height=\cs cm,
-                fill=blue!20, draw=blue!40] at (\cx, 9.35) {};
+                fill=blue!20, draw=blue!40] at (\cx, 10.70) {};
         }
 
-        % ======== BORDER ========
+        % ======== BORDER (wider, encloses residuals; input/output cells now outside) ========
         \draw[violet!40!black, rounded corners=8pt, line width=1pt]
-          (-5.30, 0.40) rectangle (5.30, 9.10);
+          (-6.00, 0.40) rectangle (6.00, 10.30);
         \node[font=\small\bfseries, text=violet!40!black]
-          at (0, 9.70) {Decoder Block};
+          at (0, 11.55) {Decoder Block};
 
       \end{tikzpicture}
       \end{center}
@@ -1611,7 +1629,7 @@
 
 % -----------------------------------------------------------------------
 \begin{frame}{Positional Encoding}
-  Self-attention is \textbf{permutation equivariant} --- no notion of token order.
+  Self-attention is \textbf{permutation equivariant}: it has no notion of token order.
   We add a \textbf{positional encoding} to each embedding to inject position information.
 
   \begin{center}
@@ -1741,7 +1759,45 @@
   Modern models use \textbf{learned} positional embeddings or \textbf{RoPE} instead.
 \end{frame}
 
-\subsection{Training \& Inference}
+% -----------------------------------------------------------------------
+\begin{frame}{Learned Positional Embeddings}
+
+  \textbf{Idea:} Replace the fixed sinusoidal formula with a learnable embedding matrix.
+
+  \vspace{0.5em}
+  \begin{itemize}
+    \item Embedding table $P \in \R^{L_{\max} \times d}$, initialized randomly
+    \item Position $m$ gets embedding $P[m, :]$, added to the token embedding
+    \item Trained end-to-end with the rest of the model via backpropagation
+  \end{itemize}
+
+  \vspace{0.5em}
+  \begin{columns}[T]
+    \begin{column}{0.48\textwidth}
+      \textbf{Advantages:}
+      \begin{itemize}
+        \item More expressive: each position has a free embedding
+        \item Empirically matches or slightly outperforms sinusoidal PE
+        \item Used in GPT-2, BERT, and many early Transformers
+      \end{itemize}
+    \end{column}
+    \begin{column}{0.48\textwidth}
+      \textbf{Limitations:}
+      \begin{itemize}
+        \item Fixed maximum length $L_{\max}$: cannot generalize beyond it
+        \item Absolute: attention depends on positions $(m, n)$, not relative distance $m - n$
+        \item Adds $L_{\max} \times d$ parameters (modest cost)
+      \end{itemize}
+    \end{column}
+  \end{columns}
+
+\end{frame}
+
+\input{rope}
+
+% =======================================================================
+\subsection{KV-Cache}
+% =======================================================================
 
 % -----------------------------------------------------------------------
 \begin{frame}{Training vs.\ Inference}
@@ -1853,50 +1909,74 @@
 \begin{frame}{KV-Cache: Avoiding Redundant Computation}
 
   \begin{columns}[T]
-    \begin{column}{0.50\textwidth}
-    \begin{center}
-    \scalebox{0.82}{%
-    \begin{minipage}{1.20\linewidth}
-    \begin{algorithm}[H]
-      \caption{Autoregressive Generation with KV-Cache}
-      \KwInput{prompt tokens $x_1, \ldots, x_P$; model with $L$ layers}
-      \KwOutput{generated tokens $x_{P+1}, \ldots, x_{P+G}$}
-      \BlankLine
-      \tcp{Prefill: process prompt in parallel}
-      \For{$\ell = 1, \ldots, L$}{
-        $Q, K, V \leftarrow W^Q x,\; W^K x,\; W^V x$ \tcp*{all $P$ tokens}
-        $K^\ell_{\textnormal{cache}} \leftarrow K$;\;
-        $V^\ell_{\textnormal{cache}} \leftarrow V$ \;
-        $X \leftarrow \textnormal{TransformerBlock}^\ell(Q, K, V, X)$ \;
-      }
-      \BlankLine
-      \tcp{Decode: one token at a time}
-      $t \leftarrow P$ \;
-      \While{$x_t \neq $ eos \textbf{and} $t < P + G$}{
-        $t \leftarrow t + 1$ \;
-        \For{$\ell = 1, \ldots, L$}{
-          $q_t, k_t, v_t \leftarrow W^Q x_t,\; W^K x_t,\; W^V x_t$ \tcp*{1 token}
-          \textcolor{orange!80!black}{$K^\ell_{\textnormal{cache}} \leftarrow [K^\ell_{\textnormal{cache}};\; k_t]$} \tcp*{append key}
-          \textcolor{cyan!60!black}{$V^\ell_{\textnormal{cache}} \leftarrow [V^\ell_{\textnormal{cache}};\; v_t]$} \tcp*{append value}
-          $o_t \leftarrow \textnormal{Attn}(q_t, K^\ell_{\textnormal{cache}}, V^\ell_{\textnormal{cache}})$ \;
-          $x_t \leftarrow \textnormal{FFN}(\textnormal{LN}(o_t + x_t))$ \;
-        }
-        $x_t \leftarrow \textnormal{sample}(\textnormal{softmax}(\textnormal{LMHead}(x_t)))$ \;
-      }
-    \end{algorithm}
-    \end{minipage}
-    }
-    \end{center}
-    \end{column}
     \begin{column}{0.48\textwidth}
-      \textbf{Key insight:} in causal attention, $K$ and $V$ for past positions never change.
-      Na\"ive generation recomputes them at every step --- wasteful!
+      \textbf{Key insight:} In causal attention, $K$ and $V$ for past positions never change.
+      Na\"ive generation recomputes them at every step -- wasteful!
+
+      \vspace{0.3em}
+      \textbf{Complexity:}
+      \begin{itemize}
+        \item \textbf{Prefill} $O(T^2)$: all $T$ tokens attend to each other (full attention matrix).
+        \item \textbf{Decode} $O(T)$ per token: only one new $q_t$ attends over cached $K_{1:t}, V_{1:t}$. No recomputation of past keys/values needed.
+      \end{itemize}
 
       \vspace{0.3em}
       \begin{center}
+      \begin{tikzpicture}[scale=0.72,
+          box/.style={draw=gray!60, rounded corners=2pt,
+                      minimum height=0.5cm, font=\tiny, align=center, inner sep=3pt},
+          wide/.style={box, minimum width=2.6cm},
+          narrow/.style={box, minimum width=2.0cm},
+          arr/.style={-{Stealth[length=2.5pt]}, semithick, gray!70},
+        ]
+        % Top: common entry
+        \node[wide, fill=gray!12] (input) at (0, 0) {Receive prompt tokens};
+
+        % Branch point
+        \coordinate (split) at (0, -0.55);
+        \draw[arr] (input) -- (split);
+
+        % --- Prefill branch (left) ---
+        \node[narrow, fill=xcol, font=\tiny\bfseries] (pf) at (-2.1, -1.3) {Prefill};
+        \node[narrow, fill=gray!8] (pf1) at (-2.1, -2.2)
+          {$Q,K,V$ for all $P$ tokens};
+        \node[narrow, fill=kcol!30] (pf2) at (-2.1, -3.1)
+          {Store $K,V$ in cache};
+
+        \draw[arr] (split) -| (pf);
+        \draw[arr] (pf) -- (pf1);
+        \draw[arr] (pf1) -- (pf2);
+
+        % --- Decode branch (right) ---
+        \node[narrow, fill=zcol, font=\tiny\bfseries] (dc) at (2.1, -1.3) {Decode};
+        \node[narrow, fill=gray!8] (dc1) at (2.1, -2.2)
+          {$q_t, k_t, v_t$ for 1 token};
+        \node[narrow, fill=orange!20] (dc2) at (2.1, -3.1)
+          {Append $k_t, v_t$ to cache};
+        \node[narrow, fill=green!15] (dc3) at (2.1, -4.0)
+          {$q_t$ attends full cache};
+        \node[narrow, fill=zcol] (dc4) at (2.1, -4.8)
+          {Sample next token};
+
+        \draw[arr] (split) -| (dc);
+        \draw[arr] (dc) -- (dc1);
+        \draw[arr] (dc1) -- (dc2);
+        \draw[arr] (dc2) -- (dc3);
+        \draw[arr] (dc3) -- (dc4);
+
+        % Loop arrow back
+        \draw[arr, dashed] (dc4.west) -- +(-0.5,0) |- (dc.west);
+
+        % Connect prefill -> decode
+        \draw[arr, densely dotted] (pf2.east) -- node[below, font=\tiny, gray] {once} (dc2.west|-pf2.east);
+      \end{tikzpicture}
+      \end{center}
+    \end{column}
+    \begin{column}{0.50\textwidth}
+      \begin{center}
       \begin{tikzpicture}[scale=0.82,
           tok/.style={draw=gray!50, rounded corners=2pt, minimum height=0.36cm,
-                      inner sep=2pt, font=\tiny},
+                      minimum width=0.75cm, inner sep=2pt, font=\tiny},
           arr/.style={-{Stealth[length=2.5pt]}, gray!60, thin},
           cachelbl/.style={font=\tiny, gray},
         ]
@@ -1921,38 +2001,42 @@
         \node[font=\tiny, violet!70] at (4.5, 3.8) {compute};
 
         % --- K row: cached + new ---
-        \node[cachelbl, anchor=east] at (-0.15, 3.0) {$K$:};
-        \foreach \i in {0,1,2} {
-          \pgfmathsetmacro{\tx}{\i * 1.10 + 0.35}
-          \node[tok, fill=kcol!50] at (\tx, 3.0) {$k_{\the\numexpr\i+1}$};
-        }
-        \node[tok, fill=kcol] at (3.65, 3.0) {$k_4$};
+        \node[cachelbl, anchor=east] at (-0.15, 2.8) {$K$:};
+        \node[tok, fill=kcol!50] (ck1) at (0.35, 2.8) {$k_1$};
+        \node[tok, fill=kcol!50] (ck2) at (1.45, 2.8) {$k_2$};
+        \node[tok, fill=kcol!50] (ck3) at (2.55, 2.8) {$k_3$};
+        \node[tok, fill=kcol] at (3.65, 2.8) {$k_4$};
+        \path let \p1=(ck1.south west), \p2=(ck3.south east) in
+          coordinate (kbL) at (\x1, \y1-0.08cm)
+          coordinate (kbR) at (\x2, \y1-0.08cm);
         \draw[decorate, decoration={brace, amplitude=3pt, mirror}, orange!60, thick]
-          (-0.15, 2.70) -- (2.75, 2.70)
-          node[midway, below=4pt, font=\tiny, orange!80!black] {cached};
-        \node[font=\tiny, orange!70] at (4.5, 3.0) {new};
+          (kbL) -- (kbR)
+          node[midway, below=5pt, font=\tiny, orange!80!black] {cached};
+        \node[font=\tiny, orange!70] at (4.5, 2.8) {new};
 
         % --- V row: cached + new ---
-        \node[cachelbl, anchor=east] at (-0.15, 2.0) {$V$:};
-        \foreach \i in {0,1,2} {
-          \pgfmathsetmacro{\tx}{\i * 1.10 + 0.35}
-          \node[tok, fill=vcol!50] at (\tx, 2.0) {$v_{\the\numexpr\i+1}$};
-        }
-        \node[tok, fill=vcol] at (3.65, 2.0) {$v_4$};
+        \node[cachelbl, anchor=east] at (-0.15, 1.4) {$V$:};
+        \node[tok, fill=vcol!50] (cv1) at (0.35, 1.4) {$v_1$};
+        \node[tok, fill=vcol!50] (cv2) at (1.45, 1.4) {$v_2$};
+        \node[tok, fill=vcol!50] (cv3) at (2.55, 1.4) {$v_3$};
+        \node[tok, fill=vcol] at (3.65, 1.4) {$v_4$};
+        \path let \p1=(cv1.south west), \p2=(cv3.south east) in
+          coordinate (vbL) at (\x1, \y1-0.08cm)
+          coordinate (vbR) at (\x2, \y1-0.08cm);
         \draw[decorate, decoration={brace, amplitude=3pt, mirror}, cyan!50, thick]
-          (-0.15, 1.70) -- (2.75, 1.70)
-          node[midway, below=4pt, font=\tiny, cyan!60!black] {cached};
-        \node[font=\tiny, cyan!50!black] at (4.5, 2.0) {new};
+          (vbL) -- (vbR)
+          node[midway, below=5pt, font=\tiny, cyan!60!black] {cached};
+        \node[font=\tiny, cyan!50!black] at (4.5, 1.4) {new};
 
         % --- Attention computation ---
-        \draw[arr, thick] (2.2, 1.30) -- (2.2, 0.80);
+        \draw[arr, thick] (2.2, 0.4) -- (2.2, -0.1);
         \node[draw=gray!50, fill=green!10, rounded corners=3pt,
               minimum width=3.6cm, minimum height=0.45cm, font=\scriptsize]
-          at (2.2, 0.50) {$\text{softmax}\!\bigl(\frac{q_4 K_{1:4}^\top}{\sqrt{d_k}}\bigr) V_{1:4}$};
+          at (2.2, -0.40) {$\text{softmax}\!\bigl(\frac{q_4 K_{1:4}^\top}{\sqrt{d_k}}\bigr) V_{1:4}$};
 
         % --- Output ---
-        \draw[arr, thick] (2.2, 0.25) -- (2.2, -0.15);
-        \node[tok, fill=zcol, font=\scriptsize] at (2.2, -0.40) {output $o_4$};
+        \draw[arr, thick] (2.2, -0.65) -- (2.2, -1.05);
+        \node[tok, fill=zcol, font=\scriptsize] at (2.2, -1.30) {output $o_4$};
       \end{tikzpicture}
       \end{center}
     \end{column}
@@ -1962,43 +2046,35 @@
 % -----------------------------------------------------------------------
 \begin{frame}{KV-Cache: Prefill vs.\ Decode}
 
-  \textbf{Two phases:}
-  \begin{description}[leftmargin=1.5cm, style=nextline]
-    \item[Prefill] Process the prompt as one batch (like training).
-      Fill each layer's KV-cache with $K, V \in \mathbb{R}^{P \times d_k}$.
-    \item[Decode] Generate tokens one by one.
-      Each step: project \emph{one} token, append $k_t, v_t$ to cache, attend over full cache.
-  \end{description}
+  \begin{columns}[T]
+    \begin{column}{0.48\textwidth}
+      \textbf{Prefill} (compute-bound):
+      \begin{itemize}
+        \item Large matrix multiplies, high arithmetic intensity
+        \item Na\"ive cost: $O(T \cdot d)$ projections $+$ $O(T^2 \cdot d)$ attention
+      \end{itemize}
 
-  \vspace{0.3em}
-  \begin{alertblock}{\small Prefill vs.\ Decode}
-    \begin{itemize}
-      \item Prefill is \textbf{compute-bound}: large matrix multiplies, high arithmetic intensity.
-      \item Decode is \textbf{memory-bound}: reading KV-cache dominates; only 1 query vector per step.
-    \end{itemize}
-  \end{alertblock}
+      \vspace{0.5em}
+      \textbf{Decode} (memory-bound):
+      \begin{itemize}
+        \item Reading KV-cache dominates; only 1 query vector per step
+        \item $O(d)$ projection $+$ $O(t \cdot d)$ attention per step
+      \end{itemize}
+    \end{column}
+    \begin{column}{0.50\textwidth}
+      \textbf{Memory:} cache grows as $O(L \cdot h \cdot T \cdot d_k)$
 
-  \vspace{0.3em}
-  \textbf{Cost per decode step:}
-  \begin{description}[labelwidth=1.6cm, leftmargin=1.8cm, font=\small]
-    \item[Na\"ive] $O(t \cdot d)$ to project all $t$ tokens into $Q,K,V$
-    \item[KV-cache] $O(d)$ projection (1 token) $+$ $O(t \cdot d)$ attention
-  \end{description}
+      {\footnotesize ($L$ layers, $h$ heads, $T$ seq.\ length, $d_k$ head dim).}
 
-  \vspace{0.3em}
-  \textbf{Memory:} cache grows as $O(L \cdot h \cdot T \cdot d_k)$
-  {\footnotesize ($L$ layers, $h$ heads, $T$ seq.\ length, $d_k$ head dim).}
-
-  \begin{alertblock}{\small Optimizations}
-    KV-cache memory can become very large.
-    Techniques for reduction: see next slides.
-  \end{alertblock}
+      \vspace{0.5em}
+      \begin{alertblock}{\small Optimizations}
+        KV-cache memory can become very large.
+        Techniques for reduction: see next slides.
+      \end{alertblock}
+    \end{column}
+  \end{columns}
 
 \end{frame}
-
-% =======================================================================
-\subsection{KV-Cache Reduction}
-% =======================================================================
 
 % -----------------------------------------------------------------------
 \begin{frame}{KV-Cache: The Memory Problem}
@@ -2014,11 +2090,12 @@
   {\footnotesize $L$ = layers, $h$ = heads, $T$ = sequence length, $d_k$ = head dim, $b$ = bytes per element.}
 
   \vspace{0.3em}
-  \textbf{Example} (LLaMA-2 70B, BF16, $T = 4096$):
+  \textbf{Hypothetical example} (LLaMA-2 70B dimensions with MHA, BF16, $T = 4096$):
   \begin{itemize}
     \item $L = 80$, $h = 64$, $d_k = 128$, $b = 2$
     \item KV-cache $= 2 \times 80 \times 64 \times 4096 \times 128 \times 2 \approx 10.7$\,GB \textbf{per sequence}
     \item At $T = 128$k: $\approx 335$\,GB -- larger than the model itself!
+    \item Note: LLaMA-2 70B actually uses GQA ($g{=}8$), reducing this by $8\times$.
   \end{itemize}
 
   \vspace{0.3em}
@@ -2028,7 +2105,6 @@
       \item[Compress KV] MLA -- low-rank latent compression
       \item[Fewer tokens] Sliding window -- bound the context
       \item[Share across layers] Cross-layer attention
-      \item[Lower precision] KV-cache quantization (FP8, INT4)
     \end{description}
   \end{alertblock}
 
@@ -2077,24 +2153,24 @@
         ]
 
         % --- MHA ---
-        \node[font=\scriptsize\bfseries] at (1.4, 4.2) {MHA};
+        \node[font=\scriptsize\bfseries] at (1.65, 4.6) {MHA};
         \foreach \i in {0,...,3} {
-          \pgfmathsetmacro{\xp}{\i * 0.9 + 0.1}
-          \node[headbox, fill=qcol] (q\i) at (\xp, 3.5) {$Q_{\the\numexpr\i+1}$};
-          \node[kvbox, fill=kcol] (k\i) at (\xp, 2.5) {$K_{\the\numexpr\i+1}$};
+          \pgfmathsetmacro{\xp}{\i * 1.1 + 0.0}
+          \node[headbox, fill=qcol] (q\i) at (\xp, 3.8) {$Q_{\the\numexpr\i+1}$};
+          \node[kvbox, fill=kcol] (k\i) at (\xp, 2.7) {$K_{\the\numexpr\i+1}$};
           \node[kvbox, fill=vcol] (v\i) at (\xp, 1.7) {$V_{\the\numexpr\i+1}$};
           \draw[arr] (q\i) -- (k\i);
           \draw[arr] (k\i) -- (v\i);
         }
 
         % --- MQA ---
-        \node[font=\scriptsize\bfseries] at (1.4, 0.7) {MQA};
+        \node[font=\scriptsize\bfseries] at (1.65, 0.7) {MQA};
         \foreach \i in {0,...,3} {
-          \pgfmathsetmacro{\xp}{\i * 0.9 + 0.1}
+          \pgfmathsetmacro{\xp}{\i * 1.1 + 0.0}
           \node[headbox, fill=qcol] (mq\i) at (\xp, 0.0) {$Q_{\the\numexpr\i+1}$};
         }
-        \node[kvbox, fill=kcol] (mk) at (1.4, -1.0) {$K$};
-        \node[kvbox, fill=vcol] (mv) at (1.4, -1.8) {$V$};
+        \node[kvbox, fill=kcol] (mk) at (1.65, -1.1) {$K$};
+        \node[kvbox, fill=vcol] (mv) at (1.65, -2.0) {$V$};
         \foreach \i in {0,...,3} {
           \draw[arr] (mq\i) -- (mk);
         }
@@ -2223,26 +2299,18 @@
   \vspace{0.3em}
   \begin{columns}[T]
     \begin{column}{0.52\textwidth}
-      \textbf{Down-project} (KV compression):
-      \[
-        \vc^{KV}_t = W^{DKV} \vh_t \quad \in \mathbb{R}^{d_c}
-      \]
-
-      \textbf{Up-project} to reconstruct K,V:
-      \[
-        \vk^C_t = W^{UK}\, \vc^{KV}_t, \quad
-        \vv_t = W^{UV}\, \vc^{KV}_t
-      \]
-
-      \textbf{Queries} (also compressed for training):
-      \[
-        \vc^{Q}_t = W^{DQ} \vh_t, \quad
-        \vq^C_t = W^{UQ}\, \vc^{Q}_t
-      \]
-
-      \vspace{0.3em}
-      \textbf{Key insight:} The KV information across all heads lies in a low-dimensional subspace.
-      We cache the compressed representation and reconstruct on the fly.
+      \begin{itemize}
+        \item \textbf{Down-project} (KV compression):
+          $\vc^{KV}_t = W^{DKV} \vh_t \in \mathbb{R}^{d_c}$
+        \item \textbf{Up-project} to reconstruct K,V:
+          $\vk^C_t = W^{UK}\, \vc^{KV}_t$, \;
+          $\vv_t = W^{UV}\, \vc^{KV}_t$
+        \item \textbf{Queries} (also compressed):
+          $\vc^{Q}_t = W^{DQ} \vh_t$, \;
+          $\vq^C_t = W^{UQ}\, \vc^{Q}_t$
+        \item \textbf{Key insight:} KV information across all heads lies in a low-dimensional subspace.
+          Cache the compressed representation, reconstruct on the fly.
+      \end{itemize}
     \end{column}
     \begin{column}{0.46\textwidth}
       \centering
@@ -2255,7 +2323,7 @@
         ]
 
         % h_t
-        \node[box, fill=gray!15] (ht) at (0, 4.5) {$\vh_t$};
+        \node[box, fill=gray!15] (ht) at (-0.8, 4.5) {$\vh_t$};
 
         % Down-project
         \node[smallbox, fill=green!20] (ckv) at (-0.8, 3.2) {$\vc^{KV}_t$};
@@ -2283,30 +2351,26 @@
 % -----------------------------------------------------------------------
 \begin{frame}{MLA: Decoupled RoPE}
 
-  \textbf{Problem:} RoPE applies position-dependent rotations $R_t$ to queries and keys.
-  \[
-    \text{score}_{t,s} = (\underbrace{R_t \vq^C_t}_{\text{pos-dependent}})^\top (\underbrace{R_s \vk^C_s}_{\text{pos-dependent}})
-  \]
-  Without RoPE, we could absorb the up-projections:
-  $(\vq^C_t)^\top \vk^C_s = (\vc^Q_t)^\top \underbrace{(W^{UQ})^\top W^{UK}}_{\text{precomputable}}\, \vc^{KV}_s$,
-  and \textbf{never materialize full keys}.
-  But $R_s$ between $W^{UK}$ and $\vc^{KV}_s$ breaks this.
-
-  \vspace{0.3em}
-  \textbf{Solution: Decoupled RoPE keys.}
-  Add a small separate key carrying positional information:
-  \[
-    \vk^R_t = R_t\, W^{KR}\, \vh_t \in \mathbb{R}^{d_R}, \qquad
-    \vq^R_t = R_t\, W^{QR}\, \vc^Q_t \in \mathbb{R}^{d_R}
-  \]
-  Concatenate content and RoPE parts:
-  \[
-    a_{t,s} = \frac{(\vq^C_t)^\top \vk^C_s + (\vq^R_t)^\top \vk^R_s}{\sqrt{d_h + d_R}}
-  \]
-
-  \vspace{0.3em}
-  \textbf{Cache per token per layer:} $\vc^{KV}_t \in \mathbb{R}^{d_c}$ and $\vk^R_t \in \mathbb{R}^{d_R}$
-  $\Rightarrow$ total $d_c + d_R$ elements.
+  \begin{itemize}
+    \item \textbf{Problem:} RoPE applies position-dependent rotations $R_t$ to queries and keys:
+      $\text{score}_{t,s} = (R_t \vq^C_t)^\top (R_s \vk^C_s)$
+    \item Without RoPE, we could absorb the up-projections:
+      $(\vq^C_t)^\top \vk^C_s = (\vc^Q_t)^\top \underbrace{(W^{UQ})^\top W^{UK}}_{\text{precomputable}}\, \vc^{KV}_s$
+      and \textbf{never materialize full keys}.
+      But $R_s$ between $W^{UK}$ and $\vc^{KV}_s$ breaks this.
+    \item \textbf{Solution: Decoupled RoPE keys.}
+      Add a small separate key carrying positional information:
+      \[
+        \vk^R_t = R_t\, W^{KR}\, \vh_t \in \mathbb{R}^{d_R}, \qquad
+        \vq^R_t = R_t\, W^{QR}\, \vc^Q_t \in \mathbb{R}^{d_R}
+      \]
+    \item Attention score splits into content + position parts:
+      \[
+        a_{t,s} = \frac{(\vq^C_t)^\top \vk^C_s + (\vq^R_t)^\top \vk^R_s}{\sqrt{d_h + d_R}}
+      \]
+    \item \textbf{Cache per token per layer:} $\vc^{KV}_t \in \mathbb{R}^{d_c}$ and $\vk^R_t \in \mathbb{R}^{d_R}$
+      $\Rightarrow$ total $d_c + d_R$ elements.
+  \end{itemize}
 
   \vspace{0.3em}
   \begin{exampleblock}{\small DeepSeek-V2 Numbers}
@@ -2395,51 +2459,83 @@
 \end{frame}
 
 % -----------------------------------------------------------------------
-\begin{frame}{Cross-Layer Attention \& KV-Cache Quantization}
+\begin{frame}{Cross-Layer Attention (CLA)}
 
   \begin{columns}[T]
-    \begin{column}{0.48\textwidth}
-      \textbf{Cross-Layer Attention (CLA)}~\cite{brandon2024cla}
-
-      \vspace{0.2em}
-      Adjacent layers \emph{share} the same KV-cache.
+    \begin{column}{0.50\textwidth}
+      \textbf{Idea}~\cite{brandon2024cla}: Adjacent layers \emph{share} the same KV-cache.
       Only every $c$-th layer computes K,V; others reuse.
 
-      \vspace{0.2em}
+      \vspace{0.3em}
       For layer $\ell$, anchor layer $a(\ell) = c \cdot \lfloor \ell/c \rfloor$:
       \[
         K^{(\ell)} = K^{(a(\ell))}, \quad V^{(\ell)} = V^{(a(\ell))}
       \]
       Each layer keeps its own $W^Q$.
 
-      \vspace{0.2em}
-      \textbf{Reduction:} $c\times$ less KV-cache (across layers).
-
-      \vspace{0.2em}
-      {\footnotesize CLA is \emph{orthogonal} to GQA/MQA -- combine for multiplicative savings.}
+      \vspace{0.3em}
+      \begin{itemize}
+        \item \textbf{Reduction:} $c\times$ less KV-cache (across layers).
+        \item CLA is \emph{orthogonal} to GQA/MQA -- combine for multiplicative savings.
+      \end{itemize}
     \end{column}
     \begin{column}{0.48\textwidth}
-      \textbf{KV-Cache Quantization}~\cite{hooper2024kvquant}
+      \centering
+      \begin{tikzpicture}[scale=0.62,
+          layer/.style={draw=gray!60, rounded corners=2pt, minimum width=1.0cm,
+                        minimum height=0.4cm, font=\tiny, inner sep=2pt},
+          kv/.style={draw, rounded corners=2pt, minimum width=0.7cm,
+                     minimum height=0.35cm, font=\tiny, inner sep=1pt},
+          arr/.style={-{Stealth[length=2pt]}, gray!60, thin},
+          share/.style={-{Stealth[length=2pt]}, red!60, semithick, dashed},
+        ]
+        \def\cx{0}  % shared x center for both diagrams
 
-      \vspace{0.2em}
-      Store cached K,V in lower precision (FP8, INT4, INT2)
-      instead of BF16.
+        % --- Standard (top) ---
+        \node[font=\tiny\bfseries, gray] at (\cx, 5.6) {Standard};
+        \foreach \i/\lbl in {0/1, 1/2, 2/3, 3/4} {
+          \pgfmathsetmacro{\yy}{4.9 - \i * 0.9}
+          \node[layer, fill=gray!10] (sL\i) at (\cx, \yy) {Layer \lbl};
+          \node[kv, fill=kcol!50, anchor=east] (sK\i) at (\cx-1.5, \yy) {$K^{(\lbl)}$};
+          \node[kv, fill=vcol!50, anchor=west] (sV\i) at (\cx+1.5, \yy) {$V^{(\lbl)}$};
+          \draw[arr] (sK\i) -- (sL\i);
+          \draw[arr] (sV\i) -- (sL\i);
+        }
+        \foreach \i/\j in {0/1, 1/2, 2/3} {
+          \draw[arr] (sL\i) -- (sL\j);
+        }
 
-      \vspace{0.2em}
-      \textbf{Reduction:} $b_{\text{orig}} / b_q$ (e.g.\ BF16 $\to$ INT4 = $4\times$).
+        % --- CLA c=2 (bottom) ---
+        \node[font=\tiny\bfseries, gray] at (\cx, 1.3) {CLA ($c{=}2$)};
+        \foreach \i/\lbl in {0/1, 1/2, 2/3, 3/4} {
+          \pgfmathsetmacro{\yy}{0.6 - \i * 0.9}
+          \node[layer, fill=gray!10] (cL\i) at (\cx, \yy) {Layer \lbl};
+        }
+        \foreach \i/\j in {0/1, 1/2, 2/3} {
+          \draw[arr] (cL\i) -- (cL\j);
+        }
 
-      \vspace{0.2em}
-      \textbf{Techniques:}
-      \begin{itemize}
-        \item Per-channel quantization for keys (large channel outliers)
-        \item Per-token quantization for values
-        \item Non-uniform quantization via $k$-means centroids
-        \item Dense-and-sparse: outliers stored separately in full precision
-      \end{itemize}
+        % KV for anchor layers (1 and 3)
+        \node[kv, fill=kcol, anchor=east] (cK0) at (\cx-1.5, 0.6) {$K^{(1)}$};
+        \node[kv, fill=vcol, anchor=west] (cV0) at (\cx+1.5, 0.6) {$V^{(1)}$};
+        \draw[arr] (cK0) -- (cL0);
+        \draw[arr] (cV0) -- (cL0);
 
-      \vspace{0.2em}
-      {\footnotesize Post-training, no retraining needed.
-      FP8 KV-cache is standard in vLLM / TensorRT-LLM.}
+        \node[kv, fill=kcol, anchor=east] (cK2) at (\cx-1.5, -1.2) {$K^{(3)}$};
+        \node[kv, fill=vcol, anchor=west] (cV2) at (\cx+1.5, -1.2) {$V^{(3)}$};
+        \draw[arr] (cK2) -- (cL2);
+        \draw[arr] (cV2) -- (cL2);
+
+        % Shared arrows
+        \draw[share] (cK0.south) |- (cL1.west);
+        \draw[share] (cV0.south) |- (cL1.east);
+        \draw[share] (cK2.south) |- (cL3.west);
+        \draw[share] (cV2.south) |- (cL3.east);
+
+        % Labels
+        \node[font=\tiny, red!60!black] at (\cx-2.2, -0.5) {shared};
+        \node[font=\tiny, red!60!black] at (\cx-2.2, -2.3) {shared};
+      \end{tikzpicture}
     \end{column}
   \end{columns}
 
@@ -2460,7 +2556,6 @@
     MLA & Low-rank KV compression & $d_c + d_R$ & $\sim 1/57\times$ \\
     Sliding window & Attend to last $w$ tokens & $2\, h\, d_k$ (capped at $w$) & $w / T$ \\
     CLA (factor $c$) & Share KV across $c$ layers & $2\, h\, d_k / c$ (amortized) & $1/c$ \\
-    KV quantization & Lower precision storage & $2\, h\, d_k \cdot b_q/b$ & $b_q/b$ \\
     \bottomrule
   \end{tabular}
   }

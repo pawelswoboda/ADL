@@ -27,7 +27,7 @@
     \begin{column}{0.48\textwidth}
       \textbf{Three fundamental challenges}~\cite{tazi2025ultrascale}
       \begin{enumerate}
-        \item \emphdef{Memory}: Hard limit --- if model state doesn't fit, training cannot begin
+        \item \emphdef{Memory}: Hard limit: if model state doesn't fit, training cannot begin
         \item \emphdef{Compute efficiency}: Minimize GPU idle time, maximize FLOP utilization (MFU)
         \item \emphdef{Communication overhead}: Minimize data transfer between GPUs, overlap with computation
       \end{enumerate}
@@ -372,7 +372,7 @@
   \begin{columns}
     \begin{column}{0.48\textwidth}
       \centering
-      \textbf{Naive} --- $N{-}1$ sequential steps
+      \textbf{Naive:} $N{-}1$ sequential steps
 
       \vspace{0.4em}
       \begin{tikzpicture}[
@@ -418,7 +418,7 @@
     \end{column}
     \begin{column}{0.48\textwidth}
       \centering
-      \textbf{Tree-based} --- $\lceil \log_2 N \rceil$ steps
+      \textbf{Tree-based:} $\lceil \log_2 N \rceil$ steps
 
       \vspace{0.4em}
       \begin{tikzpicture}[
@@ -520,7 +520,7 @@
         \item Each GPU holds local data; the \textbf{root} receives the combined result
         \item Reduction operator is typically \emph{sum}, but can be max, min, product, etc.
         \item Inverse of broadcast: many $\to$ one
-        \item \textbf{Implementation:} Tree-based reduce (mirror of tree broadcast) --- partial sums flow up a binary tree in $O(\log N)$ steps
+        \item \textbf{Implementation:} Tree-based reduce (mirror of tree broadcast): partial sums flow up a binary tree in $O(\log N)$ steps
         \item \textbf{Use cases:}
           \begin{itemize}
             \item Summing partial loss values across GPUs
@@ -712,7 +712,7 @@
       \begin{itemize}
         \item Every GPU starts with local data and ends with the \emph{same} reduced result
         \item \textbf{The} workhorse of data parallelism: synchronize gradients across all replicas
-        \item \textbf{Implementation:} Ring AllReduce (see next slide) --- bandwidth-optimal
+        \item \textbf{Implementation:} Ring AllReduce (see next slide), bandwidth-optimal
         \item \textbf{Use cases:}
           \begin{itemize}
             \item Gradient synchronization in data parallelism
@@ -786,9 +786,9 @@
 
   \vspace{0.4em}
   \begin{itemize}
-    \item Each GPU sends and receives exactly $\frac{2(N-1)}{N} \cdot |D|$ data --- \textbf{bandwidth-optimal}
-    \item All links are utilized simultaneously --- scales well to large $N$
-    \item \textbf{Tree vs.\ ring:} Tree minimizes \emph{latency} ($O(\log N)$ steps); ring minimizes \emph{bandwidth} usage. AllReduce operates on large gradient tensors, so bandwidth dominates --- ring wins
+    \item Each GPU sends and receives exactly $\frac{2(N-1)}{N} \cdot |D|$ data: \textbf{bandwidth-optimal}
+    \item All links are utilized simultaneously. Scales well to large $N$
+    \item \textbf{Tree vs.\ ring:} Tree minimizes \emph{latency} ($O(\log N)$ steps); ring minimizes \emph{bandwidth} usage. AllReduce operates on large gradient tensors, so bandwidth dominates, so ring wins
   \end{itemize}
 \end{frame}
 
@@ -799,13 +799,13 @@
 
   \vspace{0.5em}
   \begin{enumerate}
-    \item \textbf{Data Parallelism (DP)} --- replicate model, split data
-    \item \textbf{ZeRO / FSDP} --- memory-efficient data parallelism
-    \item \textbf{Tensor Parallelism (TP)} --- shard individual layers
-    \item \textbf{Sequence / Context Parallelism (SP/CP)} --- split along sequence dimension
-    \item \textbf{Pipeline Parallelism (PP)} --- split model into stages
-    \item \textbf{Expert Parallelism (EP)} --- distribute MoE experts
-    \item \textbf{Putting it all together} --- 5D parallelism and choosing configurations
+    \item \textbf{Data Parallelism (DP):} replicate model, split data
+    \item \textbf{ZeRO / FSDP:} memory-efficient data parallelism
+    \item \textbf{Tensor Parallelism (TP):} shard individual layers
+    \item \textbf{Sequence / Context Parallelism (SP/CP):} split along sequence dimension
+    \item \textbf{Pipeline Parallelism (PP):} split model into stages
+    \item \textbf{Expert Parallelism (EP):} distribute MoE experts
+    \item \textbf{Putting it all together:} 5D parallelism and choosing configurations
   \end{enumerate}
 
   \vspace{0.5em}

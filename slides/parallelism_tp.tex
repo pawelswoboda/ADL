@@ -1,7 +1,7 @@
 % !TEX root=./adl.tex
 
 % -----------------------------------------------------------------------
-\begin{frame}{Tensor Parallelism --- Overview}
+\begin{frame}{Tensor Parallelism: Overview}
 
   \emphdef{Tensor Parallelism} (TP) shards individual weight matrices \emph{within} each layer across GPUs~\cite{shoeybi2020megatronlm}.
 
@@ -12,7 +12,7 @@
       \begin{itemize}
         \item A Transformer layer is dominated by large matrix multiplications $Y = X \cdot W$
         \item Split $W$ into $N$ shards, one per GPU
-        \item Each GPU computes with its shard \emph{only} --- partial results are combined via collective communication
+        \item Each GPU computes with its shard \emph{only}. Partial results are combined via collective communication
         \item Each GPU stores and computes with only $\frac{1}{N}$ of each weight matrix
       \end{itemize}
 
@@ -28,7 +28,7 @@
       \begin{itemize}
         \item DP: each GPU has a \emph{full copy} of the model, processes different data
         \item ZeRO: shards parameters but must \emph{gather} full parameters before each computation
-        \item TP: each GPU computes with its \emph{shard only} --- no parameter gathering needed!
+        \item TP: each GPU computes with its \emph{shard only}: no parameter gathering needed!
       \end{itemize}
 
       \vspace{0.3em}
@@ -43,7 +43,7 @@
 \end{frame}
 
 % -----------------------------------------------------------------------
-\begin{frame}{Linear Layers --- Sharding Potential}
+\begin{frame}{Linear Layers: Sharding Potential}
 
   A Transformer is dominated by linear layers: $Y = X \cdot W$.
 
@@ -99,14 +99,14 @@
   Weights, gradients, and optimizer states of a single layer can exceed one GPU's memory.
 
   \vspace{0.2em}
-  \textbf{Solution:} Shard $W$ across $N$ GPUs --- two natural ways to split a matrix:
+  \textbf{Solution:} Shard $W$ across $N$ GPUs. Two natural ways to split a matrix:
   }
 
   \vspace{0.2em}
   \begin{columns}[T]
     \begin{column}{0.45\textwidth}
       \begin{center}
-      {\small \textbf{Column split} --- output dim}
+      {\small \textbf{Column split:} output dim}
 
       \vspace{0.1em}
       \begin{tikzpicture}[
@@ -129,7 +129,7 @@
     \end{column}
     \begin{column}{0.45\textwidth}
       \begin{center}
-      {\small \textbf{Row split} --- input dim}
+      {\small \textbf{Row split:} input dim}
 
       \vspace{0.1em}
       \begin{tikzpicture}[
@@ -752,7 +752,7 @@
 
   \vspace{0.1em}
   \begin{itemize}\small
-    \item \textbf{QKV projections} (col-parallel): each GPU computes a \emph{subset of heads} --- natural fit since heads are independent
+    \item \textbf{QKV projections} (col-parallel): each GPU computes a \emph{subset of heads}, a natural fit since heads are independent
     \item \textbf{Attention}: Softmax($Q_i K_i^T$)$\cdot V_i$ computed independently per head (no communication)
     \item \textbf{Output projection} (row-parallel): partial sums $\to$ one AllReduce per attention block
     \item Constraint: TP degree $\leq$ number of attention heads
@@ -795,7 +795,7 @@
     \begin{column}{0.48\textwidth}
       \textbf{Why this limits scaling:}
       \begin{itemize}
-        \item Communication is \emph{synchronous} --- cannot be overlapped with compute
+        \item Communication is \emph{synchronous}. Cannot be overlapped with compute
         \item Within node (NVLink): fast enough for TP $\leq 8$
         \item Across nodes: throughput drops sharply at TP $> 8$
       \end{itemize}
@@ -898,7 +898,7 @@
 
       \vspace{0.3em}
       \begin{alertblock}{Takeaway}
-        SP is essentially free --- same communication cost, but better memory savings.
+        SP is essentially free: same communication cost, but better memory savings.
       \end{alertblock}
     \end{column}
   \end{columns}

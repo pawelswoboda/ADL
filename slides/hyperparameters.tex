@@ -191,7 +191,7 @@
 % -----------------------------------------------------------------------
 \begin{frame}{Hyperband}
 
-  \textbf{Problem with SHA:} Must choose $n$ upfront --- trade-off between coverage and early stopping aggressiveness.
+  \textbf{Problem with SHA:} Must choose $n$ upfront: trade-off between coverage and early stopping aggressiveness.
 
   \vspace{0.3em}
   \textbf{Hyperband}~\cite{li2017hyperband} runs \emph{multiple independent SHA instances} (called \emph{brackets}) in parallel, each with a different $n$-vs-budget trade-off:
@@ -208,7 +208,7 @@
         \item[Brk 3:] sample 4 configs, start at budget $b{=}27$
       \end{description}
       \vspace{0.2em}
-      \textbf{Within each bracket:} run SHA --- evaluate, keep best $\nicefrac{1}{\eta}$, multiply budget by $\eta$, repeat.
+      \textbf{Within each bracket:} run SHA: evaluate, keep best $\nicefrac{1}{\eta}$, multiply budget by $\eta$, repeat.
 
       \vspace{0.2em}
       \textbf{Output:} Return the best config across all brackets.
@@ -290,7 +290,7 @@
 \end{frame}
 
 % -----------------------------------------------------------------------
-\begin{frame}{TPE --- Tree-structured Parzen Estimator}
+\begin{frame}{TPE: Tree-structured Parzen Estimator}
 
   \begin{columns}[T]
     \begin{column}{0.50\textwidth}
@@ -405,7 +405,7 @@
 \end{frame}
 
 % -----------------------------------------------------------------------
-\begin{frame}{BOHB --- Bayesian Optimization and Hyperband}
+\begin{frame}{BOHB: Bayesian Optimization and Hyperband}
 
   \textbf{Problem:} Hyperband explores broadly but samples configs \emph{randomly}. TPE samples intelligently but evaluates each config to completion (no early stopping).
 
@@ -459,8 +459,8 @@
   \vspace{0.3em}
   \textbf{Key findings:}
   \begin{itemize}
-    \item \textbf{Small compute budget:} Hyperband wins --- aggressive early stopping explores more configs
-    \item \textbf{Large compute budget:} Bayesian methods (TPE) win --- learned surrogate model pays off
+    \item \textbf{Small compute budget:} Hyperband wins: aggressive early stopping explores more configs
+    \item \textbf{Large compute budget:} Bayesian methods (TPE) win: learned surrogate model pays off
     \item \textbf{General purpose:} BOHB (Hyperband + TPE) rarely loses badly to any single method
     \item \textbf{Random search} is competitive in high dimensions and embarrassingly parallel settings
   \end{itemize}
@@ -603,45 +603,73 @@
 \subsection{Batch Size Selection}
 
 % -----------------------------------------------------------------------
-\begin{frame}{Batch Size and Learning Rate Scaling}
+\begin{frame}{Batch Size and the Linear Scaling Rule}
 
   The mini-batch gradient \emph{averages} over $B$ random samples:
   \[
     \hat{g}_B = \frac{1}{B} \sum_{i=1}^{B} \nabla L_i(\vw) \qquad \Rightarrow \qquad \vw_{t+1} = \vw_t - \eta\, \hat{g}_B
   \]
 
-  \begin{columns}[T]
-    \begin{column}{0.48\textwidth}
-      \textbf{Linear scaling}~\cite{goyal2017accurate}:
-      \[
-        B \to kB \;\Rightarrow\; \eta \to k\eta
-      \]
-      \begin{itemize}
-        \item With $k\times$ larger batch, $k\times$ fewer steps per epoch
-        \item Scale LR proportionally to cover the same distance in weight space
-        \item Matches the \emph{expected} update: one large step $\approx$ $k$ small steps
-      \end{itemize}
-    \end{column}
-    \begin{column}{0.48\textwidth}
-      \textbf{Square root scaling}~\cite{hoffer2017train}:
-      \[
-        B \to kB \;\Rightarrow\; \eta \to \sqrt{k}\,\eta
-      \]
-      \begin{itemize}
-        \item Gradient noise std decreases as $1/\sqrt{B}$
-        \item Scaling by $\sqrt{k}$ preserves the signal-to-noise ratio of parameter updates
-        \item More conservative; works better for very large $B$ where linear scaling diverges
-      \end{itemize}
-    \end{column}
-  \end{columns}
+  \vspace{0.2em}
+  \textbf{Linear scaling rule}~\cite{goyal2017accurate}: With $k\times$ larger batch we take $k\times$ fewer steps per epoch. To cover the same distance in weight space, scale $\eta \to k\eta$:
 
-  \vspace{0.4em}
-  \textbf{When to use which?}
+  \medskip
+  \begin{center}
+  \begin{minipage}[c]{0.42\textwidth}
+  \begin{tcolorbox}[colback=slide_blue!30, colframe=slide_blue!80, boxrule=0.6pt, arc=3pt, left=6pt, right=6pt, top=4pt, bottom=4pt]
+    \centering
+    {\small\textbf{1 step, batch $kB$, rate $k\eta$}}\\[4pt]
+    $\vw - k\eta\, \hat{g}_{kB}$
+  \end{tcolorbox}
+  \end{minipage}%
+  \hfill
+  \begin{minipage}[c]{0.06\textwidth}
+    \centering $\approx$
+  \end{minipage}%
+  \hfill
+  \begin{minipage}[c]{0.42\textwidth}
+  \begin{tcolorbox}[colback=slide_beige!30, colframe=slide_beige!80, boxrule=0.6pt, arc=3pt, left=6pt, right=6pt, top=4pt, bottom=4pt]
+    \centering
+    {\small\textbf{$k$ steps, batch $B$, rate $\eta$}}\\[4pt]
+    $\vw - \eta \displaystyle\sum_{j=1}^{k} \hat{g}_{B}^{(j)}$
+  \end{tcolorbox}
+  \end{minipage}
+  \end{center}
+  Both sides have the same \emph{expected} update: $\mathbb{E}[\hat{g}_{kB}] = \mathbb{E}[\hat{g}_B]$ because both are sample means of i.i.d.\ draws (batch size only affects variance, not expectation).
+
+  \vspace{0.3em}
+  \textbf{Limitations:}
   \begin{itemize}
-    \item Linear scaling is the default for moderate batch size increases ($k \leq 8$--$16$); requires LR warmup
-    \item Square root scaling is more robust at very large batch sizes (above $B_\text{crit}$)
-    \item In practice, the optimal exponent is often between $0.5$ and $1.0$ and depends on the optimizer, model, and data
+    \item Assumes $\text{Var}[\hat{g}]$ is small enough that linear approximation holds, but breaks for very large $B$
+    \item Does not account for Adam's adaptive scaling (empirically still useful)
+    \item Requires LR warmup to work at large batch sizes
   \end{itemize}
+
+\end{frame}
+
+% -----------------------------------------------------------------------
+\begin{frame}{Square Root Learning Rate Scaling}
+
+  \textbf{Alternative:} Scale $\eta \to \sqrt{k}\,\eta$ when $B \to kB$~\cite{hoffer2017train}.
+
+  \vspace{0.3em}
+  \textbf{Motivation from gradient noise:}
+  \begin{itemize}
+    \item The gradient estimate has variance $\text{Var}[\hat{g}_B] = \sigma^2 / B$, so its std scales as $1/\sqrt{B}$
+    \item One SGD step moves weights by $\Delta \vw = -\eta\, \hat{g}_B = -\eta\,(g + \varepsilon/\sqrt{B})$
+    \item Scaling $\eta \to \sqrt{k}\,\eta$ with $B \to kB$ keeps the \emph{noise contribution} $\eta \cdot \sigma / \sqrt{B}$ constant
+    \item Linear scaling ($\eta \to k\eta$) would amplify noise by $\sqrt{k}$
+  \end{itemize}
+
+  \vspace{0.3em}
+  \textbf{Linear vs.\ square root scaling:}
+  \begin{description}[labelwidth=\widthof{\bfseries Square root~~}, leftmargin=!]
+    \item[Linear] Preserves expected update magnitude. Works well for moderate $k$ ($\leq 8$--$16$) with LR warmup. Default in most recipes.
+    \item[Square root] Preserves signal-to-noise ratio. More robust for very large $B$ (above $B_\text{crit}$) where linear scaling causes instability.
+  \end{description}
+
+  \vspace{0.3em}
+  In practice, the optimal exponent $\alpha$ in $\eta \to k^\alpha \eta$ is often between $0.5$ and $1.0$, depending on optimizer, model, and training stage.
 
 \end{frame}
 
@@ -923,7 +951,7 @@
   \end{columns}
 
   \medskip
-  \textbf{Recent trend:} LLaMA-3, DeepSeek-V3 train \emph{well beyond} Chinchilla-optimal ($37$--$50\times$ tokens/param) --- smaller models trained longer are cheaper to \emph{serve}.
+  \textbf{Recent trend:} LLaMA-3, DeepSeek-V3 train \emph{well beyond} Chinchilla-optimal ($37$--$50\times$ tokens/param). Smaller models trained longer are cheaper to \emph{serve}.
 \end{frame}
 
 % -----------------------------------------------------------------------
@@ -1131,7 +1159,7 @@
   \begin{itemize}
     \item Contrastive models need very large batch sizes (32k+) for enough negatives
     \item SigLIP replaces softmax cross-entropy with sigmoid loss $\Rightarrow$ scales better to huge batches
-    \item Weight decay varies widely: 0.2 (CLIP) vs.\ $10^{-4}$ (SigLIP) --- less converged than LLM recipes
+    \item Weight decay varies widely: 0.2 (CLIP) vs.\ $10^{-4}$ (SigLIP). Less converged than LLM recipes
     \item Multimodal models often use multi-stage training with increasing resolution
   \end{itemize}
   }

@@ -9,7 +9,7 @@
 % -----------------------------------------------------------------------
 \begin{frame}{ViT: An Image is Worth 16$\times$16 Words}
 
-  \cite{dosovitskiy2021vit}: Apply a \textbf{standard Transformer encoder} directly to sequences of image patches --- no convolutions needed.
+  \cite{dosovitskiy2021vit}: Apply a \textbf{standard Transformer encoder} directly to sequences of image patches, no convolutions needed.
 
   \vspace{0.3em}
   \begin{center}
@@ -406,7 +406,7 @@
     \begin{column}{0.48\textwidth}
       \textbf{Why 75\% masking?}
       \begin{itemize}
-        \item Images have high spatial redundancy --- low masking allows trivial interpolation
+        \item Images have high spatial redundancy. Low masking allows trivial interpolation
         \item 75\% forces the model to learn \emph{semantic} understanding, not local texture
         \item Much higher than BERT's 15\% for text
       \end{itemize}
@@ -441,7 +441,7 @@
           \bottomrule
         \end{tabular}
       \end{center}
-      Using ImageNet-1K only --- no external data.
+      Using ImageNet-1K only. No external data.
 
       \vspace{0.3em}
       \textbf{vs.\ other self-supervised methods}:
@@ -624,7 +624,7 @@
       \begin{itemize}
         \item Partition feature map into non-overlapping $M{\times}M$ windows ($M{=}7$)
         \item Self-attention computed \emph{within} each window
-        \item Complexity: $\mathcal{O}(M^2 \cdot hw \cdot C)$ --- \textbf{linear} in image size
+        \item Complexity: $\mathcal{O}(M^2 \cdot hw \cdot C)$, \textbf{linear} in image size
       \end{itemize}
 
       \vspace{0.3em}
@@ -760,7 +760,7 @@
 % -----------------------------------------------------------------------
 \begin{frame}[fragile]{MLP-Mixer: No Attention, Only MLPs}
 
-  \cite{tolstikhin2021mlpmixer}: Replace attention entirely with two types of MLPs --- \textbf{token-mixing} (across patches) and \textbf{channel-mixing} (within patches).
+  \cite{tolstikhin2021mlpmixer}: Replace attention entirely with two types of MLPs: \textbf{token-mixing} (across patches) and \textbf{channel-mixing} (within patches).
 
   \vspace{0.3em}
   \begin{center}
@@ -901,7 +901,7 @@
 % -----------------------------------------------------------------------
 \begin{frame}[fragile]{DETR: End-to-End Object Detection with Transformers}
 
-  \cite{carion2020detr}: Reformulate object detection as a \textbf{direct set prediction} problem --- no anchors, no NMS, no hand-crafted components.
+  \cite{carion2020detr}: Reformulate object detection as a \textbf{direct set prediction} problem: no anchors, no NMS, no hand-crafted components.
 
   \vspace{0.2em}
   \begin{center}
@@ -995,7 +995,7 @@
   \vspace{0.3em}
   \begin{columns}
     \begin{column}{0.52\textwidth}
-      \textbf{Step 1: Hungarian matching} --- find optimal assignment $\hat{\sigma}$:
+      \textbf{Step 1: Hungarian matching}. Find optimal assignment $\hat{\sigma}$:
       \[
         \hat{\sigma} = \arg\min_{\sigma \in \mathfrak{S}_N} \sum_{i=1}^{N} \mathcal{L}_\text{match}(y_i, \hat{y}_{\sigma(i)})
       \]
@@ -1060,7 +1060,7 @@
 % -----------------------------------------------------------------------
 \begin{frame}{Deformable DETR: Sparse Attention for Detection}
 
-  \cite{zhu2021deformabledetr}: Fix DETR's slow convergence (500 epochs) and poor small-object performance via \textbf{deformable attention} --- each query attends to only $K$ learned sampling points.
+  \cite{zhu2021deformabledetr}: Fix DETR's slow convergence (500 epochs) and poor small-object performance via \textbf{deformable attention}. Each query attends to only $K$ learned sampling points.
 
   \vspace{0.3em}
   \begin{center}
@@ -1207,7 +1207,7 @@
 % -----------------------------------------------------------------------
 \begin{frame}[fragile]{TrackFormer: Multi-Object Tracking with Transformers}
 
-  \cite{meinhardt2022trackformer}: Extend DETR to video by introducing \textbf{track queries} that persist across frames --- tracking by attention.
+  \cite{meinhardt2022trackformer}: Extend DETR to video by introducing \textbf{track queries} that persist across frames: tracking by attention.
 
   \vspace{0.3em}
   \begin{center}

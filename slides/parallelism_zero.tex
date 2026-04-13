@@ -1,7 +1,7 @@
 % !TEX root=./adl.tex
 
 % -----------------------------------------------------------------------
-\begin{frame}{ZeRO --- Motivation}
+\begin{frame}{ZeRO: Motivation}
 
   \emphdef{ZeRO} (Zero Redundancy Optimizer) eliminates memory redundancy in data-parallel training~\cite{rajbhandari2020zero}.
 
@@ -32,7 +32,7 @@
 \end{frame}
 
 % -----------------------------------------------------------------------
-\begin{frame}{Memory Baseline --- Mixed-Precision Training with Adam}
+\begin{frame}{Memory Baseline: Mixed-Precision Training with Adam}
 
   For a model with $\Psi$ parameters using BF16 mixed-precision training:
 
@@ -57,7 +57,7 @@
   \vspace{0.3em}
   \begin{itemize}\small
     \item \textbf{Optimizer states:} $k\Psi = 12\Psi$ bytes (master weights + momentum + variance)
-    \item \textbf{Activations:} not included --- depend on batch/seq.\ length, \emph{different} per DP replica
+    \item \textbf{Activations:} not included, depend on batch/seq.\ length, \emph{different} per DP replica
   \end{itemize}
 
   \vspace{0.3em}
@@ -78,7 +78,7 @@
 \definecolor{gradcol}{HTML}{E889AB}    % pink
 \definecolor{optimcol}{HTML}{CEC0FA}   % lavender
 
-\begin{frame}{ZeRO Stages --- Memory per GPU}
+\begin{frame}{ZeRO Stages: Memory per GPU}
 
   \begin{center}
   \begin{tikzpicture}[x=1cm, y=1cm]
@@ -235,7 +235,7 @@
 \end{frame}
 
 % -----------------------------------------------------------------------
-\begin{frame}{ZeRO-1 --- Illustrated ($N_d = 3$)}
+\begin{frame}{ZeRO-1: Illustrated ($N_d = 3$)}
 
   % Shows model as 6 layers. Params \& grads fully replicated on each GPU.
   % Optimizer states partitioned: each GPU owns 2 layers' worth.
@@ -350,7 +350,7 @@
 \end{frame}
 
 % -----------------------------------------------------------------------
-\begin{frame}{ZeRO-2 --- Illustrated ($N_d = 3$)}
+\begin{frame}{ZeRO-2: Illustrated ($N_d = 3$)}
 
   % Shows model as 6 layers. Params replicated, grads + optim partitioned.
   \begin{center}
@@ -454,11 +454,11 @@
     \item \textsc{AllGather} updated params to reconstruct full model
   \end{enumerate}
   {\small\textbf{Memory:} $2\Psi + \tfrac{(2+12)\Psi}{N_d}$ per GPU.
-  \quad \textbf{Comm:} same as ZeRO-1 ($2\Psi$) --- strictly better, no overhead.}
+  \quad \textbf{Comm:} same as ZeRO-1 ($2\Psi$), strictly better, no overhead.}
 \end{frame}
 
 % -----------------------------------------------------------------------
-\begin{frame}{ZeRO-3 / FSDP --- Illustrated ($N_d = 3$)}
+\begin{frame}{ZeRO-3 / FSDP: Illustrated ($N_d = 3$)}
 
   % Shows model as 6 layers. Everything partitioned.
   \begin{center}
@@ -652,5 +652,5 @@
   \end{center}
 
   \vspace{0.3em}
-  {\small ZeRO does \textbf{not} reduce activation memory --- combine with activation checkpointing, TP, or CP for that.}
+  {\small ZeRO does \textbf{not} reduce activation memory. Combine with activation checkpointing, TP, or CP for that.}
 \end{frame}

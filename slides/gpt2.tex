@@ -17,7 +17,7 @@
         \item Demonstrated that \emph{scaling up} a simple language model yields surprisingly capable text generation
         \item Showed that unsupervised pretraining on diverse web text transfers to many tasks \emph{without fine-tuning} (zero-shot)
         \item Architecture became the blueprint for GPT-3, ChatGPT, and most modern LLMs
-        \item Small enough (124M) to train from scratch on a single GPU --- ideal for studying training techniques
+        \item Small enough (124M) to train from scratch on a single GPU, ideal for studying training techniques
       \end{itemize}
 
       \vspace{0.3em}
@@ -125,7 +125,7 @@
       \textbf{Projections}: $Q, K, V$ are computed jointly via a single \texttt{c\_attn} linear layer ($d \to 3d$), split afterwards.
 
       \vspace{0.5em}
-      \textbf{Flash Attention}~(PyTorch $\ge$ 2.0): fused CUDA kernel for attention --- avoids materializing the $T \times T$ matrix, reducing memory from $O(T^2)$ to $O(T)$.
+      \textbf{Flash Attention}~(PyTorch $\ge$ 2.0): fused CUDA kernel for attention that avoids materializing the $T \times T$ matrix, reducing memory from $O(T^2)$ to $O(T)$.
 
       \begin{block}{Effect}
         Flash Attention gives the same result as standard attention but is 2--4$\times$ faster and uses far less memory.
@@ -222,7 +222,7 @@
       \end{center}
       \begin{itemize}
         \item Saves $V \times d = 50304 \times 768 \approx 38$M parameters
-        \item Input and output representations are coupled --- works well in practice
+        \item Input and output representations are coupled; works well in practice
       \end{itemize}
     \end{column}
     \begin{column}{0.48\textwidth}
@@ -268,7 +268,7 @@
     \end{column}
     \begin{column}{0.46\textwidth}
       \begin{block}{Why not decay everything?}
-        Biases and LayerNorm parameters are scale/shift terms --- penalizing their magnitude doesn't make sense as regularization and can harm training.
+        Biases and LayerNorm parameters are scale/shift terms. Penalizing their magnitude does not help as regularization and can harm training.
       \end{block}
 
       \vspace{0.3em}
@@ -437,7 +437,7 @@
     \draw[<->, gray, thin] (0,4.15) -- (19*0.24,4.15) node[midway, below, font=\tiny, gray] {19 bits};
     % annotation
     \node[font=\tiny, anchor=west, align=left, text width=3.2cm] at (8.0, 4.45)
-      {NVIDIA internal format (Ampere+). Tensor cores use TF32 for float32 matmuls transparently --- 8$\times$ faster, no code changes.};
+      {NVIDIA internal format (Ampere+). Tensor cores use TF32 for float32 matmuls transparently: 8$\times$ faster, no code changes.};
 
     % --- bfloat16 (16 bits: 1+8+7) ---
     \node[font=\small\bfseries, anchor=east] at (-0.15, 3.3) {bfloat16};
@@ -469,7 +469,7 @@
     \draw[<->, gray, thin] (0,2.95) -- (16*0.24,2.95) node[midway, below, font=\tiny, gray] {16 bits};
     % annotation
     \node[font=\tiny, anchor=west, align=left, text width=3.2cm] at (8.0, 3.25)
-      {2 bytes/param. Full float32 range, low precision. Preferred for training --- no overflow issues.};
+      {2 bytes/param. Full float32 range, low precision. Preferred for training: no overflow issues.};
 
     % --- float16 (16 bits: 1+5+10) ---
     \node[font=\small\bfseries, anchor=east] at (-0.15, 2.1) {float16};
@@ -558,7 +558,7 @@
       \begin{itemize}
         \item bf16 values are 2$\times$ smaller $\Rightarrow$ 2$\times$ less memory bandwidth
         \item Tensor cores process bf16 at 2--8$\times$ the float32 throughput
-        \item Float32 accumulation is ``free'' --- built into the tensor core hardware
+        \item Float32 accumulation is ``free'', built into the tensor core hardware
       \end{itemize}
 
       \vspace{0.3em}
@@ -660,7 +660,7 @@
   \vspace{0.5em}
   \begin{columns}
     \begin{column}{0.52\textwidth}
-      \textbf{Solution --- loss scaling}:
+      \textbf{Solution: loss scaling.}
       \begin{enumerate}
         \item Multiply loss by a large scale factor $S$ before \texttt{backward()}
           \[ \tilde{\mathcal{L}} = S \cdot \mathcal{L} \]
@@ -752,7 +752,7 @@
   \vspace{-0.5em}
   \begin{columns}
     \begin{column}{0.48\textwidth}
-      \centering\textbf{Unfused --- 3 kernel launches}
+      \centering\textbf{Unfused: 3 kernel launches}
 
       \vspace{0.2em}
       \begin{tikzpicture}[scale=0.78, every node/.style={transform shape},
@@ -805,7 +805,7 @@
       \end{tikzpicture}
     \end{column}
     \begin{column}{0.48\textwidth}
-      \centering\textbf{Fused --- 1 kernel launch}
+      \centering\textbf{Fused: 1 kernel launch}
 
       \vspace{0.2em}
       \begin{tikzpicture}[scale=0.78, every node/.style={transform shape},
@@ -833,10 +833,10 @@
         \draw[arr] (fk) -- (L);
 
         \node[font=\tiny, align=left, text width=2.7cm] at (0, 2.1)
-          {\textcolor{green!60!black}{\textbf{No GPU memory writes}} of $e^z$, $p$, $\log p$ --- all computed in registers.};
+          {\textcolor{green!60!black}{\textbf{No GPU memory writes}} of $e^z$, $p$, $\log p$: all computed in registers.};
 
         \node[font=\tiny, align=left, text width=2.7cm] at (0, 1.2)
-          {Cross-entropy computed directly from logits --- no need to materialise $p$.};
+          {Cross-entropy computed directly from logits, no need to materialise $p$.};
       \end{tikzpicture}
     \end{column}
   \end{columns}
@@ -916,7 +916,7 @@
         \draw[arr] (fk) -- (dz);
 
         \node[font=\tiny, align=left, text width=2.7cm] at (0, 0.7)
-          {\textcolor{green!60!black}{\textbf{Only 1 read + 1 write.}} $p$ recomputed in registers --- no stored intermediates needed.};
+          {\textcolor{green!60!black}{\textbf{Only 1 read + 1 write.}} $p$ recomputed in registers, no stored intermediates needed.};
       \end{tikzpicture}
     \end{column}
   \end{columns}

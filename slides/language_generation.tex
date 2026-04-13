@@ -45,25 +45,79 @@
     \item Repeat until vocabulary size $V$ is reached
   \end{enumerate}
 
-  \vspace{0.5em}
-  \textbf{Encoding at inference:} apply the learned merge rules greedily, left to right.
+  \vspace{0.3em}
+  \textbf{Example:} training on corpus \texttt{\{``hug''$\!\times\!$10, ``pug''$\!\times\!$5, ``bug''$\!\times\!$3\}}
 
-  \vspace{0.5em}
-  \begin{columns}
-    \begin{column}{0.5\textwidth}
-      \textbf{Example} (GPT-2, $V=50{,}257$):
-      \begin{itemize}
-        \item \texttt{"tokenization"} $\to$ \texttt{[token, ization]}
-        \item \texttt{"PyTorch"} $\to$ \texttt{[Py, Torch]}
-        \item \texttt{"<|endoftext|>} $\to$ special token
-      \end{itemize}
-    \end{column}
-    \begin{column}{0.47\textwidth}
-      \begin{block}{Key property}
-        Every byte sequence is encodable --- no unknown tokens.
-      \end{block}
-    \end{column}
-  \end{columns}
+  \vspace{0.2em}
+  \centering
+  \begin{tikzpicture}[
+    tok/.style={draw, rounded corners=1pt, inner sep=2pt, font=\scriptsize\ttfamily, fill=gray!10},
+    new/.style={tok, fill=green!30, thick},
+    freq/.style={font=\tiny, text=gray},
+    steplbl/.style={font=\scriptsize\bfseries, anchor=east},
+    info/.style={font=\scriptsize, text=red!70!black, anchor=west},
+  ]
+    % Step 0: h u g | p u g | b u g
+    \node[steplbl] at (-0.1, 0) {\strut Step 0:};
+    \node[tok] at (0.5, 0) {h};  \node[tok] at (1.0, 0) {u};  \node[tok] at (1.5, 0) {g};
+    \node[freq] at (2.0, 0) {$\times$10};
+    \node[tok] at (2.8, 0) {p};  \node[tok] at (3.3, 0) {u};  \node[tok] at (3.8, 0) {g};
+    \node[freq] at (4.3, 0) {$\times$5};
+    \node[tok] at (5.0, 0) {b};  \node[tok] at (5.5, 0) {u};  \node[tok] at (6.0, 0) {g};
+    \node[freq] at (6.5, 0) {$\times$3};
+    \node[info] at (7.2, 0) {(u,g): 18 $\to$ merge};
+
+    % Step 1: h ug | p ug | b ug
+    \node[steplbl] at (-0.1, -0.65) {\strut Step 1:};
+    \node[tok] at (0.5, -0.65) {h};  \node[new] at (1.15, -0.65) {ug};
+    \node[freq] at (1.7, -0.65) {$\times$10};
+    \node[tok] at (2.8, -0.65) {p};  \node[new] at (3.45, -0.65) {ug};
+    \node[freq] at (4.0, -0.65) {$\times$5};
+    \node[tok] at (5.0, -0.65) {b};  \node[new] at (5.65, -0.65) {ug};
+    \node[freq] at (6.2, -0.65) {$\times$3};
+    \node[info] at (7.2, -0.65) {(h,ug): 10 $\to$ merge};
+
+    % Step 2: hug | p ug | b ug
+    \node[steplbl] at (-0.1, -1.3) {\strut Step 2:};
+    \node[new] at (0.85, -1.3) {hug};
+    \node[freq] at (1.5, -1.3) {$\times$10};
+    \node[tok] at (2.8, -1.3) {p};  \node[tok] at (3.45, -1.3) {ug};
+    \node[freq] at (4.0, -1.3) {$\times$5};
+    \node[tok] at (5.0, -1.3) {b};  \node[tok] at (5.65, -1.3) {ug};
+    \node[freq] at (6.2, -1.3) {$\times$3};
+    \node[font=\scriptsize, anchor=west] at (7.2, -1.3) {$\mathcal{V}$: \texttt{h,u,g,p,b,ug,hug}};
+  \end{tikzpicture}
+
+  \vspace{0.2em}
+  \raggedright
+  \textbf{At inference:} apply learned merges greedily, left to right. Every byte sequence is encodable: \textbf{no unknown tokens.}
+\end{frame}
+
+% -----------------------------------------------------------------------
+\begin{frame}{BPE Tokenization at Inference}
+  Given a string, there are typically \textbf{many valid segmentations} into vocabulary tokens.
+
+  \vspace{0.3em}
+  \textbf{Example:} \texttt{"tokenization"} could be split as
+  \begin{itemize}
+    \item \texttt{[token, ization]} \quad (2 tokens)
+    \item \texttt{[token, iz, ation]} \quad (3 tokens)
+    \item \texttt{[t, o, k, e, n, i, z, a, t, i, o, n]} \quad (12 tokens -- bytes)
+  \end{itemize}
+
+  \vspace{0.3em}
+  \textbf{Which segmentation does BPE choose?}
+  \begin{enumerate}
+    \item Start from the byte-level decomposition of the input string
+    \item Find the pair of adjacent tokens whose merge rule has the \textbf{highest priority} (i.e.\ was learned earliest during training)
+    \item Merge that pair into a single token
+    \item Repeat until no more merge rules apply
+  \end{enumerate}
+
+  \begin{block}{Deterministic and unique}
+    The merge priority table imposes a total order, so BPE always produces the \textbf{same unique tokenization} for a given string.
+    The result tends to be close to the shortest possible segmentation (fewest tokens).
+  \end{block}
 \end{frame}
 
 % -----------------------------------------------------------------------
@@ -73,9 +127,9 @@
   \vspace{0.5em}
   \textbf{Special tokens} are added to control model behavior:
   \begin{itemize}
-    \item \texttt{<|endoftext|>} / \texttt{<eos>} --- marks end of a document
-    \item \texttt{<|pad|>} --- pads shorter sequences in a batch to equal length
-    \item \texttt{<|bos|>} --- beginning-of-sequence prompt for generation
+    \item \texttt{<|endoftext|>} / \texttt{<eos>}: marks end of a document
+    \item \texttt{<|pad|>}: pads shorter sequences in a batch to equal length
+    \item \texttt{<|bos|>}: beginning-of-sequence prompt for generation
     \item Instruction-tuned models add \texttt{<|user|>}, \texttt{<|assistant|>}, \texttt{<|system|>} etc.
   \end{itemize}
 
@@ -86,7 +140,10 @@
   \end{block}
 
   \vspace{0.5em}
-  \textit{Note:} the same matrix $E$ is often used (transposed) to produce output logits --- \textbf{weight tying}.
+  \textit{Note:} the same matrix $E$ is often used (transposed) to produce output logits (\textbf{weight tying}).
+
+  \vspace{0.5em}
+  Try it yourself: \url{https://tiktokenizer.vercel.app/}
 \end{frame}
 
 % -----------------------------------------------------------------------
@@ -115,7 +172,7 @@
       \begin{alertblock}{Efficiency}
         Generation is autoregressive and slow: One token after another.
           Can we circumvent this limitation during training with a parallel pass through the data?
-          We will affirmative answers to this for transformers and SSMs (Mamba).
+          We will affirmatively answer this for transformers and SSMs (Mamba).
       \end{alertblock}
 \end{frame}
 
@@ -126,21 +183,49 @@
     p_\theta(x = k \mid \text{context}) = \frac{\exp(z_k)}{\sum_{v=1}^{V} \exp(z_v)}
   \]
 
-  \textbf{Training loss:} average negative log-likelihood over all positions:
-  \[
-    \mathcal{L} = -\frac{1}{T} \sum_{i=1}^{T} \log p_\theta(x_i \mid x_1, \ldots, x_{i-1})
-  \]
+  \begin{columns}[T]
+    \begin{column}{0.55\textwidth}
+      \textbf{Training loss:} average negative log-likelihood over all positions:
+      \[
+        \mathcal{L} = -\frac{1}{T} \sum_{i=1}^{T} \log p_\theta(x_i \mid x_1, \ldots, x_{i-1})
+      \]
 
       \textbf{Perplexity} is the standard reporting metric:
       \[
         \mathrm{PPL} = \exp(\mathcal{L})
       \]
-      A perplexity of $k$ means the model is, on average, as uncertain as a uniform distribution over $k$ equally likely tokens.
+      A perplexity of $k$ means the model is as uncertain as a uniform distribution over $k$ tokens.
+    \end{column}
+    \begin{column}{0.42\textwidth}
+      \begin{tikzpicture}
+        \begin{axis}[
+          width=\columnwidth,
+          height=4.5cm,
+          xlabel={$p$ (predicted prob.\ of correct token)},
+          ylabel={$-\log(p)$},
+          xmin=0.01, xmax=1.05,
+          ymin=0, ymax=5,
+          domain=0.01:1,
+          samples=100,
+          thick,
+          grid=major,
+          grid style={gray!30},
+          xlabel style={font=\footnotesize},
+          ylabel style={font=\footnotesize},
+          tick label style={font=\scriptsize},
+        ]
+          \addplot[blue, very thick] {-ln(x)};
+          \draw[dashed, red, thick] (axis cs:0.5,0) -- (axis cs:0.5,{-ln(0.5)}) -- (axis cs:0,{-ln(0.5)});
+          \node[font=\scriptsize, red, anchor=west] at (axis cs:0.02,{-ln(0.5)+0.3}) {$0.69$};
+        \end{axis}
+      \end{tikzpicture}
+    \end{column}
+  \end{columns}
 
-      \begin{block}{Teacher forcing}
-        During training the \emph{ground-truth} previous tokens are always fed as context, even if the model's own prediction was wrong.
-          This decouples training from generation. We learn \emph{offline}.
-      \end{block}
+  \begin{block}{Teacher forcing}
+    During training the \emph{ground-truth} previous tokens are always fed as context, even if the model's own prediction was wrong.
+      This decouples training from generation. We learn \emph{offline}.
+  \end{block}
 \end{frame}
 
 % -----------------------------------------------------------------------
@@ -151,11 +236,21 @@
     \item \textbf{Versatile}: to predict the next token well, the model must implicitly learn grammar, facts, reasoning, style, (world model?) \ldots
   \end{itemize}
 
-  \vspace{0.8em}
+  \vspace{0.5em}
+  \begin{block}{Prediction is compression (Sutskever)}
+    A model that predicts the next token well must build a \textbf{compressed representation} of the training data.
+    Compression forces the model to discover the underlying structure: facts, reasoning patterns, world knowledge.
+    The better the compression, the deeper the understanding.
+
+    \vspace{0.3em}
+    {\small Ilya Sutskever on this topic: \url{https://www.youtube.com/watch?v=Yf1o0TQzry8} (excerpt: \url{https://www.youtube.com/watch?v=YEUclZdj_Sc})}
+  \end{block}
+
+  \vspace{0.5em}
   \begin{alertblock}{Emergent capabilities}
     As model size and data scale up, capabilities emerge that were not explicitly trained: few-shot learning, chain-of-thought reasoning, code generation, \ldots
+    The compression view explains this: larger models can compress more structure, unlocking qualitatively new abilities.
   \end{alertblock}
-
 \end{frame}
 
 % -----------------------------------------------------------------------
@@ -163,94 +258,388 @@
 
 \begin{frame}{Generation Loop}
   At inference time we generate one token per step:
-  \[
-    \hat{x}_{i} \sim p_\theta(\cdot \mid x_1, \ldots, x_{i-1}), \qquad i = 1, 2, 3, \ldots
-  \]
+  $\hat{x}_{i} \sim p_\theta(\cdot \mid x_1, \ldots, x_{i-1}), \quad i = 1, 2, 3, \ldots$
 
-  \begin{enumerate}
-    \item Encode the prompt into token IDs
-    \item Forward-pass through the model $\to$ logits $z \in \mathbb{R}^V$
-    \item Apply a \textbf{sampling strategy} to $z$ to pick the next token $\hat{x}_i$
-    \item Append $\hat{x}_i$ to the context; go to step 2
-    \item Stop when \texttt{<eos>} is sampled or a length limit is reached
-  \end{enumerate}
+  \begin{columns}[T]
+    \begin{column}{0.45\textwidth}
+      \begin{enumerate}
+        \item Encode prompt into token IDs
+        \item Forward-pass $\to$ logits $z \in \mathbb{R}^V$
+        \item Apply \textbf{sampling strategy} to pick $\hat{x}_i$
+        \item Append $\hat{x}_i$ to context; go to 2
+        \item Stop at \texttt{<eos>} or length limit
+      \end{enumerate}
 
-  \vspace{0.5em}
+    \end{column}
+    \begin{column}{0.53\textwidth}
+      \centering
+      \begin{tikzpicture}[
+        node distance=0.6cm and 0.8cm,
+        box/.style={draw, rounded corners, fill=blue!10, minimum width=2.2cm, minimum height=0.6cm, font=\footnotesize, align=center},
+        tok/.style={draw, rounded corners, fill=orange!20, minimum width=1.6cm, minimum height=0.6cm, font=\footnotesize, align=center},
+        arr/.style={->, thick, >=stealth},
+        every node/.style={font=\footnotesize},
+      ]
+        % Prompt tokens
+        \node[tok] (prompt) {Prompt tokens\\$x_1, \ldots, x_n$};
+
+        % Model box
+        \node[box, below=of prompt] (model) {LLM\\forward pass};
+
+        % Logits
+        \node[box, below=of model, fill=green!10] (logits) {Logits $z \in \mathbb{R}^V$};
+
+        % Sampling
+        \node[box, below=of logits, fill=red!10] (sample) {Sample $\hat{x}_i$};
+
+        % EOS check
+        \node[draw, diamond, below=of sample, aspect=2.5, font=\footnotesize, inner sep=1pt] (eos) {\texttt{\textless eos\textgreater}?};
+
+        % Output
+        \node[right=1.2cm of eos, font=\footnotesize] (output) {\textbf{Output}};
+
+        % Arrows
+        \draw[arr] (prompt) -- (model);
+        \draw[arr] (model) -- (logits);
+        \draw[arr] (logits) -- (sample);
+        \draw[arr] (sample) -- (eos);
+        \draw[arr] (eos) -- node[above] {yes} (output);
+        \draw[arr] (eos.west) -- ++(-1.2,0) node[left, font=\footnotesize] {no} |- (model.west);
+      \end{tikzpicture}
+    \end{column}
+  \end{columns}
+
   \begin{alertblock}{Distribution shift}
-    Training uses ground-truth context (teacher forcing); generation uses \emph{model-predicted} context.
-    Errors can accumulate, a wrong token shifts the distribution for all future tokens.
+    Training uses ground-truth context; generation uses \emph{model-predicted} context.
+    Errors accumulate.
   \end{alertblock}
 \end{frame}
 
 % -----------------------------------------------------------------------
-\begin{frame}{Greedy Decoding \& Beam Search}
+\begin{frame}{Greedy Decoding}
   \textbf{Greedy decoding}: always pick the most probable token:
-  \[
-    \hat{x}_i = \arg\max_{k}\; p_\theta(x=k \mid x_{<i})
-  \]
-  Fast, deterministic, but often produces repetitive or suboptimal text.
+  $\hat{x}_i = \arg\max_{k}\; p_\theta(x=k \mid x_{<i})$
 
-  \vspace{0.8em}
-  \textbf{Beam search}: maintain the $B$ most probable \emph{sequences} at each step.
+  \vspace{0.5em}
+  \centering
+  \begin{tikzpicture}[
+    every node/.style={font=\footnotesize},
+    tok/.style={draw, rounded corners=2pt, minimum width=1.0cm, minimum height=0.5cm, fill=gray!10},
+    sel/.style={tok, fill=green!30, thick},
+    stepbox/.style={draw, rounded corners=4pt, fill=white, inner sep=4pt, minimum height=2.4cm, minimum width=1.5cm},
+    arr/.style={->, thick, >=stealth, green!50!black},
+  ]
+    % Time step boxes
+    \node[stepbox, label={[font=\scriptsize]above:$t{=}0$}] (s0) at (0,0) {};
+    \node[stepbox, label={[font=\scriptsize]above:$t{=}1$}] (s1) at (2.5,0) {};
+    \node[stepbox, label={[font=\scriptsize]above:$t{=}2$}] (s2) at (5.0,0) {};
+    \node[stepbox, label={[font=\scriptsize]above:$t{=}3$}] (s3) at (7.5,0) {};
+
+    % Tokens in step 0
+    \node[sel] (t0a) at (0, 0.8) {The};
+    \node[tok] (t0b) at (0, 0.0) {A};
+    \node[tok] (t0c) at (0,-0.8) {One};
+
+    % Tokens in step 1
+    \node[sel] (t1a) at (2.5, 0.8) {cat};
+    \node[tok] (t1b) at (2.5, 0.0) {dog};
+    \node[tok] (t1c) at (2.5,-0.8) {old};
+
+    % Tokens in step 2
+    \node[sel] (t2a) at (5.0, 0.8) {sat};
+    \node[tok] (t2b) at (5.0, 0.0) {is};
+    \node[tok] (t2c) at (5.0,-0.8) {ran};
+
+    % Tokens in step 3
+    \node[sel] (t3a) at (7.5, 0.8) {on};
+    \node[tok] (t3b) at (7.5, 0.0) {down};
+    \node[tok] (t3c) at (7.5,-0.8) {the};
+
+    % Greedy path
+    \draw[arr] (t0a) -- (t1a) node[midway, above, font=\scriptsize, green!50!black] {0.6};
+    \draw[arr] (t1a) -- (t2a) node[midway, above, font=\scriptsize, green!50!black] {0.7};
+    \draw[arr] (t2a) -- (t3a) node[midway, above, font=\scriptsize, green!50!black] {0.5};
+
+    % Outer box
+    \node[draw, rounded corners=6pt, fit=(s0)(s1)(s2)(s3), inner sep=10pt, thick, gray] {};
+  \end{tikzpicture}
+
+  \vspace{0.5em}
   \begin{itemize}
-    \item At each step expand each beam by $V$ candidates $\to$ keep top-$B$ by cumulative log-prob
-    \item Returns the globally highest-probability sequence (within the beam)
-  \[
-    \text{score}(x_1,\ldots,x_T) = \sum_{i=1}^{T} \log p_\theta(x_i \mid x_{<i})
-  \]
-
+    \item Fast and deterministic, but often repetitive or suboptimal
+    \item Can miss globally better sequences by being locally greedy
   \end{itemize}
+\end{frame}
 
+% -----------------------------------------------------------------------
+\begin{frame}{Beam Search}
+  Maintain the $B$ most probable \emph{sequences} at each step ($B=2$ below).
+
+  \vspace{0.2em}
+  \centering
+  \begin{tikzpicture}[
+    every node/.style={font=\scriptsize},
+    cand/.style={font=\scriptsize\ttfamily, text=gray!50},
+    sel/.style={draw, rounded corners=2pt, fill=orange!12, draw=orange!70!black,
+                thick, font=\scriptsize\ttfamily, inner sep=2pt},
+    circ/.style={circle, draw=brown!50, fill=white, inner sep=1.5pt, font=\scriptsize\ttfamily},
+    arr/.style={->, thin, draw=brown!30},
+    sarr/.style={->, semithick, draw=orange!70!black},
+  ]
+    % START
+    \node[circ] (start) at (0, 0) {\texttt{<s>}};
+
+    % --- Position 1: candidates from start ---
+    \node[sel]  (A) at (1.5, 1.0) {A \textcolor{brown!70}{.5}};
+    \node[cand] (B) at (1.5, 0.5) {B};
+    \node[sel]  (C) at (1.5, 0.0) {C \textcolor{brown!70}{.4}};
+    \node[cand] (D) at (1.5,-0.5) {D};
+    \node[cand] (E) at (1.5,-1.0) {E};
+    \draw[sarr] (start) -- (A);  \draw[arr] (start) -- (B);
+    \draw[sarr] (start) -- (C);  \draw[arr] (start) -- (D);
+    \draw[arr]  (start) -- (E);
+
+    % --- Position 2: expand A ---
+    \node[circ] (Ac) at (2.7, 1.2) {A};
+    \draw[sarr] (A) -- (Ac);
+    \node[cand] (AA) at (4.0, 2.0) {AA};
+    \node[sel]  (AB) at (4.0, 1.5) {AB \textcolor{brown!70}{.3}};
+    \node[cand] (AC) at (4.0, 1.0) {AC};
+    \node[sel]  (AE) at (4.0, 0.5) {AE \textcolor{brown!70}{.2}};
+    \node[cand] (AD) at (4.0, 0.0) {AD};
+    \draw[arr] (Ac) -- (AA);  \draw[sarr] (Ac) -- (AB);
+    \draw[arr] (Ac) -- (AC);  \draw[sarr] (Ac) -- (AE);
+    \draw[arr] (Ac) -- (AD);
+
+    % --- Position 2: expand C (pruned) ---
+    \node[circ, draw=gray!40, text=gray!50] (Cc) at (2.7, -0.6) {C};
+    \draw[arr] (C) -- (Cc);
+    \draw[arr, draw=gray!20] (Cc) -- ++(1.0, 0.3);
+    \draw[arr, draw=gray!20] (Cc) -- ++(1.0, 0.0);
+    \draw[arr, draw=gray!20] (Cc) -- ++(1.0,-0.3);
+    % Red X
+    \draw[very thick, red!70!black] (3.45,-0.3) -- (3.95,-0.9);
+    \draw[very thick, red!70!black] (3.45,-0.9) -- (3.95,-0.3);
+
+    % --- Position 3: expand AB ---
+    \node[circ] (ABc) at (5.4, 1.6) {AB};
+    \draw[sarr] (AB) -- (ABc);
+    \node[cand]     at (6.6, 2.0) {ABA};
+    \node[sel] (ABC) at (6.6, 1.6) {ABC \textcolor{brown!70}{.16}};
+    \node[cand]     at (6.6, 1.2) {ABD};
+    \draw[arr] (ABc) -- ++(0.8, 0.4);  \draw[sarr] (ABc) -- (ABC);
+    \draw[arr] (ABc) -- ++(0.8,-0.4);
+
+    % --- Position 3: expand AE ---
+    \node[circ] (AEc) at (5.4, 0.2) {AE};
+    \draw[sarr] (AE) -- (AEc);
+    \node[cand]     at (6.6, 0.6) {AEA};
+    \node[sel] (AED) at (6.6, 0.2) {AED \textcolor{brown!70}{.12}};
+    \node[cand]     at (6.6,-0.2) {AEE};
+    \draw[arr] (AEc) -- ++(0.8, 0.4);  \draw[sarr] (AEc) -- (AED);
+    \draw[arr] (AEc) -- ++(0.8,-0.4);
+
+    % END markers
+    \node[font=\scriptsize\ttfamily\bfseries] (end1) at (7.9, 1.6) {<end>};
+    \node[font=\scriptsize\ttfamily\bfseries] (end2) at (7.9, 0.2) {<end>};
+    \draw[sarr] (ABC) -- (end1);
+    \draw[sarr] (AED) -- (end2);
+
+    % Position labels
+    \node[font=\tiny, text=gray] at (1.5, -1.4) {Position 1};
+    \node[font=\tiny, text=gray] at (4.0, -1.4) {Position 2};
+    \node[font=\tiny, text=gray] at (6.6, -1.4) {Position 3};
+  \end{tikzpicture}
+
+  \vspace{0.2em}
+  \begin{minipage}{0.95\textwidth}
+  \begin{algorithm}[H]
+    \caption{Beam Search ($B$ = beam width)}
+    \DontPrintSemicolon
+    \KwIn{Model $p_\theta$, prompt $x_{1:n}$, beam width $B$, max length $T$}
+    $\mathcal{B}_0 \gets \{(x_{1:n},\; 0)\}$ \tcp*{set of (sequence, log-prob) pairs}
+    \For{$t = 1, \ldots, T$}{
+      $\mathcal{C}_t \gets \displaystyle\bigcup_{(s,\,\ell)\, \in\, \mathcal{B}_{t-1}} \underset{k \in \mathcal{V}}{\text{top-}B}\;\bigl\{\bigl(s \oplus k,\;\; \ell + \log p_\theta(k \mid s)\bigr)\bigr\}$ \tcp*{$\le B^2$ candidates}
+      $\mathcal{B}_t \gets \underset{\mathcal{C}_t}{\text{top-}B}$ by score \qquad \lIf{all beams end with \texttt{<eos>}}{\textbf{break}}
+    }
+    \Return{$\arg\max_{(s,\ell) \in \mathcal{B}_T}\; \ell \,/\, |s|^\alpha$} \tcp*{length norm., $\alpha \in [0.6, 1]$}
+  \end{algorithm}
+  \end{minipage}
 \end{frame}
 
 % -----------------------------------------------------------------------
 \begin{frame}{Temperature Sampling}
   Divide logits by a \textbf{temperature} $\tau > 0$ before softmax:
-  \[
-    p_\tau(x = k) = \frac{\exp(z_k / \tau)}{\sum_v \exp(z_v / \tau)}
-  \]
+  $p_\tau(x = k) = \frac{\exp(z_k / \tau)}{\sum_v \exp(z_v / \tau)}$
 
+  \vspace{0.3em}
+  \begin{columns}[T]
+    \begin{column}{0.35\textwidth}
       \begin{itemize}
-        \item $\tau \to 0$: concentrates on the mode $\to$ greedy decoding
-        \item $\tau = 1$: original model distribution
-        \item $\tau > 1$: flatter distribution, more diverse / random output
+        \item $\tau \to 0$: concentrates on mode $\to$ greedy
+        \item $\tau = 1$: original distribution
+        \item $\tau > 1$: flatter, more diverse
       \end{itemize}
 
+      \vspace{0.3em}
       \begin{block}{Intuition}
-        Temperature controls the \emph{sharpness} of the distribution.
-        High $\tau$ ``softens'' the model's confidence; low $\tau$ ``sharpens'' it.
+        Temperature controls the \emph{sharpness}.
+        In practice $\tau \in [0.7, 1.0]$.
       \end{block}
-
-  \vspace{0.8em}
-    \begin{itemize}
-        \item In practice $\tau \in [0.7, 1.0]$ gives a good creativity/coherence trade-off.
-    \end{itemize}
+    \end{column}
+    \begin{column}{0.63\textwidth}
+      \centering
+      % Logits: the=2.0, cat=1.5, a=0.8, sat=0.3, my=-0.2, dog=-0.5
+      % tau=0.5: softmax(z/0.5) = softmax(4,3,1.6,0.6,-0.4,-1.0) -> 0.56,0.21,0.05,0.02,0.01,0.00 (approx, renormalized)
+      % tau=1.0: softmax(2,1.5,0.8,0.3,-0.2,-0.5) -> 0.35,0.21,0.11,0.06,0.04,0.03 (approx)
+      % tau=2.0: softmax(1,0.75,0.4,0.15,-0.1,-0.25) -> 0.22,0.17,0.12,0.09,0.07,0.05 (approx)
+      \begin{tikzpicture}
+        \begin{axis}[
+          width=\columnwidth, height=5cm,
+          ybar,
+          bar width=0.18cm,
+          ylabel={Probability},
+          ylabel style={font=\footnotesize},
+          symbolic x coords={the,cat,a,sat,my,dog},
+          xtick=data,
+          x tick label style={font=\scriptsize, anchor=north},
+          tick label style={font=\scriptsize},
+          ymin=0, ymax=0.72,
+          ymajorgrids=true,
+          grid style={gray!30},
+          legend style={font=\scriptsize, at={(0.98,0.97)}, anchor=north east, legend columns=1},
+          enlarge x limits=0.15,
+        ]
+          % tau = 0.5 (sharp)
+          \addplot[fill=red!60, draw=red!80] coordinates
+            {(the,0.63) (cat,0.27) (a,0.06) (sat,0.02) (my,0.01) (dog,0.01)};
+          % tau = 1.0 (original)
+          \addplot[fill=blue!50, draw=blue!70] coordinates
+            {(the,0.35) (cat,0.21) (a,0.11) (sat,0.06) (my,0.04) (dog,0.03)};
+          % tau = 2.0 (flat)
+          \addplot[fill=green!50, draw=green!70] coordinates
+            {(the,0.22) (cat,0.17) (a,0.12) (sat,0.09) (my,0.07) (dog,0.05)};
+          \legend{$\tau=0.5$, $\tau=1.0$, $\tau=2.0$}
+        \end{axis}
+      \end{tikzpicture}
+    \end{column}
+  \end{columns}
 \end{frame}
 
 % -----------------------------------------------------------------------
-\begin{frame}{Top-$k$ and Nucleus (Top-$p$) Sampling}
+\begin{frame}{Top-$k$ Sampling}
   Temperature alone may still assign probability mass to very unlikely tokens.
-
   \textbf{Truncation strategies} restrict sampling to a smaller candidate set.
 
-  \vspace{0.5em}
-  \textbf{Top-$k$ sampling}
-  \begin{itemize}
-    \item Keep only the $k$ tokens with the highest probability; redistribute mass uniformly to zero out the rest
-    \item Problem: $k$ is a fixed number. Too restrictive when the distribution is flat, too lenient when it is peaked
-  \end{itemize}
+  \vspace{0.3em}
+  \begin{columns}[T]
+    \begin{column}{0.45\textwidth}
+      \textbf{Top-$k$ sampling:}
+      \begin{itemize}
+        \item Keep only the $k$ tokens with highest probability; zero out the rest
+        \item Redistribute mass among the kept tokens
+        \item Problem: $k$ is fixed -- too restrictive when flat, too lenient when peaked
+      \end{itemize}
+    \end{column}
+    \begin{column}{0.53\textwidth}
+      \centering
+      \begin{tikzpicture}
+        \begin{axis}[
+          width=\columnwidth, height=4.5cm,
+          ybar, bar width=0.35cm,
+          ylabel={Probability},
+          ylabel style={font=\footnotesize},
+          symbolic x coords={the,cat,a,sat,my,dog,is,on},
+          xtick=data,
+          x tick label style={font=\scriptsize},
+          tick label style={font=\scriptsize},
+          ymin=0, ymax=0.38,
+          ymajorgrids=true,
+          grid style={gray!30},
+          title={\footnotesize Top-$k$ with $k=3$},
+          title style={font=\footnotesize},
+        ]
+          % Kept tokens (top-3)
+          \addplot[fill=blue!50, draw=blue!70, bar shift=0pt] coordinates
+            {(the,0.30) (cat,0.25) (a,0.18) (sat,0) (my,0) (dog,0) (is,0) (on,0)};
+          % Original (dimmed, behind)
+          \addplot[fill=gray!20, draw=gray!40, bar shift=0pt] coordinates
+            {(the,0) (cat,0) (a,0) (sat,0.10) (my,0.07) (dog,0.05) (is,0.03) (on,0.02)};
+          % Coordinates for braces
+          \coordinate (kept-l) at (axis cs:the, 0);
+          \coordinate (kept-r) at (axis cs:a, 0);
+          \coordinate (zero-l) at (axis cs:sat, 0);
+          \coordinate (zero-r) at (axis cs:on, 0);
+        \end{axis}
+        % Brackets aligned with axis coordinates
+        \draw[thick, red, decorate, decoration={brace, amplitude=4pt, mirror}]
+          ([yshift=-0.8cm]kept-l) -- ([yshift=-0.8cm]kept-r) node[midway, below=5pt, font=\scriptsize, red] {kept};
+        \draw[thick, gray, decorate, decoration={brace, amplitude=4pt, mirror}]
+          ([yshift=-0.8cm]zero-l) -- ([yshift=-0.8cm]zero-r) node[midway, below=5pt, font=\scriptsize, gray] {zeroed out};
+      \end{tikzpicture}
+    \end{column}
+  \end{columns}
+\end{frame}
+
+% -----------------------------------------------------------------------
+\begin{frame}{Nucleus (Top-$p$) Sampling}
+  \begin{columns}[T]
+    \begin{column}{0.45\textwidth}
+      \textbf{Nucleus sampling}~\cite{holtzman2020curious}:
+      \begin{itemize}
+        \item Sort tokens by descending probability
+        \item Keep the smallest set whose cumulative probability $\ge p$
+        \item Candidate set size \textbf{adapts} to the distribution shape
+        \item Common default: $p = 0.9$
+      \end{itemize}
+      \[
+        \mathcal{V}_p = \arg\min_{\mathcal{S}} \left\{ |\mathcal{S}| : \sum_{k \in \mathcal{S}} p_k \ge p \right\}
+      \]
+    \end{column}
+    \begin{column}{0.53\textwidth}
+      \centering
+      \begin{tikzpicture}
+        \begin{axis}[
+          width=\columnwidth, height=4.5cm,
+          ybar, bar width=0.35cm,
+          ylabel={Probability},
+          ylabel style={font=\footnotesize},
+          symbolic x coords={the,cat,a,sat,my,dog,is,on},
+          xtick=data,
+          x tick label style={font=\scriptsize},
+          tick label style={font=\scriptsize},
+          ymin=0, ymax=0.38,
+          ymajorgrids=true,
+          grid style={gray!30},
+          title={\footnotesize Top-$p$ with $p=0.9$},
+          title style={font=\footnotesize},
+        ]
+          % Kept tokens (cumsum >= 0.9: 0.30+0.25+0.18+0.10+0.07 = 0.90)
+          \addplot[fill=orange!50, draw=orange!70, bar shift=0pt] coordinates
+            {(the,0.30) (cat,0.25) (a,0.18) (sat,0.10) (my,0.07) (dog,0) (is,0) (on,0)};
+          % Zeroed out
+          \addplot[fill=gray!20, draw=gray!40, bar shift=0pt] coordinates
+            {(the,0) (cat,0) (a,0) (sat,0) (my,0) (dog,0.05) (is,0.03) (on,0.02)};
+          % Coordinates for braces
+          \coordinate (kept-l) at (axis cs:the, 0);
+          \coordinate (kept-r) at (axis cs:my, 0);
+          \coordinate (zero-l) at (axis cs:dog, 0);
+          \coordinate (zero-r) at (axis cs:on, 0);
+        \end{axis}
+        % Brackets aligned with axis coordinates
+        \draw[thick, red, decorate, decoration={brace, amplitude=4pt, mirror}]
+          ([yshift=-0.8cm]kept-l) -- ([yshift=-0.8cm]kept-r) node[midway, below=5pt, font=\scriptsize, red] {$\sum = 0.90 \ge p$};
+        \draw[thick, gray, decorate, decoration={brace, amplitude=4pt, mirror}]
+          ([yshift=-0.8cm]zero-l) -- ([yshift=-0.8cm]zero-r) node[midway, below=5pt, font=\scriptsize, gray] {cut};
+      \end{tikzpicture}
+    \end{column}
+  \end{columns}
 
   \vspace{0.5em}
-  \textbf{Nucleus (Top-$p$) sampling} \hfill\small\cite{holtzman2020curious}
-  \begin{itemize}
-    \item Sort tokens by descending probability; keep the smallest set whose cumulative probability $\ge p$
-    \item The candidate set size adapts dynamically to the distribution shape
-    \item Common default: $p = 0.9$
-  \end{itemize}
-
-  \[
-    \mathcal{V}_p = \arg\min_{\mathcal{S} \subseteq \mathcal{V}} \left\{ |\mathcal{S}| : \sum_{k \in \mathcal{S}} p(x=k) \ge p \right\}
-  \]
+  \begin{block}{Top-$k$ vs Top-$p$}
+    Top-$k$ always keeps exactly $k$ tokens regardless of distribution shape.
+    Top-$p$ adapts: fewer tokens when confident, more when uncertain.
+  \end{block}
 \end{frame}
 
 % -----------------------------------------------------------------------

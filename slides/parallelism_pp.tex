@@ -1,7 +1,7 @@
 % !TEX root=./adl.tex
 
 % -----------------------------------------------------------------------
-\begin{frame}{Pipeline Parallelism --- Core Idea}
+\begin{frame}{Pipeline Parallelism: Core Idea}
 
   Split the model's \emph{layers} across GPUs, forming a sequential \emphdef{pipeline}.
 
@@ -264,7 +264,7 @@
       \textbf{Cons:}
       \begin{itemize}
         \item Must store activations for \emph{all} $m$ micro-batches until backward phase
-        \item Activation memory scales as $O(m)$ --- \textbf{memory explosion}
+        \item Activation memory scales as $O(m)$: \textbf{memory explosion}
         \item Cannot increase $m$ freely to reduce bubble
       \end{itemize}
     \end{column}
@@ -352,7 +352,7 @@
       \textbf{Bubble:} Same as AFAB: $r_{\text{bubble}} = \frac{p-1}{m}$
 
       \vspace{0.3em}
-      \textbf{Key advantage --- memory:}
+      \textbf{Key advantage (memory):}
       \begin{itemize}
         \item Only need to store activations for $p$ micro-batches (not $m$!)
         \item Can now safely increase $m \gg p$ to shrink the bubble
@@ -412,7 +412,7 @@
 \end{frame}
 
 % -----------------------------------------------------------------------
-\begin{frame}{Schedule 3: Interleaved 1F1B --- Layer Distribution}
+\begin{frame}{Schedule 3: Interleaved 1F1B Layer Distribution}
 
   \emphdef{Interleaved stages}~\cite{narayanan2021efficient}: assign $v$ \emph{non-contiguous chunks} per GPU.
   A micro-batch loops through all GPUs $v$ times~\cite{narayanan2021efficient}.
@@ -480,7 +480,7 @@
     \begin{column}{0.55\textwidth}
       \textbf{Bubble ratio:}
       $r_{\text{bubble}} = \frac{p - 1}{v \cdot m}$
-      --- shrinks by factor $v$!
+      : shrinks by factor $v$!
 
       \vspace{0.2em}
       \textbf{Trade-off:} $v{\times}$ more P2P communication (micro-batch traverses pipeline $v$ times).
@@ -507,7 +507,7 @@
 \end{frame}
 
 % -----------------------------------------------------------------------
-\begin{frame}{Interleaved 1F1B --- Schedule}
+\begin{frame}{Interleaved 1F1B: Schedule}
 
   Each F/B block is $v{\times}$ smaller $\Rightarrow$ pipeline fills/drains faster $\Rightarrow$ smaller bubbles.
 

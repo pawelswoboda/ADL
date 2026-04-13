@@ -584,7 +584,7 @@
 \let\oldhref\href
 \renewcommand\href[2]{\oldhref{#1}{\textcolor{emph}{\uline{#2}}}} % emphasize href
 \let\oldurl\url
-\renewcommand\url[1]{\href{#1}{#1}} % emphasize url
+\renewcommand\url[1]{{\color{emph}\oldurl{#1}}} % emphasize url
 \newcommand\email[1]{\href{mailto:#1}{\texttt{#1}}} % email address
 
 \newcommand{\largesep}{\setlength\itemsep{2ex}}

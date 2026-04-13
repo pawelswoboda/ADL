@@ -81,7 +81,7 @@
           \begin{itemize}
             \item Was it word choice? Sentence order? Tone? All of them?
           \end{itemize}
-        \item Preference is \emphdef{holistic}: correctness, helpfulness, safety, style --- emerges from \emphdef{interaction of all tokens}
+        \item Preference is \emphdef{holistic}: correctness, helpfulness, safety, style. It emerges from \emphdef{interaction of all tokens}
         \item Cannot decompose ``A $\succ$ B'' into per-token labels
       \end{itemize}
 
@@ -218,7 +218,7 @@
 
   \vspace{-0.2em}
   \begin{itemize}[nosep]
-    \item The verifier only checks the \emphdef{final answer} --- it does not supervise the reasoning trace
+    \item The verifier only checks the \emphdef{final answer}. It does not supervise the reasoning trace
     \item The model \emphdef{discovers on its own} that reasoning leads to correct answers
     \item No human-written chain-of-thought labels needed
   \end{itemize}
@@ -363,7 +363,7 @@
       \textbf{Offline (SFT / distillation):}
       \begin{itemize}
         \item Like \emphdef{watching a grandmaster} play chess
-        \item You see brilliant moves --- but in board positions \emph{you} would never reach
+        \item You see brilliant moves, but in board positions \emph{you} would never reach
         \item Dense signal (learn from every move) but in the \emphdef{wrong distribution}
       \end{itemize}
     \end{column}
@@ -388,7 +388,7 @@
   \begin{itemize}\largesep
     \item Attending a full RL course is advised
     \item We will distill a big field into a short excursion
-    \item Wonderful theory and intricate algorithms --- we scratch the surface
+    \item Wonderful theory and intricate algorithms; we scratch the surface
   \end{itemize}
 \end{frame}
 
@@ -403,7 +403,7 @@
     ]
       % Agent image (left)
       \node[inner sep=0pt] (agent) at (0, 0)
-        {\includegraphics[height=1.8cm]{images/RL_robot_agent..png}};
+        {\includegraphics[height=1.8cm]{images/RL_robot_agent.png}};
       \node[font=\small\bfseries, above=2pt of agent] {AGENT};
 
       % Environment image (right)
@@ -563,7 +563,7 @@
     \item[Agent:] The LLM itself
     \item[State $s_t$:] All tokens so far (prompt + response until now)
     \item[Action $a_t$:] Next token to generate
-    \item[Policy:] $a_t \sim \pi_\theta(\cdot \mid s_t)$ --- softmax distribution over vocabulary
+    \item[Policy:] $a_t \sim \pi_\theta(\cdot \mid s_t)$: softmax distribution over vocabulary
     \item[Reward $r$:] Scalar signal after full response (verifier or preference model)
   \end{description}
 \end{frame}
@@ -574,7 +574,7 @@
 % -----------------------------------------------------------------------
 \begin{frame}{Reward for LLMs}
   \begin{itemize}
-    \item Assigning exact reward to text is hard --- but \emphdef{comparing two responses} is often easy
+    \item Assigning exact reward to text is hard, but \emphdef{comparing two responses} is often easy
     \item Train reward model on pairs: given $(x, y_w)/(x, y_l)$, enforce $r(x, y_w) > r(x, y_l)$
   \end{itemize}
 
@@ -666,9 +666,9 @@
   \textbf{Notation:}
   \begin{itemize}[nosep]
     \item Trajectory $\tau = (s_0, a_0, r_0, \ldots, s_T, a_T, r_T)$, \quad return $R(\tau) = \sum_{t=0}^{T} \gamma^t r_t$
-    \item $\pi_\theta(a_t \mid s_t)$: policy --- the LLM with parameters $\theta$, outputs next-token distribution
+    \item $\pi_\theta(a_t \mid s_t)$: policy: the LLM with parameters $\theta$, outputs next-token distribution
     \item $\rho_0(s_0)$: distribution over initial states (e.g.\ prompt distribution)
-    \item $P(s_{t+1} \mid s_t, a_t)$: environment transition --- deterministic for LLMs (append token)
+    \item $P(s_{t+1} \mid s_t, a_t)$: environment transition: deterministic for LLMs (append token)
   \end{itemize}
 
   \vspace{0.3em}
@@ -692,12 +692,12 @@
   \vspace{0.3em}
   \textbf{Why is optimizing $J(\theta)$ hard?}
   \begin{itemize}
-    \item \textbf{Integral over trajectories:} $J(\theta) = \int P(\tau \mid \theta) R(\tau)\, d\tau$ --- cannot enumerate, must \emphdef{sample}
-    \item \textbf{Non-differentiable environment:} $P(s_{t+1} \mid s_t, a_t)$ and $R(\tau)$ are black boxes --- cannot backpropagate through them
-    \item \textbf{Non-stationarity:} Data distribution $P(\tau \mid \theta)$ \emphdef{depends on the policy} being optimized --- changes with every update, old samples become stale
+    \item \textbf{Integral over trajectories:} $J(\theta) = \int P(\tau \mid \theta) R(\tau)\, d\tau$. Cannot enumerate; must \emphdef{sample}
+    \item \textbf{Non-differentiable environment:} $P(s_{t+1} \mid s_t, a_t)$ and $R(\tau)$ are black boxes. Cannot backpropagate through them
+    \item \textbf{Non-stationarity:} Data distribution $P(\tau \mid \theta)$ \emphdef{depends on the policy} being optimized, changing with every update, old samples become stale
     \item \textbf{High variance:} Small policy changes can lead to very different trajectories $\Rightarrow$ gradient estimates are noisy
-    \item \textbf{Temporal correlation:} Tokens within a trajectory are highly correlated --- violates i.i.d.\ assumptions of standard SGD
-    \item \textbf{Sparse reward:} Often only a single reward at the end of a full sequence --- credit assignment across hundreds of tokens
+    \item \textbf{Temporal correlation:} Tokens within a trajectory are highly correlated, violating i.i.d.\ assumptions of standard SGD
+    \item \textbf{Sparse reward:} Often only a single reward at the end of a full sequence. Credit assignment across hundreds of tokens
   \end{itemize}
 
   \vspace{0.3em}
@@ -717,7 +717,7 @@
   \textbf{Log-derivative trick:} $\nabla_\theta P(\tau \mid \theta) = P(\tau \mid \theta) \, \nabla_\theta \log P(\tau \mid \theta)$
 
   \vspace{0.3em}
-  Key insight: We no longer need to differentiate through the environment --- only through $\log P(\tau \mid \theta)$.
+  Key insight: We no longer need to differentiate through the environment, only through $\log P(\tau \mid \theta)$.
 \end{frame}
 
 % -----------------------------------------------------------------------
@@ -732,8 +732,8 @@
   \]
 
   \begin{itemize}
-    \item $\nabla_\theta \log \pi_\theta(a_t \mid s_t)$: gradient of log-probability of action taken --- computable via backprop through the LLM
-    \item $R(\tau)$: return of the trajectory --- scalar, no gradient needed
+    \item $\nabla_\theta \log \pi_\theta(a_t \mid s_t)$: gradient of log-probability of action taken, computable via backprop through the LLM
+    \item $R(\tau)$: return of the trajectory (scalar, no gradient needed)
     \item Approximate expectation by \emphdef{sampling trajectories}: $\nabla_\theta J(\theta) \approx \frac{1}{|D|} \sum_{\tau \in D} \sum_{t=0}^{T} \nabla_\theta \log \pi_\theta(a_t \mid s_t) \, R(\tau)$
   \end{itemize}
 \end{frame}
@@ -809,7 +809,7 @@
 % -----------------------------------------------------------------------
 \begin{frame}{REINFORCE Gradient: Reducing Variance}
   \vspace{0.3em}
-  \textbf{Fix 1 --- Reward-to-go:} Only credit future rewards, not past ones:
+  \textbf{Fix 1: Reward-to-go.} Only credit future rewards, not past ones:
   \[
     \nabla_\theta J(\theta) = \frac{1}{|D|} \sum_{\tau \in D} \sum_{t=1}^{T} \nabla_\theta \log \pi_\theta(a_t \mid s_t) \underbrace{\left(\sum_{t'=t}^{T} r(s_{t'}, a_{t'})\right)}_{\text{reward-to-go}}
   \]
@@ -824,7 +824,7 @@
 
 % -----------------------------------------------------------------------
 \begin{frame}{Reducing Variance: Baseline}
-  \textbf{Fix 2 --- Baseline:} Subtract a state-dependent baseline $b(s_t)$:
+  \textbf{Fix 2: Baseline.} Subtract a state-dependent baseline $b(s_t)$:
   \[
     \nabla_\theta J(\theta) = \frac{1}{|D|} \sum_{\tau \in D} \sum_{t=1}^{T} \nabla_\theta \log \pi_\theta(a_t \mid s_t) \left(\sum_{t'=t}^{T} r(s_{t'}, a_{t'}) - b(s_t)\right)
   \]
@@ -892,7 +892,7 @@
     \item Backbone can be \emphdef{shared} with policy or \emphdef{separate}:
       \begin{itemize}[nosep]
         \item Shared: cheaper, but value gradients may interfere with policy representations
-        \item Separate: used by InstructGPT/PPO --- doubles memory, but cleaner optimization
+        \item Separate: used by InstructGPT/PPO. Doubles memory, but cleaner optimization
       \end{itemize}
   \end{itemize}
 \end{frame}
@@ -1005,7 +1005,7 @@
   \end{description}
 
   \vspace{0.3em}
-  \textbf{Importance Sampling --- Derivation:}
+  \textbf{Importance Sampling: Derivation}
   \[
     \E_{x \sim p}[f(x)] = \int p(x) f(x)\, dx = \int q(x) \frac{p(x)}{q(x)} f(x)\, dx = \E_{x \sim q}\!\left[\frac{p(x)}{q(x)} f(x)\right]
   \]
@@ -1136,8 +1136,8 @@
 
   \vspace{0.3em}
   \begin{itemize}[nosep]
-    \item $A_t > 0$: no incentive to increase $r_t$ beyond $1{+}\epsilon$ --- prevents making good actions \emph{too much} more likely
-    \item $A_t < 0$: no incentive to decrease $r_t$ below $1{-}\epsilon$ --- prevents making bad actions \emph{too much} less likely
+    \item $A_t > 0$: no incentive to increase $r_t$ beyond $1{+}\epsilon$. This prevents making good actions \emph{too much} more likely
+    \item $A_t < 0$: no incentive to decrease $r_t$ below $1{-}\epsilon$. This prevents making bad actions \emph{too much} less likely
     \item Gradient is zero in shaded region $\Rightarrow$ policy stays close to $\pi_{\theta_\text{old}}$
   \end{itemize}
 \end{frame}
@@ -1215,7 +1215,7 @@
 \begin{frame}{KL Divergence Estimators}
   \begin{description}[leftmargin=1.8cm, labelwidth=1.6cm, nosep]
     \item[Goal] Estimate $\text{KL}[\pi_\theta \| \pi_\text{ref}]$ during training
-    \item[Problem] Exact computation requires summing over full vocabulary at every token --- intractable
+    \item[Problem] Exact computation requires summing over full vocabulary at every token, which is intractable
     \item[Solution] Use \textbf{single-sample estimators} with $r = \frac{\pi_\text{ref}(x)}{\pi_\theta(x)}$
   \end{description}
 
@@ -1632,7 +1632,7 @@
       A 1-token wrong answer gets the \emphdef{same weight} as a 100-token reasoning chain.
       DAPO weights every token equally: $\frac{1}{\sum_{i=1}^G |o_i|} \sum_{i} \sum_{t} (\cdots)$.
       Longer sequences contribute proportionally more gradient.
-      (Compare Dr.\ GRPO's $T_\text{max}$ fix --- different approach to the same length bias.)
+      (Compare Dr.\ GRPO's $T_\text{max}$ fix: different approach to the same length bias.)
     \item[No KL Penalty:] For long chain-of-thought reasoning, KL to $\pi_\text{ref}$ is counterproductive. DAPO drops it entirely.
   \end{description}
 \end{frame}
@@ -1771,7 +1771,7 @@
         \item LLM fine-tuning from strong pretrained checkpoints makes PPO's variance reduction largely unnecessary.
       \end{itemize}
     \item[Std.\ Normalization Harmful:] Dr.\ GRPO, DAPO and others show that dividing advantages by $\sigma$ adds too much weight on nearly-solved problems.
-    \item[Loss Aggregation Criticality:] Sequence-level rewards combined with sample averaging introduce subtle token-level biases --- fundamentally affects per-token learning signals.
+    \item[Loss Aggregation Criticality:] Sequence-level rewards combined with sample averaging introduce subtle token-level biases that fundamentally affect per-token learning signals.
     \item[Trust Region Refinement:] PPO's $\epsilon = 0.2$ works well, yet recent methods explore asymmetric clipping (DAPO), weight-based approaches (CISPO), or divergence-based constraints (DPPO).
   \end{description}
 \end{frame}
@@ -1779,11 +1779,11 @@
 % -----------------------------------------------------------------------
 \begin{frame}{Open Research Challenges}
   \begin{description}\largesep
-    \item[Credit Assignment:] Current outcome-based methods assign essentially the same reward to all tokens --- works but is inefficient. Process reward models and step-level verifiers remain unsolved.
+    \item[Credit Assignment:] Current outcome-based methods assign essentially the same reward to all tokens. This works but is inefficient. Process reward models and step-level verifiers remain unsolved.
     \item[Sample Efficiency:] Methods require 8--64 rollouts per prompt despite information being just a single bit (correct/incorrect).
     \item[Very Hard Problems:] No gradient signal when models never produce correct rollouts. Curriculum learning provides only workarounds.
     \item[Domain Generalization:] Progress concentrates in domains with cheap and unambiguous verification (math and code). Extending to noisy or subjective evaluation remains difficult.
     \item[Empirical Reliability:] Evidence remains relatively narrow and expensive to reproduce.
-    \item[New Capabilities vs.\ Distribution Narrowing:] Does RL teach fundamentally new skills, or does it merely \emphdef{sharpen the output distribution} toward abilities already latent from pretraining? Evidence suggests RL primarily surfaces and focuses existing capabilities rather than creating novel ones --- the ceiling may be set by pre- and mid-training.
+    \item[New Capabilities vs.\ Distribution Narrowing:] Does RL teach fundamentally new skills, or does it merely \emphdef{sharpen the output distribution} toward abilities already latent from pretraining? Evidence suggests RL primarily surfaces and focuses existing capabilities rather than creating novel ones. The ceiling may be set by pre- and mid-training.
   \end{description}
 \end{frame}
