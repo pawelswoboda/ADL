@@ -1,9 +1,0 @@
-\beamer@sectionintoc {1}{Mixture of Experts}{2}{0}{1}
-\beamer@subsectionintoc {1}{1}{Motivation and Basic Idea}{3}{0}{1}
-\beamer@subsectionintoc {1}{2}{Sparsely-Gated MoE (Shazeer et al., 2017)}{7}{0}{1}
-\beamer@subsectionintoc {1}{3}{Switch Transformer}{12}{0}{1}
-\beamer@subsectionintoc {1}{4}{MoE in Practice: Integration into Transformers}{15}{0}{1}
-\beamer@subsectionintoc {1}{5}{DeepSeek-MoE}{18}{0}{1}
-\beamer@subsectionintoc {1}{6}{DeepSeek-V3: MoE at Scale}{22}{0}{1}
-\beamer@subsectionintoc {1}{7}{Summary}{26}{0}{1}
-\beamer@sectionintoc {2}{References}{28}{0}{2}

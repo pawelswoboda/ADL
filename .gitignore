@@ -10,3 +10,21 @@ __pycache__/
 input.txt
 env/
 venv/
+
+# LaTeX generated files
+*.aux
+*.bbl
+*.bcf
+*.blg
+*.fdb_latexmk
+*.fls
+*.log
+*.nav
+*.out
+*.run.xml
+*.snm
+*.toc
+*.vrb
+*.synctex*
+*-SAVE-ERROR
+texput.log
