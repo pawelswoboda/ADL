@@ -31,3 +31,4 @@ The slides will be made in latex with beamer. The high level file is adl.tex, an
 
 - Do not compile except when requested. Automatic compilation is turned on in another process.
 - When you try to make some illustration into a tikz file, first write the illustration into a temporary file, compile and compare against the original illustration. Improve until it looks good enough. Take care of crossing edges, ugly edges start and ends, overlaps etc.
+- Do not have claude in the commit messages
