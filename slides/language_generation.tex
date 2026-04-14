@@ -390,65 +390,66 @@
     \node[circ] (start) at (0, 0) {\texttt{<s>}};
 
     % --- Position 1: candidates from start ---
-    \node[sel]  (A) at (1.5, 1.0) {A \textcolor{brown!70}{.5}};
-    \node[cand] (B) at (1.5, 0.5) {B};
-    \node[sel]  (C) at (1.5, 0.0) {C \textcolor{brown!70}{.4}};
-    \node[cand] (D) at (1.5,-0.5) {D};
-    \node[cand] (E) at (1.5,-1.0) {E};
-    \draw[sarr] (start) -- (A);  \draw[arr] (start) -- (B);
-    \draw[sarr] (start) -- (C);  \draw[arr] (start) -- (D);
-    \draw[arr]  (start) -- (E);
+    \node[sel]  (The) at (1.6, 1.0) {The \textcolor{brown!70}{.6}};
+    \node[sel]  (A)   at (1.6, 0.5) {A \textcolor{brown!70}{.3}};
+    \node[cand] (One) at (1.6, 0.0) {One};
+    \node[cand] (dog1)at (1.6,-0.5) {dog};
+    \node[cand] (sat1)at (1.6,-1.0) {sat};
+    \draw[sarr] (start) -- (The);  \draw[sarr] (start) -- (A);
+    \draw[arr] (start) -- (One);   \draw[arr] (start) -- (dog1);
+    \draw[arr] (start) -- (sat1);
 
-    % --- Position 2: expand A ---
-    \node[circ] (Ac) at (2.7, 1.2) {A};
-    \draw[sarr] (A) -- (Ac);
-    \node[cand] (AA) at (4.0, 2.0) {AA};
-    \node[sel]  (AB) at (4.0, 1.5) {AB \textcolor{brown!70}{.3}};
-    \node[cand] (AC) at (4.0, 1.0) {AC};
-    \node[sel]  (AE) at (4.0, 0.5) {AE \textcolor{brown!70}{.2}};
-    \node[cand] (AD) at (4.0, 0.0) {AD};
-    \draw[arr] (Ac) -- (AA);  \draw[sarr] (Ac) -- (AB);
-    \draw[arr] (Ac) -- (AC);  \draw[sarr] (Ac) -- (AE);
-    \draw[arr] (Ac) -- (AD);
+    % --- Position 2: expand The ---
+    \node[circ] (Thec) at (2.8, 1.2) {The};
+    \draw[sarr] (The) -- (Thec);
+    \node[sel]  (Thecat) at (4.1, 2.0) {cat \textcolor{brown!70}{.4}};
+    \node[sel]  (Thedog) at (4.1, 1.5) {dog \textcolor{brown!70}{.3}};
+    \node[cand]          at (4.1, 1.0) {old};
+    \node[cand]          at (4.1, 0.5) {sat};
+    \node[cand]          at (4.1, 0.0) {is};
+    \draw[sarr] (Thec) -- (Thecat);  \draw[sarr] (Thec) -- (Thedog);
+    \draw[arr] (Thec) -- ++(0.9, -0.2);
+    \draw[arr] (Thec) -- ++(0.9, -0.7);
+    \draw[arr] (Thec) -- ++(0.9, -1.2);
 
-    % --- Position 2: expand C (pruned) ---
-    \node[circ, draw=gray!40, text=gray!50] (Cc) at (2.7, -0.6) {C};
-    \draw[arr] (C) -- (Cc);
-    \draw[arr, draw=gray!20] (Cc) -- ++(1.0, 0.3);
-    \draw[arr, draw=gray!20] (Cc) -- ++(1.0, 0.0);
-    \draw[arr, draw=gray!20] (Cc) -- ++(1.0,-0.3);
+    % --- Position 2: expand A (pruned) ---
+    \node[circ, draw=gray!40, text=gray!50] (Ac) at (2.8, -0.6) {A};
+    \draw[arr] (A) -- (Ac);
+    \draw[arr, draw=gray!20] (Ac) -- ++(1.0, 0.3);
+    \draw[arr, draw=gray!20] (Ac) -- ++(1.0, 0.0);
+    \draw[arr, draw=gray!20] (Ac) -- ++(1.0,-0.3);
     % Red X
-    \draw[very thick, red!70!black] (3.45,-0.3) -- (3.95,-0.9);
-    \draw[very thick, red!70!black] (3.45,-0.9) -- (3.95,-0.3);
+    \draw[very thick, red!70!black] (3.55,-0.3) -- (4.05,-0.9);
+    \draw[very thick, red!70!black] (3.55,-0.9) -- (4.05,-0.3);
 
-    % --- Position 3: expand AB ---
-    \node[circ] (ABc) at (5.4, 1.6) {AB};
-    \draw[sarr] (AB) -- (ABc);
-    \node[cand]     at (6.6, 2.0) {ABA};
-    \node[sel] (ABC) at (6.6, 1.6) {ABC \textcolor{brown!70}{.16}};
-    \node[cand]     at (6.6, 1.2) {ABD};
-    \draw[arr] (ABc) -- ++(0.8, 0.4);  \draw[sarr] (ABc) -- (ABC);
-    \draw[arr] (ABc) -- ++(0.8,-0.4);
+    % --- Position 3: expand "The cat" ---
+    \node[circ] (TCc) at (5.5, 1.6) {cat};
+    \draw[sarr] (Thecat) -- (TCc);
+    \node[cand]          at (6.7, 2.0) {on};
+    \node[sel] (TCsat)   at (6.7, 1.6) {sat \textcolor{brown!70}{.5}};
+    \node[cand]          at (6.7, 1.2) {is};
+    \draw[arr] (TCc) -- ++(0.8, 0.4);  \draw[sarr] (TCc) -- (TCsat);
+    \draw[arr] (TCc) -- ++(0.8,-0.4);
 
-    % --- Position 3: expand AE ---
-    \node[circ] (AEc) at (5.4, 0.2) {AE};
-    \draw[sarr] (AE) -- (AEc);
-    \node[cand]     at (6.6, 0.6) {AEA};
-    \node[sel] (AED) at (6.6, 0.2) {AED \textcolor{brown!70}{.12}};
-    \node[cand]     at (6.6,-0.2) {AEE};
-    \draw[arr] (AEc) -- ++(0.8, 0.4);  \draw[sarr] (AEc) -- (AED);
-    \draw[arr] (AEc) -- ++(0.8,-0.4);
+    % --- Position 3: expand "The dog" ---
+    \node[circ] (TDc) at (5.5, 0.2) {dog};
+    \draw[sarr] (Thedog) -- (TDc);
+    \node[cand]          at (6.7, 0.6) {on};
+    \node[sel] (TDran)   at (6.7, 0.2) {ran \textcolor{brown!70}{.4}};
+    \node[cand]          at (6.7,-0.2) {sat};
+    \draw[arr] (TDc) -- ++(0.8, 0.4);  \draw[sarr] (TDc) -- (TDran);
+    \draw[arr] (TDc) -- ++(0.8,-0.4);
 
     % END markers
-    \node[font=\scriptsize\ttfamily\bfseries] (end1) at (7.9, 1.6) {<end>};
-    \node[font=\scriptsize\ttfamily\bfseries] (end2) at (7.9, 0.2) {<end>};
-    \draw[sarr] (ABC) -- (end1);
-    \draw[sarr] (AED) -- (end2);
+    \node[font=\scriptsize\ttfamily\bfseries] (end1) at (8.0, 1.6) {<end>};
+    \node[font=\scriptsize\ttfamily\bfseries] (end2) at (8.0, 0.2) {<end>};
+    \draw[sarr] (TCsat) -- (end1);
+    \draw[sarr] (TDran) -- (end2);
 
     % Position labels
-    \node[font=\tiny, text=gray] at (1.5, -1.4) {Position 1};
-    \node[font=\tiny, text=gray] at (4.0, -1.4) {Position 2};
-    \node[font=\tiny, text=gray] at (6.6, -1.4) {Position 3};
+    \node[font=\tiny, text=gray] at (1.6, -1.4) {Position 1};
+    \node[font=\tiny, text=gray] at (4.1, -1.4) {Position 2};
+    \node[font=\tiny, text=gray] at (6.7, -1.4) {Position 3};
   \end{tikzpicture}
 
   \vspace{0.2em}
