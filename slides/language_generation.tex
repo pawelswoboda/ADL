@@ -162,6 +162,7 @@
       \begin{center}
         \begin{tabular}{ll}
           \textbf{Input context} & \textbf{Target} \\ \hline
+          \texttt{[]}                 & \texttt{The} \\
           \texttt{[The]}              & \texttt{cat} \\
           \texttt{[The, cat]}         & \texttt{sat} \\
           \texttt{[The, cat, sat]}    & \texttt{on} \\
@@ -320,51 +321,59 @@
   \textbf{Greedy decoding}: always pick the most probable token:
   $\hat{x}_i = \arg\max_{k}\; p_\theta(x=k \mid x_{<i})$
 
-  \vspace{0.5em}
+  \vspace{0.2em}
   \centering
   \begin{tikzpicture}[
-    every node/.style={font=\footnotesize},
-    tok/.style={draw, rounded corners=2pt, minimum width=1.0cm, minimum height=0.5cm, fill=gray!10},
-    sel/.style={tok, fill=green!30, thick},
-    stepbox/.style={draw, rounded corners=4pt, fill=white, inner sep=4pt, minimum height=2.4cm, minimum width=1.5cm},
-    arr/.style={->, thick, >=stealth, green!50!black},
+    every node/.style={font=\scriptsize},
+    cand/.style={font=\scriptsize\ttfamily, text=gray!50},
+    sel/.style={draw, rounded corners=2pt, fill=green!12, draw=green!50!black,
+                thick, font=\scriptsize\ttfamily, inner sep=2pt},
+    circ/.style={circle, draw=green!40!black, fill=white, inner sep=1.5pt, font=\scriptsize\ttfamily},
+    arr/.style={->, thin, draw=gray!30},
+    sarr/.style={->, semithick, draw=green!50!black},
   ]
-    % Time step boxes
-    \node[stepbox, label={[font=\scriptsize]above:$t{=}0$}] (s0) at (0,0) {};
-    \node[stepbox, label={[font=\scriptsize]above:$t{=}1$}] (s1) at (2.5,0) {};
-    \node[stepbox, label={[font=\scriptsize]above:$t{=}2$}] (s2) at (5.0,0) {};
-    \node[stepbox, label={[font=\scriptsize]above:$t{=}3$}] (s3) at (7.5,0) {};
+    % START
+    \node[circ] (start) at (0, 0) {\texttt{<s>}};
 
-    % Tokens in step 0
-    \node[sel] (t0a) at (0, 0.8) {The};
-    \node[tok] (t0b) at (0, 0.0) {A};
-    \node[tok] (t0c) at (0,-0.8) {One};
+    % --- Position 1: candidates from start ---
+    \node[sel]  (The) at (1.6, 0.8) {The \textcolor{green!40!black}{.6}};
+    \node[cand] (A)   at (1.6, 0.3) {A .3};
+    \node[cand] (One) at (1.6,-0.2) {One .1};
+    \draw[sarr] (start) -- (The);
+    \draw[arr] (start) -- (A);
+    \draw[arr] (start) -- (One);
 
-    % Tokens in step 1
-    \node[sel] (t1a) at (2.5, 0.8) {cat};
-    \node[tok] (t1b) at (2.5, 0.0) {dog};
-    \node[tok] (t1c) at (2.5,-0.8) {old};
+    % --- Position 2: expand only "The" (argmax) ---
+    \node[circ] (Thec) at (2.8, 0.8) {The};
+    \draw[sarr] (The) -- (Thec);
+    \node[sel]  (cat)  at (4.1, 1.6) {cat \textcolor{green!40!black}{.4}};
+    \node[cand]        at (4.1, 1.1) {dog .3};
+    \node[cand]        at (4.1, 0.6) {old .2};
+    \draw[sarr] (Thec) -- (cat);
+    \draw[arr] (Thec) -- ++(0.9, 0.3);
+    \draw[arr] (Thec) -- ++(0.9,-0.2);
 
-    % Tokens in step 2
-    \node[sel] (t2a) at (5.0, 0.8) {sat};
-    \node[tok] (t2b) at (5.0, 0.0) {is};
-    \node[tok] (t2c) at (5.0,-0.8) {ran};
+    % --- Position 3: expand only "The cat" (argmax) ---
+    \node[circ] (catc) at (5.5, 1.6) {cat};
+    \draw[sarr] (cat) -- (catc);
+    \node[sel]  (sat)  at (6.7, 2.0) {sat \textcolor{green!40!black}{.5}};
+    \node[cand]        at (6.7, 1.5) {on .3};
+    \node[cand]        at (6.7, 1.0) {is .2};
+    \draw[sarr] (catc) -- (sat);
+    \draw[arr] (catc) -- ++(0.8,-0.1);
+    \draw[arr] (catc) -- ++(0.8,-0.6);
 
-    % Tokens in step 3
-    \node[sel] (t3a) at (7.5, 0.8) {on};
-    \node[tok] (t3b) at (7.5, 0.0) {down};
-    \node[tok] (t3c) at (7.5,-0.8) {the};
+    % END
+    \node[font=\scriptsize\ttfamily\bfseries] (end) at (8.0, 2.0) {<end>};
+    \draw[sarr] (sat) -- (end);
 
-    % Greedy path
-    \draw[arr] (t0a) -- (t1a) node[midway, above, font=\scriptsize, green!50!black] {0.6};
-    \draw[arr] (t1a) -- (t2a) node[midway, above, font=\scriptsize, green!50!black] {0.7};
-    \draw[arr] (t2a) -- (t3a) node[midway, above, font=\scriptsize, green!50!black] {0.5};
-
-    % Outer box
-    \node[draw, rounded corners=6pt, fit=(s0)(s1)(s2)(s3), inner sep=10pt, thick, gray] {};
+    % Position labels
+    \node[font=\tiny, text=gray] at (1.6, -0.7) {Position 1};
+    \node[font=\tiny, text=gray] at (4.1, -0.7) {Position 2};
+    \node[font=\tiny, text=gray] at (6.7, -0.7) {Position 3};
   \end{tikzpicture}
 
-  \vspace{0.5em}
+  \vspace{0.3em}
   \begin{itemize}
     \item Fast and deterministic, but often repetitive or suboptimal
     \item Can miss globally better sequences by being locally greedy
@@ -392,9 +401,9 @@
     % --- Position 1: candidates from start ---
     \node[sel]  (The) at (1.6, 1.0) {The \textcolor{brown!70}{.6}};
     \node[sel]  (A)   at (1.6, 0.5) {A \textcolor{brown!70}{.3}};
-    \node[cand] (One) at (1.6, 0.0) {One};
-    \node[cand] (dog1)at (1.6,-0.5) {dog};
-    \node[cand] (sat1)at (1.6,-1.0) {sat};
+    \node[cand] (One) at (1.6, 0.0) {One .05};
+    \node[cand] (dog1)at (1.6,-0.5) {dog .03};
+    \node[cand] (sat1)at (1.6,-1.0) {sat .02};
     \draw[sarr] (start) -- (The);  \draw[sarr] (start) -- (A);
     \draw[arr] (start) -- (One);   \draw[arr] (start) -- (dog1);
     \draw[arr] (start) -- (sat1);
@@ -404,9 +413,9 @@
     \draw[sarr] (The) -- (Thec);
     \node[sel]  (Thecat) at (4.1, 2.0) {cat \textcolor{brown!70}{.4}};
     \node[sel]  (Thedog) at (4.1, 1.5) {dog \textcolor{brown!70}{.3}};
-    \node[cand]          at (4.1, 1.0) {old};
-    \node[cand]          at (4.1, 0.5) {sat};
-    \node[cand]          at (4.1, 0.0) {is};
+    \node[cand]          at (4.1, 1.0) {old .15};
+    \node[cand]          at (4.1, 0.5) {sat .1};
+    \node[cand]          at (4.1, 0.0) {is .05};
     \draw[sarr] (Thec) -- (Thecat);  \draw[sarr] (Thec) -- (Thedog);
     \draw[arr] (Thec) -- ++(0.9, -0.2);
     \draw[arr] (Thec) -- ++(0.9, -0.7);
@@ -425,18 +434,18 @@
     % --- Position 3: expand "The cat" ---
     \node[circ] (TCc) at (5.5, 1.6) {cat};
     \draw[sarr] (Thecat) -- (TCc);
-    \node[cand]          at (6.7, 2.0) {on};
+    \node[cand]          at (6.7, 2.0) {on .3};
     \node[sel] (TCsat)   at (6.7, 1.6) {sat \textcolor{brown!70}{.5}};
-    \node[cand]          at (6.7, 1.2) {is};
+    \node[cand]          at (6.7, 1.2) {is .2};
     \draw[arr] (TCc) -- ++(0.8, 0.4);  \draw[sarr] (TCc) -- (TCsat);
     \draw[arr] (TCc) -- ++(0.8,-0.4);
 
     % --- Position 3: expand "The dog" ---
     \node[circ] (TDc) at (5.5, 0.2) {dog};
     \draw[sarr] (Thedog) -- (TDc);
-    \node[cand]          at (6.7, 0.6) {on};
+    \node[cand]          at (6.7, 0.6) {on .3};
     \node[sel] (TDran)   at (6.7, 0.2) {ran \textcolor{brown!70}{.4}};
-    \node[cand]          at (6.7,-0.2) {sat};
+    \node[cand]          at (6.7,-0.2) {sat .25};
     \draw[arr] (TDc) -- ++(0.8, 0.4);  \draw[sarr] (TDc) -- (TDran);
     \draw[arr] (TDc) -- ++(0.8,-0.4);
 

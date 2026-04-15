@@ -17,7 +17,7 @@
         \item Demonstrated that \emph{scaling up} a simple language model yields surprisingly capable text generation
         \item Showed that unsupervised pretraining on diverse web text transfers to many tasks \emph{without fine-tuning} (zero-shot)
         \item Architecture became the blueprint for GPT-3, ChatGPT, and most modern LLMs
-        \item Small enough (124M) to train from scratch on a single GPU, ideal for studying training techniques
+        \item GPT2 small (124M) can be trained from scratch on a single GPU, ideal for studying training techniques
       \end{itemize}
 
       \vspace{0.3em}
@@ -61,7 +61,7 @@
 \begin{frame}{Architecture: Transformer Block (Pre-Norm)}
 
   \begin{columns}
-    \begin{column}{0.52\textwidth}
+    \begin{column}{0.44\textwidth}
       Each of the 12 blocks applies:
       \[
         x \;\leftarrow\; x + \mathrm{Attn}(\mathrm{LN}_1(x))
@@ -80,30 +80,145 @@
       \vspace{0.4em}
       \textbf{LayerNorm with optional bias}: \texttt{bias=False} is slightly better and faster for pretraining.
     \end{column}
-    \begin{column}{0.44\textwidth}
-      \begin{tikzpicture}[
-        box/.style={draw, rounded corners, fill=blue!8, text width=2.8cm, align=center, font=\small, minimum height=0.6cm},
-        arr/.style={-Stealth, thick},
-        skip/.style={-Stealth, thick, dashed, gray},
-      ]
-        \node[box] (x)    at (0,6.0) {$x$ (input)};
-        \node[box] (ln1)  at (0,5.1) {LayerNorm};
-        \node[box] (attn) at (0,4.2) {Causal Self-Attention};
-        \node[box] (add1) at (0,3.3) {$+$ (residual)};
-        \node[box] (ln2)  at (0,2.4) {LayerNorm};
-        \node[box] (mlp)  at (0,1.5) {MLP};
-        \node[box] (add2) at (0,0.6) {$+$ (residual)};
+    \begin{column}{0.54\textwidth}
+      \begin{center}
+      \begin{tikzpicture}[scale=0.62,
+          block/.style={draw=gray!60, rounded corners=5pt, minimum height=0.50cm,
+                        inner sep=4pt, font=\small},
+          addcirc/.style={circle, draw=red!40, fill=red!8, inner sep=1.5pt,
+                          font=\scriptsize\bfseries, text=red!60!black},
+          arr/.style={-{Stealth[length=4pt]}, gray!70, thick},
+        ]
+        \def\cs{0.20}
+        \def\xA{-1.40}
+        \def\xB{1.40}
 
-        \draw[arr] (x)    -- (ln1);
-        \draw[arr] (ln1)  -- (attn);
-        \draw[arr] (attn) -- (add1);
-        \draw[arr] (add1) -- (ln2);
-        \draw[arr] (ln2)  -- (mlp);
-        \draw[arr] (mlp)  -- (add2);
-        % skip connections (equal width, offset vertically at add1)
-        \draw[skip] (x.east) -- ++(1.2,0) |- ([yshift=2pt]add1.east);
-        \draw[skip] ([yshift=-2pt]add1.east) -- ++(1.2,0) |- (add2.east);
+        % ======== INPUT TOKENS ========
+        \node[font=\small\bfseries, text=green!60!black] at (\xA, -0.40) {\textit{Thinking}};
+        \node[font=\small\bfseries, text=green!60!black] at (\xB, -0.40) {\textit{Machines}};
+
+        \node[font=\tiny, text=green!60!black, anchor=east] at (\xA-0.30, 0.10) {$x_1$};
+        \foreach \ci in {0,...,3} {
+          \pgfmathsetmacro{\cx}{\xA - 2*\cs + \ci*\cs + \cs/2}
+          \node[acell, minimum width=\cs cm, minimum height=\cs cm,
+                fill=xcol] at (\cx, 0.10) {};
+        }
+        \node[font=\tiny, text=green!60!black, anchor=east] at (\xB-0.30, 0.10) {$x_2$};
+        \foreach \ci in {0,...,3} {
+          \pgfmathsetmacro{\cx}{\xB - 2*\cs + \ci*\cs + \cs/2}
+          \node[acell, minimum width=\cs cm, minimum height=\cs cm,
+                fill=xcol] at (\cx, 0.10) {};
+        }
+
+        \draw[arr] (\xA, 0.30) -- (\xA, 0.65);
+        \draw[arr] (\xB, 0.30) -- (\xB, 0.65);
+
+        % ======== LAYERNORM 1 ========
+        \node[block, fill=yellow!15, draw=yellow!50!black,
+              minimum width=4.8cm, font=\small, text=yellow!50!black]
+          (ln1) at (0, 1.00) {LayerNorm};
+
+        \draw[arr] (\xA, 1.35) -- (\xA, 1.70);
+        \draw[arr] (\xB, 1.35) -- (\xB, 1.70);
+
+        % ======== CAUSAL SELF-ATTENTION ========
+        \node[block, fill=orange!12, draw=orange!40,
+              minimum width=4.8cm, text=orange!80!black]
+          (csa) at (0, 2.05) {Causal Self-Attention};
+
+        % ======== ADD (RESIDUAL) 1 ========
+        \node[addcirc] (addA1) at (\xA, 3.10) {$+$};
+        \node[addcirc] (addB1) at (\xB, 3.10) {$+$};
+
+        \draw[arr] (\xA, 2.40) -- (addA1.south);
+        \draw[arr] (\xB, 2.40) -- (addB1.south);
+
+        % Residual 1: from input to add1 circles
+        \draw[gray!50, thin, dashed, rounded corners=3pt]
+          (\xA, 0.50) -- (-4.20, 0.50) -- (-4.20, 3.10) -- (addA1.west);
+        \draw[gray!50, thin, dashed, rounded corners=3pt]
+          (\xB, 0.50) -- (4.20, 0.50) -- (4.20, 3.10) -- (addB1.east);
+
+        \draw[arr] (addA1.north) -- (\xA, 3.80);
+        \draw[arr] (addB1.north) -- (\xB, 3.80);
+
+        % ======== LAYERNORM 2 ========
+        \node[block, fill=yellow!15, draw=yellow!50!black,
+              minimum width=4.8cm, font=\small, text=yellow!50!black]
+          (ln2) at (0, 4.15) {LayerNorm};
+
+        \draw[arr] (\xA, 4.50) -- (\xA, 4.85);
+        \draw[arr] (\xB, 4.50) -- (\xB, 4.85);
+
+        % ======== MLP (per token, trapezoid fan-out + projection) ========
+        % Left token MLP
+        % W1 trapezoid: fan-out d -> 4d (narrow bottom, wide top)
+        \draw[fill=cyan!12, draw=cyan!40]
+          (\xA-0.30, 4.90) -- (\xA+0.30, 4.90) --
+          (\xA+0.80, 5.25) -- (\xA-0.80, 5.25) -- cycle;
+        \node[font=\tiny, text=cyan!60!black] at (\xA, 5.07) {$W_1$};
+        % GELU bar at 4d width
+        \draw[fill=cyan!20, draw=cyan!40]
+          (\xA-0.80, 5.25) rectangle (\xA+0.80, 5.40);
+        \node[font=\tiny, text=cyan!60!black] at (\xA, 5.325) {\textrm{GELU}};
+        % W2 trapezoid: fan-in 4d -> d (wide bottom, narrow top)
+        \draw[fill=cyan!12, draw=cyan!40]
+          (\xA-0.80, 5.40) -- (\xA+0.80, 5.40) --
+          (\xA+0.30, 5.75) -- (\xA-0.30, 5.75) -- cycle;
+        \node[font=\tiny, text=cyan!60!black] at (\xA, 5.57) {$W_2$};
+
+        % Right token MLP (same shape)
+        \draw[fill=cyan!12, draw=cyan!40]
+          (\xB-0.30, 4.90) -- (\xB+0.30, 4.90) --
+          (\xB+0.80, 5.25) -- (\xB-0.80, 5.25) -- cycle;
+        \node[font=\tiny, text=cyan!60!black] at (\xB, 5.07) {$W_1$};
+        \draw[fill=cyan!20, draw=cyan!40]
+          (\xB-0.80, 5.25) rectangle (\xB+0.80, 5.40);
+        \node[font=\tiny, text=cyan!60!black] at (\xB, 5.325) {\textrm{GELU}};
+        \draw[fill=cyan!12, draw=cyan!40]
+          (\xB-0.80, 5.40) -- (\xB+0.80, 5.40) --
+          (\xB+0.30, 5.75) -- (\xB-0.30, 5.75) -- cycle;
+        \node[font=\tiny, text=cyan!60!black] at (\xB, 5.57) {$W_2$};
+
+
+        % ======== ADD (RESIDUAL) 2 ========
+        \node[addcirc] (addA2) at (\xA, 6.30) {$+$};
+        \node[addcirc] (addB2) at (\xB, 6.30) {$+$};
+
+        \draw[arr] (\xA, 5.80) -- (addA2.south);
+        \draw[arr] (\xB, 5.80) -- (addB2.south);
+
+        % Residual 2: from add1 output to add2 circles
+        \draw[gray!50, thin, dashed, rounded corners=3pt]
+          (\xA, 3.50) -- (-4.20, 3.50) -- (-4.20, 6.30) -- (addA2.west);
+        \draw[gray!50, thin, dashed, rounded corners=3pt]
+          (\xB, 3.50) -- (4.20, 3.50) -- (4.20, 6.30) -- (addB2.east);
+
+        % ======== OUTPUT TOKENS ========
+        \draw[arr] (addA2.north) -- (\xA, 6.95);
+        \draw[arr] (addB2.north) -- (\xB, 6.95);
+
+        \node[font=\tiny, text=blue!60!black, anchor=east] at (\xA-0.30, 7.15) {$r_1$};
+        \foreach \ci in {0,...,3} {
+          \pgfmathsetmacro{\cx}{\xA - 2*\cs + \ci*\cs + \cs/2}
+          \node[acell, minimum width=\cs cm, minimum height=\cs cm,
+                fill=blue!20, draw=blue!40] at (\cx, 7.15) {};
+        }
+        \node[font=\tiny, text=blue!60!black, anchor=east] at (\xB-0.30, 7.15) {$r_2$};
+        \foreach \ci in {0,...,3} {
+          \pgfmathsetmacro{\cx}{\xB - 2*\cs + \ci*\cs + \cs/2}
+          \node[acell, minimum width=\cs cm, minimum height=\cs cm,
+                fill=blue!20, draw=blue!40] at (\cx, 7.15) {};
+        }
+
+        % ======== BORDER ========
+        \draw[green!40!black, rounded corners=8pt, line width=1pt]
+          (-4.60, 0.30) rectangle (4.60, 6.80);
+        \node[font=\small\bfseries, text=green!40!black]
+          at (0, 7.50) {Decoder Block (Pre-Norm)};
+
       \end{tikzpicture}
+      \end{center}
     \end{column}
   \end{columns}
 \end{frame}
@@ -215,7 +330,7 @@
 \begin{frame}{Weight Tying \& Initialization}
 
   \begin{columns}
-    \begin{column}{0.48\textwidth}
+    \begin{column}{0.50\textwidth}
       \textbf{Weight tying}: the token embedding matrix $W_e$ and the LM head are \emph{shared}:
       \begin{center}
         \texttt{lm\_head.weight = transformer.wte.weight}
@@ -224,18 +339,38 @@
         \item Saves $V \times d = 50304 \times 768 \approx 38$M parameters
         \item Input and output representations are coupled; works well in practice
       \end{itemize}
-    \end{column}
-    \begin{column}{0.48\textwidth}
+
+      \vspace{0.5em}
       \textbf{Initialization}:
       \begin{itemize}
-        \item All weights: $\mathcal{N}(0, 0.02)$
-        \item Biases: zero
-        \item \textbf{Residual projections} scaled by $\frac{1}{\sqrt{2L}}$ where $L$ = number of layers:
-          \[
-            \sigma = \frac{0.02}{\sqrt{2 \times 12}}
-          \]
-          Prevents residual stream variance from growing with depth.
+        \item All weights: $\mathcal{N}(0, 0.02)$, biases: zero
+        \item \textbf{Residual projections} scaled by $\frac{0.02}{\sqrt{2L}}$: prevents residual stream variance from growing with depth
       \end{itemize}
+    \end{column}
+    \begin{column}{0.46\textwidth}
+      \begin{tikzpicture}[
+        box/.style={draw, rounded corners, fill=blue!8, text width=3.2cm, align=center, font=\small, minimum height=0.6cm},
+        shared/.style={draw=red!50, rounded corners, fill=red!10, text width=3.2cm, align=center, font=\small, minimum height=0.6cm, line width=0.8pt},
+        arr/.style={-Stealth, thick},
+      ]
+        \node[shared] (tok) at (0,5.2) {Token Embedding $W_e$};
+        \node[box] (pos) at (0,4.3) {+ Position Emb.\ $W_p$};
+        \node[box] (b1)  at (0,3.4) {Transformer Block $\times 12$};
+        \node[box] (ln)  at (0,2.5) {LayerNorm};
+        \node[shared] (lm)  at (0,1.6) {LM Head ($= W_e^\top$)};
+        \node[box, fill=green!10] (out) at (0,0.7) {Logits over vocab};
+        \draw[arr] (tok) -- (pos);
+        \draw[arr] (pos) -- (b1);
+        \draw[arr] (b1)  -- (ln);
+        \draw[arr] (ln)  -- (lm);
+        \draw[arr] (lm)  -- (out);
+
+        % Weight tying bracket
+        \draw[red!60, thick, dashed, <->, rounded corners=8pt]
+          (tok.east) -- ++(0.7, 0) |- (lm.east);
+        \node[font=\small, text=red!60, rotate=-90]
+          at ([xshift=0.95cm]b1.east) {shared $W_e$};
+      \end{tikzpicture}
     \end{column}
   \end{columns}
 \end{frame}
@@ -272,7 +407,9 @@
       \end{block}
 
       \vspace{0.3em}
-      \textbf{Fused AdamW}: PyTorch offers a CUDA-fused implementation that combines the optimizer update into a single kernel, giving a meaningful speedup.
+      \begin{block}{Fused AdamW}
+        PyTorch offers a CUDA-fused implementation that combines the optimizer update into a single kernel, giving a meaningful speedup.
+      \end{block}
     \end{column}
   \end{columns}
 \end{frame}
@@ -587,11 +724,11 @@
     lbl/.style={font=\tiny, gray, align=center},
   ]
     % === Left: Storage ===
-    \node[fp32] (mw) at (0, 6.7) {Master weights $\theta$};
+    \node[fp32] (mw) at (0, 7.0) {Master weights $\theta$};
     \node[lbl, above=0pt of mw] {float32};
 
     % Cast down
-    \node[cast] (castdown) at (0, 5.7) {cast to bf16};
+    \node[cast] (castdown) at (0, 5.9) {cast to bf16};
     \draw[arr] (mw) -- (castdown);
 
     % bf16 weights copy
