@@ -199,49 +199,49 @@
 \begin{frame}{RoPE: Visualization}
 
   \begin{center}
-  \begin{tikzpicture}[scale=1.0]
+  \begin{tikzpicture}[scale=0.85]
 
     % --- Left: 2D rotation diagram ---
-    \begin{scope}[shift={(-4.0, 0)}]
-      \draw[-{Stealth[length=3pt]}, gray!60] (-0.3,0) -- (2.8,0) node[right, font=\tiny, gray] {$x_{2i}$};
-      \draw[-{Stealth[length=3pt]}, gray!60] (0,-0.3) -- (0,2.8) node[above, font=\tiny, gray] {$x_{2i+1}$};
+    \begin{scope}[shift={(-3.2, 0)}]
+      \draw[-{Stealth[length=3pt]}, gray!60] (-0.3,0) -- (2.5,0) node[right, font=\tiny, gray] {$x_{2i}$};
+      \draw[-{Stealth[length=3pt]}, gray!60] (0,-0.3) -- (0,2.5) node[above, font=\tiny, gray] {$x_{2i+1}$};
 
       % Original vector
-      \draw[-{Stealth[length=4pt]}, thick, blue!70!black] (0,0) -- (2.2, 0.8);
-      \node[font=\scriptsize, blue!70!black, anchor=south west] at (2.2, 0.8) {$\vq_m$};
+      \draw[-{Stealth[length=4pt]}, thick, blue!70!black] (0,0) -- (2.0, 0.73);
+      \node[font=\scriptsize, blue!70!black, anchor=south west] at (2.0, 0.73) {$\vq_m$};
 
       % Rotated vector
-      \draw[-{Stealth[length=4pt]}, thick, red!70!black] (0,0) -- (1.2, 2.0);
-      \node[font=\scriptsize, red!70!black, anchor=south east] at (1.1, 2.1) {$\tilde{\vq}_m$};
+      \draw[-{Stealth[length=4pt]}, thick, red!70!black] (0,0) -- (1.1, 1.82);
+      \node[font=\scriptsize, red!70!black, anchor=south east] at (1.0, 1.9) {$\tilde{\vq}_m$};
 
       % Arc for angle
-      \draw[-{Stealth[length=2.5pt]}, blue!50, thick] (1.5, 0.545) arc[start angle=20, end angle=59, radius=1.59];
-      \node[font=\scriptsize, blue!50] at (1.75, 1.35) {$m\theta_i$};
+      \draw[-{Stealth[length=2.5pt]}, blue!50, thick] (1.36, 0.50) arc[start angle=20, end angle=59, radius=1.45];
+      \node[font=\scriptsize, blue!50] at (1.55, 1.25) {$m\theta_i$};
 
       % Dashed circle
-      \draw[gray!30, dashed] (0,0) circle(2.346);
+      \draw[gray!30, dashed] (0,0) circle(2.13);
 
-      \node[font=\small, anchor=north] at (1.2, -0.5) {Rotation in pair $(2i, 2i{+}1)$};
+      \node[font=\scriptsize, anchor=north] at (1.1, -0.4) {Rotation in pair $(2i, 2i{+}1)$};
     \end{scope}
 
     % --- Right: frequency spectrum ---
-    \begin{scope}[shift={(2.5, -0.3)}]
-      \node[font=\small, anchor=south] at (2.0, 2.8) {Rotation speed per dimension pair};
+    \begin{scope}[shift={(1.8, -0.3)}]
+      \node[font=\scriptsize, anchor=south] at (1.6, 2.5) {Rotation speed per dimension pair};
 
       \foreach \i/\speed/\col in {0/fast/red!70, 1/\phantom{x}/red!50, 2/\phantom{x}/orange!60, 3/\phantom{x}/yellow!70!orange, 4/\phantom{x}/green!50, 5/\phantom{x}/teal!50, 6/\phantom{x}/blue!40, 7/slow/blue!70} {
-        \pgfmathsetmacro{\bw}{0.40}
-        \pgfmathsetmacro{\bx}{\i * 0.50}
-        \pgfmathsetmacro{\bh}{2.4 - \i * 0.28}
+        \pgfmathsetmacro{\bw}{0.35}
+        \pgfmathsetmacro{\bx}{\i * 0.43}
+        \pgfmathsetmacro{\bh}{2.2 - \i * 0.25}
         \fill[\col] (\bx, 0) rectangle (\bx + \bw, \bh);
         \draw[gray!50, thin] (\bx, 0) rectangle (\bx + \bw, \bh);
         \node[font=\tiny, gray] at (\bx + \bw/2, -0.2) {$\i$};
       }
 
-      \node[font=\tiny, red!70!black, anchor=west] at (4.2, 2.1) {local};
-      \node[font=\tiny, blue!70!black, anchor=west] at (4.2, 0.5) {global};
-      \draw[-{Stealth[length=2pt]}, gray!50, thin] (4.35, 1.9) -- (4.35, 0.7);
+      \node[font=\tiny, red!70!black, anchor=west] at (3.7, 1.9) {local};
+      \node[font=\tiny, blue!70!black, anchor=west] at (3.7, 0.5) {global};
+      \draw[-{Stealth[length=2pt]}, gray!50, thin] (3.85, 1.7) -- (3.85, 0.7);
 
-      \node[font=\tiny, gray] at (2.0, -0.5) {dimension pair index $i$};
+      \node[font=\tiny, gray] at (1.6, -0.4) {dimension pair index $i$};
     \end{scope}
 
   \end{tikzpicture}
@@ -326,6 +326,81 @@
     \end{column}
   \end{columns}
 
+\end{frame}
+
+% -----------------------------------------------------------------------
+\begin{frame}{RoPE: Why Long-Range Decay?}
+
+  The RoPE score between positions $m$ and $n$ is a sum over dimension pairs:
+  \[
+    \text{score}(m,n) = \sum_{i=0}^{d/2-1} \underbrace{a_i}_{\text{content}} \cos(\Delta\,\theta_i) + \underbrace{b_i}_{\text{content}} \sin(\Delta\,\theta_i), \qquad \Delta = m{-}n
+  \]
+  where $a_i, b_i$ depend on $\vq, \vk$ and $\theta_i = \text{base}^{-2i/d}$ spans a huge frequency range.
+
+  \vspace{0.3em}
+  \begin{columns}[T]
+    \begin{column}{0.55\textwidth}
+      \textbf{At $\Delta = 0$:} All $\cos(0) = 1$, $\sin(0) = 0$.
+      Score equals the unrotated dot product $\vq^\top \vk$. Full signal.
+
+      \vspace{0.3em}
+      \textbf{At increasing $|\Delta|$:}
+      Each pair oscillates at its own frequency.
+      The phases spread across the unit circle and \textbf{destructively interfere}:
+      \begin{itemize}
+        \item Small $|\Delta|$: Only high-freq pairs (small $i$) cancel. Low-freq pairs still coherent. Score slightly reduced.
+        \item Large $|\Delta|$: Nearly all pairs oscillate incoherently. Only the slowest pairs contribute. Score near zero.
+      \end{itemize}
+
+      \vspace{0.3em}
+      This is the \textbf{Riemann-Lebesgue effect}:
+      a sum of oscillating terms at spread-out frequencies vanishes as the common phase shift grows.
+    \end{column}
+    \begin{column}{0.43\textwidth}
+      \centering
+      \textbf{Phasor view} at large $|\Delta|$:
+
+      \vspace{0.2em}
+      \begin{tikzpicture}[scale=0.72]
+        % Unit circle
+        \draw[gray!30] (0,0) circle(1.8);
+        \draw[-{Stealth[length=2pt]}, gray!40] (-2.0,0) -- (2.0,0);
+        \draw[-{Stealth[length=2pt]}, gray!40] (0,-2.0) -- (0,2.0);
+
+        % Phasors at different angles (representing e^{j*Delta*theta_i} for various i)
+        \foreach \ang/\col in {15/red!70, 72/orange!70, 145/yellow!70!black, 198/green!60!black, 253/teal!70, 290/blue!60, 340/violet!60, 50/red!40} {
+          \draw[-{Stealth[length=2.5pt]}, \col, thick] (0,0) -- ({1.8*cos(\ang)},{1.8*sin(\ang)});
+        }
+
+        % Sum vector (small, near origin)
+        \draw[-{Stealth[length=3pt]}, black, very thick] (0,0) -- (0.3, 0.15);
+        \node[font=\scriptsize, anchor=west] at (0.35, 0.15) {$\sum$};
+
+        \node[font=\scriptsize, gray, anchor=north] at (0, -2.2) {Phases spread $\Rightarrow$ sum $\approx 0$};
+      \end{tikzpicture}
+
+      \vspace{0.5em}
+      \textbf{At $\Delta = 0$} all phasors point right ($e^{j \cdot 0} = 1$):
+
+      \vspace{0.2em}
+      \begin{tikzpicture}[scale=0.72]
+        \draw[gray!30] (0,0) circle(1.8);
+        \draw[-{Stealth[length=2pt]}, gray!40] (-2.0,0) -- (2.0,0);
+        \draw[-{Stealth[length=2pt]}, gray!40] (0,-2.0) -- (0,2.0);
+
+        % All phasors aligned to the right
+        \foreach \i in {1,...,8} {
+          \pgfmathsetmacro{\yoff}{(\i - 4.5) * 0.04}
+          \draw[-{Stealth[length=2.5pt]}, blue!60, thick] (0,\yoff) -- (1.8,\yoff);
+        }
+
+        \draw[-{Stealth[length=3pt]}, black, very thick] (0,0) -- (1.8, 0);
+        \node[font=\scriptsize, anchor=west] at (1.85, 0) {$\sum$};
+
+        \node[font=\scriptsize, gray, anchor=north] at (0, -2.2) {All aligned $\Rightarrow$ max score};
+      \end{tikzpicture}
+    \end{column}
+  \end{columns}
 \end{frame}
 
 % -----------------------------------------------------------------------

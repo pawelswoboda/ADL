@@ -20,10 +20,10 @@
 }
 
 % -----------------------------------------------------------------------
-\section{State Space Models and Mamba}
+\subsection{State Space Models and Mamba}
 
 % =======================================================================
-\subsection{State Space Models}
+\subsubsection{State Space Models}
 
 % -----------------------------------------------------------------------
 \begin{frame}{Motivation: Recurrence vs.\ Attention}
@@ -33,15 +33,15 @@
       \textbf{RNNs / LSTMs}
       \begin{itemize}
         \item $O(1)$ memory per step, streaming
-        \item Sequential $\Rightarrow$ \alert{not parallelizable} during training
+        \item Sequential $\Rightarrow$ \alert{not parallelizable} over $T$: batched/prefill inference takes $\Omega(T)$ sequential steps
       \end{itemize}
     \end{column}
     \begin{column}{0.48\textwidth}
       \textbf{Transformers}
       \begin{itemize}
-        \item Fully parallel training
-        \item \alert{$O(T^2)$} attention cost
-        \item KV cache grows linearly at inference
+        \item Fully parallel training and prefill
+        \item \alert{$O(T^2)$} time and memory for parallel inference
+        \item KV cache grows linearly at autoregressive inference
       \end{itemize}
     \end{column}
   \end{columns}
@@ -51,7 +51,7 @@
     \textbf{State Space Models} aim to combine:
     \begin{itemize}
       \item Constant-size hidden state $\Rightarrow$ $O(1)$ inference per step (like RNNs)
-      \item Parallel training via convolutional or attention-like view (like Transformers)
+      \item Sub-quadratic parallel training/prefill in $O(T)$ via convolutional or scan view (unlike Transformers' $O(T^2)$)
     \end{itemize}
   \end{alertblock}
 \end{frame}
@@ -118,15 +118,129 @@
 \end{frame}
 
 % -----------------------------------------------------------------------
-\begin{frame}{Discretization}
+\begin{frame}{From Continuous to Discrete: The Integral Form}
 
-  To process a discrete sequence $x_0, x_1, \ldots, x_T$ with step size $\Delta$, we discretize via the \textbf{zero-order hold} (ZOH):
+  Goal: solve $h'(t) = \bar{A}\,h(t) + \bar{B}\,x(t)$ in closed form over one step $[t_k,\, t_{k+1}]$ with $t_{k+1} = t_k + \Delta$.
 
+  \begin{description}
+    \item[Step 1. Rearrange.] Move the state term to the left:
+      \[
+        h'(t) - \bar{A}\,h(t) \;=\; \bar{B}\,x(t).
+      \]
+    \item[Step 2. Integrating factor.] Multiply both sides by $e^{-\bar{A} t}$. The left side becomes a total derivative:
+      \[
+        \frac{\mathrm{d}}{\mathrm{d}t}\!\left[\,e^{-\bar{A} t}\, h(t)\,\right]
+        \;=\; e^{-\bar{A} t}\!\left(h'(t) - \bar{A}\,h(t)\right)
+        \;=\; e^{-\bar{A} t}\, \bar{B}\, x(t).
+      \]
+    \item[Step 3. Integrate from $t_k$ to $t_{k+1}$.] Fundamental theorem of calculus:
+      \[
+        e^{-\bar{A} t_{k+1}}\, h(t_{k+1}) \;-\; e^{-\bar{A} t_k}\, h(t_k)
+        \;=\; \int_{t_k}^{t_{k+1}} e^{-\bar{A} s}\, \bar{B}\, x(s)\,\mathrm{d}s.
+      \]
+    \item[Step 4. Solve for $h(t_{k+1})$.] Multiply through by $e^{\bar{A} t_{k+1}}$ and use $t_{k+1} - t_k = \Delta$:
+      \[
+        \boxed{\;
+        h(t_{k+1}) \;=\; e^{\bar{A}\Delta}\, h(t_k)
+        \;+\; \int_{t_k}^{t_k+\Delta} e^{\bar{A}(t_k + \Delta - s)}\, \bar{B}\, x(s)\,\mathrm{d}s.
+        \;}
+      \]
+  \end{description}
+
+  This is \emph{exact}: no approximation so far. The remaining question is how to evaluate the integral for a discrete input stream $x_0, x_1, \ldots$
+\end{frame}
+
+% -----------------------------------------------------------------------
+\begin{frame}{Zero-Order Hold Discretization}
+
+  \begin{columns}[T]
+    \begin{column}{0.46\textwidth}
+      \begin{block}{Zero-Order Hold (ZOH)}
+        Assume the input is piecewise constant on each interval: $x(s) = x_k$ for $s \in [t_k,\, t_k+\Delta)$.
+      \end{block}
+    \end{column}
+    \begin{column}{0.54\textwidth}
+      \centering
+      \begin{tikzpicture}[scale=0.72, every node/.style={scale=0.72}]
+        % axes
+        \draw[->, mambagray, thin] (-0.15, 0) -- (5.1, 0) node[right, font=\scriptsize] {$t$};
+        \draw[->, mambagray, thin] (0, -0.15) -- (0, 1.7);
+        % tick labels at t_0 ... t_4
+        \foreach \i in {0,1,2,3,4} {
+          \draw[mambagray, thin] (\i, 0.06) -- (\i, -0.06);
+          \node[font=\tiny, mambagray, below] at (\i, -0.05) {$t_{\i}$};
+        }
+        % Delta brace between t_1 and t_2
+        \draw[<->, mambagray, thin] (1, -0.55) -- (2, -0.55);
+        \node[font=\tiny, mambagray, fill=white, inner sep=1pt] at (1.5, -0.55) {$\Delta$};
+
+        % continuous x(t)
+        \draw[mambared, very thick, smooth, samples=80, domain=0:4.3]
+          plot (\x, {0.75 + 0.35*cos(1.2*\x r) - 0.05*\x});
+
+        % ZOH staircase (sample values match x(t_k))
+        \def\sA{1.10}  % t=0
+        \def\sB{0.83}  % t=1
+        \def\sC{0.39}  % t=2
+        \def\sD{0.29}  % t=3
+        \def\sE{0.58}  % t=4
+        \draw[mambablue, thick] (0,\sA) -- (1,\sA);
+        \draw[mambablue, thick] (1,\sB) -- (2,\sB);
+        \draw[mambablue, thick] (2,\sC) -- (3,\sC);
+        \draw[mambablue, thick] (3,\sD) -- (4,\sD);
+        \draw[mambablue, thick] (4,\sE) -- (4.3,\sE);
+        % vertical jumps (dashed)
+        \draw[mambablue!50, dashed, thin] (1,\sA) -- (1,\sB);
+        \draw[mambablue!50, dashed, thin] (2,\sB) -- (2,\sC);
+        \draw[mambablue!50, dashed, thin] (3,\sC) -- (3,\sD);
+        \draw[mambablue!50, dashed, thin] (4,\sD) -- (4,\sE);
+        % sample dots
+        \fill[mambablue] (0,\sA) circle (0.07);
+        \fill[mambablue] (1,\sB) circle (0.07);
+        \fill[mambablue] (2,\sC) circle (0.07);
+        \fill[mambablue] (3,\sD) circle (0.07);
+        \fill[mambablue] (4,\sE) circle (0.07);
+        % sample labels above dots
+        \node[font=\tiny, mambablue, above right, inner sep=1pt] at (0,\sA) {$x_0$};
+        \node[font=\tiny, mambablue, above right, inner sep=1pt] at (1,\sB) {$x_1$};
+        \node[font=\tiny, mambablue, above right, inner sep=1pt] at (2,\sC) {$x_2$};
+        \node[font=\tiny, mambablue, above right, inner sep=1pt] at (3,\sD) {$x_3$};
+        \node[font=\tiny, mambablue, above right, inner sep=1pt] at (4,\sE) {$x_4$};
+
+        % legend
+        \draw[mambared, very thick] (2.3,1.65) -- (2.7,1.65);
+        \node[font=\tiny, right, inner sep=1pt] at (2.7,1.65) {$x(t)$};
+        \draw[mambablue, thick] (3.6,1.65) -- (4.0,1.65);
+        \node[font=\tiny, right, inner sep=1pt] at (4.0,1.65) {ZOH $\tilde{x}(t)$};
+      \end{tikzpicture}
+    \end{column}
+  \end{columns}
+
+  Then $x_k$ leaves the integral. With the substitution $u = t_k + \Delta - s$ (so $\mathrm{d}u = -\mathrm{d}s$, $u\colon \Delta \to 0$):
   \[
-    A = \exp(\Delta \bar{A}), \qquad B = (\Delta \bar{A})^{-1}(\exp(\Delta \bar{A}) - I) \cdot \Delta \bar{B}
+    \int_{t_k}^{t_k+\Delta} e^{\bar{A}(t_k+\Delta-s)}\,\mathrm{d}s
+    \;=\; \int_0^{\Delta} e^{\bar{A} u}\,\mathrm{d}u
+    \;=\; \bar{A}^{-1}\bigl(e^{\bar{A}\Delta} - I\bigr).
   \]
 
-  This gives the \textbf{discrete SSM recurrence}:
+  Writing $h_k := h(t_k)$, we obtain the \textbf{exact-under-ZOH discrete recurrence}
+  \[
+    h_{k+1} \;=\; \underbrace{e^{\bar{A}\Delta}}_{A}\, h_k
+    \;+\; \underbrace{\bar{A}^{-1}\bigl(e^{\bar{A}\Delta} - I\bigr)\bar{B}}_{B}\, x_k,
+    \qquad y_k = C\, h_k.
+  \]
+
+  \begin{itemize}
+    \item The output $y(t) = C\,h(t)$ is already pointwise, so $C$ is unchanged.
+    \item No truncation error from the integration itself; the only approximation is the staircase assumption on $x$.
+    \item Smaller $\Delta$ $\Rightarrow$ ZOH is a better approximation of the true input; larger $\Delta$ $\Rightarrow$ fewer, coarser steps.
+  \end{itemize}
+\end{frame}
+
+% -----------------------------------------------------------------------
+\begin{frame}{The Discrete SSM Recurrence}
+
+  With $A = e^{\bar{A}\Delta}$ and $B = \bar{A}^{-1}(e^{\bar{A}\Delta} - I)\bar{B}$, one step of the SSM reads:
 
   \begin{center}
   \begin{tikzpicture}[
@@ -168,9 +282,8 @@
 
     \node[font=\scriptsize] at (4.95, -0.48) {$\cdot$};
 
-    % x_t (red sine)
-    \draw[mambared, very thick, smooth, samples=30, domain=-0.35:0.35]
-      plot ({5.5+0.4*\x}, {-0.48 + 0.35*sin(3.14*\x r)});
+    % x_t as a single scalar block
+    \node[mat, fill=mambared!30] at (5.5, -0.48) {};
     \node[font=\small\bfseries, below, mambared!80!black] at (5.5, -1.25) {$x_t$};
 
     % --- dashed grouping boxes with annotations ---
@@ -182,9 +295,8 @@
     % === Output equation: y_t = C * h_t ===
     \def\offy{-3.3}
 
-    % y_t (purple sine)
-    \draw[violet, very thick, smooth, samples=30, domain=-0.35:0.35]
-      plot ({0+0.4*\x}, {\offy-0.14 + 0.35*sin(3.14*\x r + 40)});
+    % y_t as a single scalar block
+    \node[mat, fill=violet!30] at (0, \offy-0.14) {};
     \node[font=\small\bfseries, below, violet!80!black] at (0, \offy-0.85) {$y_t$};
 
     \node[font=\normalsize] at (0.65, \offy-0.14) {$=$};
@@ -217,165 +329,64 @@
   \end{center}
 
   \begin{itemize}
-    \item Looks like a linear RNN, but with structured matrices $A, B, C$
-    \item The step size $\Delta$ controls the resolution: how much continuous time each discrete step represents
-    \item A large $\Delta$ focuses on coarse/slow features; a small $\Delta$ on fine/fast features
+    \item Looks like a linear RNN, but with structured matrices $A, B, C$.
+    \item The step size $\Delta$ is the discretization granularity: how much continuous time each step represents.
+    \item $\Delta$ will take on a richer, \emph{gating-like} role once we make it input-dependent in selective SSMs (Mamba).
   \end{itemize}
 \end{frame}
 
 % -----------------------------------------------------------------------
-\begin{frame}{SSM: Computational Graph}
+\begin{frame}{Unrolling the Recurrence $\Rightarrow$ Convolution}
 
-  One step of the recurrence $h_t = A\,h_{t-1} + B\,x_t$, \; $y_t = C\,h_t$:
+  Assume $h_{-1} = 0$ and LTI ($A, B, C$ constant). Expand step by step:
+  \begin{align*}
+    h_0 &= B\,x_0
+      & y_0 &= C\,h_0 &&= C B\,x_0 \\
+    h_1 &= A\,h_0 + B\,x_1 = A B\,x_0 + B\,x_1
+      & y_1 &= C\,h_1 &&= C A B\,x_0 + C B\,x_1 \\
+    h_2 &= A\,h_1 + B\,x_2 = A^2 B\,x_0 + A B\,x_1 + B\,x_2
+      & y_2 &= C\,h_2 &&= C A^2 B\,x_0 + C A B\,x_1 + C B\,x_2 \\
+    &\ \vdots & &\ \vdots
+  \end{align*}
 
-  \vspace{0.3em}
-  \begin{center}
-  \begin{tikzpicture}[
-    scale=0.82, every node/.style={scale=0.82},
-    mat/.style={draw, thin, minimum size=0.26cm, inner sep=0pt},
-    opbox/.style={draw, rounded corners=3pt, minimum width=1.4cm, minimum height=0.7cm,
-                  font=\scriptsize, align=center, fill=white},
-    sumcirc/.style={draw, circle, minimum size=0.6cm, fill=gray!15, font=\scriptsize},
-    arr/.style={-Stealth, very thick, mambagray},
-  ]
-    % --- Input x_t on the far left ---
-    \draw[mambared, very thick, smooth, samples=30, domain=-0.4:0.4]
-      plot ({-0.1+0.45*\x}, {0 + 0.4*sin(3.14*\x r)});
-    \node[font=\small\bfseries, mambared!80!black, below] at (-0.1, -0.65) {$x_t$};
-    % Input vector (red, Nx1)
-    \foreach \r in {0,...,2} {
-      \node[mat, fill=red!20] at (0.9, 0.26-\r*0.28) {};
-    }
+  The pattern continues. At step $t$:
+  \[
+    y_t \;=\; C A^t B\, x_0 + C A^{t-1} B\, x_1 + \cdots + C B\, x_t
+    \;=\; \sum_{k=0}^{t} \underbrace{C A^k B}_{\bar{K}_k}\, x_{t-k}.
+  \]
 
-    % Arrow to B multiply
-    \draw[arr] (1.2, 0) -- (1.8, 0);
-
-    % B multiply box
-    \node[opbox, fill=green!10] (bmul) at (2.7, 0) {$B$\\[-1pt] multiply};
-    % B matrix (green cells) inside conceptual
-    \foreach \r in {0,...,2} {
-      \foreach \c in {0,...,1} {
-        \node[mat, fill=green!30] at (3.9+\c*0.28, 0.26-\r*0.28) {};
-      }
-    }
-    % result of B*x: green+pink mixed cells
-    \foreach \r in {0,...,2} {
-      \foreach \c in {0,...,1} {
-        \pgfmathtruncatemacro{\isgreen}{mod(\r+\c,2)}
-        \ifnum\isgreen=0
-          \node[mat, fill=green!25] at (4.8+\c*0.28, 0.26-\r*0.28) {};
-        \else
-          \node[mat, fill=red!18] at (4.8+\c*0.28, 0.26-\r*0.28) {};
-        \fi
-      }
-    }
-
-    % Arrow to sum
-    \draw[arr] (5.4, 0) -- (6.0, 0);
-
-    % Sum node
-    \node[sumcirc] (sum) at (6.5, 0) {sum};
-
-    % --- State path (below) ---
-    % Previous state h_{t-1} (cyan)
-    \foreach \r in {0,...,2} {
-      \foreach \c in {0,...,2} {
-        \node[mat, fill=cyan!25] at (3.5+\c*0.28, -2.0-\r*0.28) {};
-      }
-    }
-    \node[font=\scriptsize, below] at (3.78, -2.9) {$h_{t-1}$};
-
-    % A multiply box
-    \node[opbox, fill=yellow!15] (amul) at (5.5, -2.28) {$A$\\[-1pt] multiply};
-    % A matrix (yellow)
-    \foreach \r in {0,...,2} {
-      \foreach \c in {0,...,2} {
-        \node[mat, fill=yellow!35] at (4.5+\c*0.28, -2.0-\r*0.28) {};
-      }
-    }
-
-    % Result of A*h (cyan, smaller)
-    \foreach \r in {0,...,2} {
-      \foreach \c in {0,...,2} {
-        \node[mat, fill=cyan!20] at (6.2+\c*0.28, -2.0-\r*0.28) {};
-      }
-    }
-
-    % Arrow from A*h up to sum
-    \draw[arr] (6.5, -1.7) -- (6.5, -0.35);
-
-    % --- New state h_t (cyan, after sum) ---
-    \draw[arr] (7.0, 0) -- (7.6, 0);
-    \node[font=\scriptsize\bfseries, above, cyan!50!black] at (8.3, 0.7) {State $h_t$};
-    \foreach \r in {0,...,2} {
-      \foreach \c in {0,...,2} {
-        \node[mat, fill=cyan!30] at (7.9+\c*0.28, 0.26-\r*0.28) {};
-      }
-    }
-    \node[font=\tiny, mambagray] at (8.18, -0.7) {updates each step};
-
-    % Arrow to C multiply
-    \draw[arr] (8.8, 0) -- (9.4, 0);
-
-    % C multiply box
-    \node[opbox, fill=blue!10] (cmul) at (10.1, 0) {$C$\\[-1pt] multiply};
-
-    % C vector (blue, 1xN)
-    \foreach \r in {0,...,2} {
-      \node[mat, fill=blue!25] at (10.9, 0.26-\r*0.28) {};
-    }
-
-    % Output result (blue vector)
-    \foreach \r in {0,...,2} {
-      \node[mat, fill=blue!20] at (11.5, 0.26-\r*0.28) {};
-    }
-
-    % Arrow to output
-    \draw[arr] (11.8, 0) -- (12.3, 0);
-
-    % Output y_t
-    \draw[violet, very thick, smooth, samples=30, domain=-0.4:0.4]
-      plot ({12.8+0.45*\x}, {0 + 0.35*sin(3.14*\x r + 40)});
-    \node[font=\small\bfseries, violet!80!black, below] at (12.8, -0.65) {$y_t$};
-
-    % Feedback arrow from h_t back to h_{t-1} (wraps around bottom)
-    \draw[arr, rounded corners=6pt] (8.18, -0.55) -- (8.18,-3.5) -- (3.78,-3.5) -- (3.78,-2.9);
-    \node[font=\tiny, mambagray] at (6.0, -3.75) {state carries over to next step};
-  \end{tikzpicture}
-  \end{center}
+  \begin{itemize}
+    \item This is a \textbf{causal convolution} $y = \bar{K} \ast x$ with kernel $\bar{K} = (C B,\, C A B,\, C A^2 B,\, \ldots,\, C A^{T-1} B)$.
+    \item Each output $y_t$ only sees past inputs $x_0, \ldots, x_t$ (causal), weighted by $\bar{K}_k$.
+  \end{itemize}
 \end{frame}
 
 % -----------------------------------------------------------------------
 \begin{frame}{The Dual View: Recurrence vs.\ Convolution}
 
-  For LTI systems ($A, B, C$ constant), unrolling the recurrence yields:
-  \[
-    y_t = C A^t B\, x_0 + C A^{t-1} B\, x_1 + \cdots + C B\, x_t = \sum_{k=0}^{t} \underbrace{C A^k B}_{\bar{K}_k}\, x_{t-k}
-  \]
-
-  This is a \textbf{causal convolution} $y = \bar{K} * x$ with kernel $\bar{K} \in \R^T$.
-
-  \vspace{0.5em}
+  Same model, two computational modes:
   \begin{columns}
     \begin{column}{0.48\textwidth}
       \textbf{Recurrent mode}
       \begin{itemize}
-        \item $O(N)$ per step
-        \item Sequential: good for inference
+        \item Apply $h_t = A h_{t-1} + B x_t$, $y_t = C h_t$ step by step
+        \item $O(N)$ per step, $O(N)$ memory
+        \item Sequential $\Rightarrow$ good for autoregressive inference
       \end{itemize}
     \end{column}
     \begin{column}{0.48\textwidth}
       \textbf{Convolutional mode}
       \begin{itemize}
-        \item Compute $\bar{K}$, then use FFT
-        \item $O(T \log T)$: good for training
+        \item Precompute kernel $\bar{K}$, apply $y = \bar{K} \ast x$ via FFT
+        \item $O(T \log T)$ in $T$, parallel over time
+        \item Good for training on long sequences
       \end{itemize}
     \end{column}
   \end{columns}
 
   \vspace{0.5em}
   \begin{block}{S4~\cite{gu2022s4}}
-    Structured State Spaces for Sequences (S4) uses HiPPO initialization and diagonal structure for $\bar{A}$ to make this practical. First SSM to match Transformers on long-range benchmarks.
+    Structured State Spaces for Sequences (S4) uses HiPPO initialization and diagonal structure for $\bar{A}$ to make the kernel $\bar{K}$ computable in $O(T)$. First SSM to match Transformers on long-range benchmarks.
   \end{block}
 \end{frame}
 
@@ -416,71 +427,147 @@
 
   \vspace{0.3em}
   \begin{alertblock}{Insight}
-    To make SSMs truly powerful, the parameters must be \textbf{input-dependent}.
-    This breaks LTI and the convolutional mode, but enables \emph{selectivity}.
+    To make SSMs truly powerful, the parameters must be \textbf{input-dependent}. This enables \emph{selectivity} but \alert{breaks LTI} and with it the convolutional / FFT mode that made parallel training cheap.
   \end{alertblock}
+
+  \textbf{The central design tension} for the rest of this section:
+  \begin{itemize}
+    \item \textbf{Keep} content-dependent selectivity (needed for modeling power).
+    \item \textbf{Recover} sequence-parallel training (so we can train on long contexts).
+  \end{itemize}
+
+  \textbf{What comes next:}
+  \begin{itemize}
+    \item \textbf{Mamba 1:} solves this at the hardware level — a \emph{selective scan} fused into one GPU kernel that keeps the state in SRAM, so the sequential recurrence runs fast enough in practice.
+    \item \textbf{Mamba 2:} restricts $\bar{A}$ to scalar $\times$ identity (State Space Duality), which re-exposes a matmul-friendly, parallel training algorithm while retaining input-dependent $B_t, C_t, \Delta_t$.
+  \end{itemize}
 \end{frame}
 
 % =======================================================================
-\subsection{Mamba: Selective State Spaces}
+\subsubsection{Mamba: Selective State Spaces}
 
 % -----------------------------------------------------------------------
 \begin{frame}{Selectivity: The Core Idea of Mamba~\cite{gu2024mamba}}
 
   \textbf{Mamba} makes the SSM parameters \emph{functions of the input}:
   \[
-    B_t = \text{Linear}_B(x_t), \quad C_t = \text{Linear}_C(x_t), \quad \Delta_t = \text{softplus}(\text{Linear}_\Delta(x_t))
+    B_t = \text{Linear}_B(x_t), \quad C_t = \text{Linear}_C(x_t), \quad \Delta_t = \text{softplus}(\text{Linear}_\Delta(x_t)).
   \]
-
   The discrete recurrence becomes \textbf{time-varying}:
   \[
     \boxed{h_t = A_t\, h_{t-1} + B_t\, x_t, \qquad y_t = C_t^\top h_t}
+    \qquad \text{with } A_t = \exp(\Delta_t\, \bar{A}).
   \]
-
-  where $A_t = \exp(\Delta_t \cdot \bar{A})$ and $B_t, C_t$ depend on $x_t$.
-
-  \vspace{0.5em}
-  \textbf{Intuition for $\Delta_t$ (step size):}
-  \begin{itemize}
-    \item \textbf{Large $\Delta_t$}: Focus on current input, reset state $\approx$ ``remember this token''
-    \item \textbf{Small $\Delta_t$}: Ignore current input, preserve state $\approx$ ``skip this token''
-  \end{itemize}
+  Only $B_t, C_t, \Delta_t$ are input-dependent; $\bar{A}$ is a fixed, learned structural prior.
 
   \vspace{0.3em}
-  The model learns \emph{when} to update its state. This is the selection mechanism.
+  \textbf{Structure of $\bar{A}$:}
+
+  \begin{columns}[T]
+    \begin{column}{0.5\textwidth}
+      \textbf{Mamba 1}: $\bar{A}$ is \emph{diagonal} (S4D-style)
+      \[
+        \bar{A} = \operatorname{diag}(-a_1,\, -a_2,\, \ldots,\, -a_N),\ a_i > 0
+      \]
+      \begin{itemize}
+        \item $N$ independent decay rates per channel, HiPPO/S4D-initialized
+        \item $A_t = \operatorname{diag}\!\bigl(e^{-a_i \Delta_t}\bigr)$ stays diagonal
+        \item Each hidden dimension decays at its own rate $\Rightarrow$ multi-timescale memory
+      \end{itemize}
+    \end{column}
+    \begin{column}{0.5\textwidth}
+      \textbf{Mamba 2}: $\bar{A}$ is \emph{scalar $\times$ identity}
+      \[
+        \bar{A} = -a\, I_N,\qquad a > 0
+      \]
+      \begin{itemize}
+        \item A single learned decay rate shared across all $N$ state channels
+        \item $A_t = e^{-a \Delta_t}\, I_N \eqqcolon \alpha_t\, I_N$ with $\alpha_t \in (0,1)$
+        \item Stricter prior, but this scalar-structured $A_t$ is what unlocks the State Space Duality with linear attention (next section)
+      \end{itemize}
+    \end{column}
+  \end{columns}
 \end{frame}
 
 % -----------------------------------------------------------------------
-\begin{frame}{The Hardware Challenge}
+\begin{frame}{$\Delta_t$ as an Input-Dependent Gate}
 
-  Making parameters input-dependent \alert{breaks} the convolutional mode:
+  $\Delta_t$ is the second selective knob. The recurrence
+  \[
+    h_t \;=\; \underbrace{A_t}_{\text{state retention}}\, h_{t-1} \;+\; \underbrace{B_t}_{\text{input injection}}\, x_t
+  \]
+  has both coefficients derived from $\Delta_t$ via ZOH:
+  \[
+    A_t = e^{\bar{A}\Delta_t}, \qquad B_t = \bar{A}^{-1}\bigl(e^{\bar{A}\Delta_t} - I\bigr)\bar{B}.
+  \]
+  Both are driven by the \emph{same} scalar $\Delta_t$ (per channel). Examine the two limits:
+
   \begin{itemize}
-    \item Time-varying $(A_t, B_t, C_t)$ $\Rightarrow$ no fixed convolution kernel
-    \item The recurrence must be computed sequentially $\Rightarrow$ back to the RNN problem?
+    \item \textbf{Small $\Delta_t \to 0$} (``skip this token''):
+      \begin{itemize}
+        \item $A_t = e^{\bar{A}\Delta_t} \approx I$ \hfill (state kept)
+        \item $B_t \approx \Delta_t\,\bar{B} \to 0$ \hfill (input blocked)
+        \item $\Rightarrow h_t \approx h_{t-1}$: state carried forward unchanged, $x_t$ contributes nothing.
+      \end{itemize}
+    \item \textbf{Large $\Delta_t$} (``remember this token''):
+      \begin{itemize}
+        \item $A_t = e^{\bar{A}\Delta_t} \to 0$ \hfill (state decays)
+        \item $B_t \to -\bar{A}^{-1}\bar{B}$ \hfill (input saturates)
+        \item $\Rightarrow h_t \approx -\bar{A}^{-1}\bar{B}\, x_t$: previous state wiped, $h_t$ is a function of $x_t$ alone.
+      \end{itemize}
+    \item So $\Delta_t$ is a learned, input-dependent \textbf{write/forget gate}: the model decides, per position, whether the token is worth writing into the state. This is the selection mechanism.
+  \end{itemize}
+\end{frame}
+
+% -----------------------------------------------------------------------
+\begin{frame}{The Selective Scan}
+
+  With input-dependent $(A_t, B_t, C_t, \Delta_t)$ the model is no longer LTI and the FFT convolutional mode is gone. We fall back to the recurrence itself:
+  \[
+    h_t \;=\; A_t\, h_{t-1} + B_t\, x_t, \qquad y_t \;=\; C_t^\top h_t.
+  \]
+  Computing $(h_t, y_t)_{t=0}^{T-1}$ this way is called the \textbf{selective scan}.
+
+  \vspace{0.3em}
+  \textbf{Is this sequential like an RNN?} No --- the scan is still parallelizable over $T$:
+  \begin{itemize}
+    \item Each step is an \emph{affine} map $h_{t-1} \mapsto A_t h_{t-1} + B_t x_t$.
+    \item Composition of affine maps is again affine, and composition is \emph{associative}.
+    \item Any associative operation admits a \textbf{Blelloch parallel scan} (generalized prefix-sum):
+      \[
+        O(T)\ \text{work},\qquad O(\log T)\ \text{depth}.
+      \]
   \end{itemize}
 
-  \vspace{0.5em}
-  \textbf{The problem is not FLOPs; it's memory access.}
+  \vspace{0.3em}
+  In principle, the selective scan is as parallel as the sequence length allows: losing the convolutional mode does \emph{not} force us back to slow RNN-style inference.
+\end{frame}
 
-  Modern GPUs have:
+% -----------------------------------------------------------------------
+\begin{frame}{But the Selective Scan is Memory-Bound}
+
+  On paper the parallel scan looks cheap: $O(T)$ work, $O(\log T)$ depth. In practice the bottleneck on modern GPUs is \alert{memory bandwidth}, not arithmetic.
   \begin{center}
     \begin{tabular}{lcc}
       \toprule
       & \textbf{SRAM (on-chip)} & \textbf{HBM (off-chip)} \\
       \midrule
-      Size & $\sim$20 MB & $\sim$80 GB \\
+      Size      & $\sim$20 MB   & $\sim$80 GB \\
       Bandwidth & $\sim$19 TB/s & $\sim$3 TB/s \\
       \bottomrule
     \end{tabular}
   \end{center}
 
-  \vspace{0.3em}
-  A naive scan reads/writes the full state from HBM at every step. Mamba's selective scan is \emph{memory-bound}, not compute-bound.
+  \textbf{Why the scan hurts:}
+  \begin{itemize}
+    \item The hidden state $h_t \in \R^N$ per channel, across $D$ channels, is much larger than the scalar input $x_t$: per token, the state can hold $D\cdot N \sim 10^4$--$10^5$ numbers.
+    \item A naive implementation runs discretization, scan and output projection as \emph{separate} GPU kernels, each reading/writing the full $h_t$ tensor to HBM at every time step.
+    \item Result: the SSM is \emph{memory-bound}, not compute-bound. HBM traffic, not FLOPs, determines wall-clock time.
+  \end{itemize}
 
-  \vspace{0.3em}
-  \begin{block}{Solution: Hardware-aware selective scan}
-    Fuse the entire recurrence into a single GPU kernel that keeps the state in \textbf{SRAM}, avoiding repeated HBM round-trips. Same idea as FlashAttention~\cite{dao2022flashattention}, applied to scans.
-  \end{block}
+  \begin{alertblock}{Takeaway}
+    Arithmetic cost is fine; the cost that matters is \textbf{HBM round-trips per step}. We need an implementation that keeps the intermediate state off of HBM.
+  \end{alertblock}
 \end{frame}
 
 % -----------------------------------------------------------------------
@@ -601,7 +688,7 @@
 \end{frame}
 
 % =======================================================================
-\subsection{Mamba-2: State Space Duality}
+\subsubsection{Mamba-2: State Space Duality}
 
 % -----------------------------------------------------------------------
 \begin{frame}{Two Problems with Mamba-1}
@@ -830,7 +917,7 @@
 \end{frame}
 
 % -----------------------------------------------------------------------
-\subsection{The Efficient SSD Algorithm}
+\subsubsection{The Efficient SSD Algorithm}
 
 % -----------------------------------------------------------------------
 \begin{frame}{The Chunked SSD Algorithm}
@@ -908,7 +995,7 @@
 \end{frame}
 
 % -----------------------------------------------------------------------
-\subsection{The Mamba-2 Architecture}
+\subsubsection{The Mamba-2 Architecture}
 
 % -----------------------------------------------------------------------
 \begin{frame}{Mamba-2 Architecture Overview}
@@ -962,7 +1049,7 @@
 \end{frame}
 
 % -----------------------------------------------------------------------
-\subsection{Comparison and Results}
+\subsubsection{Comparison and Results}
 
 % -----------------------------------------------------------------------
 \begin{frame}{Mamba-2 vs.\ Mamba-1: Key Differences}

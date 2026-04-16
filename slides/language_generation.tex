@@ -512,7 +512,7 @@
           ylabel style={font=\footnotesize},
           symbolic x coords={the,cat,a,sat,my,dog},
           xtick=data,
-          x tick label style={font=\scriptsize, anchor=north},
+          x tick label style={font=\scriptsize, anchor=north, text height=1.5ex, text depth=.25ex},
           tick label style={font=\scriptsize},
           ymin=0, ymax=0.72,
           ymajorgrids=true,
@@ -561,7 +561,7 @@
           ylabel style={font=\footnotesize},
           symbolic x coords={the,cat,a,sat,my,dog,is,on},
           xtick=data,
-          x tick label style={font=\scriptsize},
+          x tick label style={font=\scriptsize, anchor=north, text height=1.5ex, text depth=.25ex},
           tick label style={font=\scriptsize},
           ymin=0, ymax=0.38,
           ymajorgrids=true,
@@ -616,7 +616,7 @@
           ylabel style={font=\footnotesize},
           symbolic x coords={the,cat,a,sat,my,dog,is,on},
           xtick=data,
-          x tick label style={font=\scriptsize},
+          x tick label style={font=\scriptsize, anchor=north, text height=1.5ex, text depth=.25ex},
           tick label style={font=\scriptsize},
           ymin=0, ymax=0.38,
           ymajorgrids=true,
@@ -672,6 +672,6 @@
 
   \vspace{0.5em}
   \begin{alertblock}{Repetition penalty}
-    Models sometimes loop. A simple fix: down-weight logits of previously generated tokens by a factor $\alpha > 1$ before sampling.
+    Models sometimes loop. A simple fix: Subtract positive number from logits of previously generated tokens before sampling.
   \end{alertblock}
 \end{frame}

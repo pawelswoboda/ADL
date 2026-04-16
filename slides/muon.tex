@@ -3,47 +3,389 @@
 \section{Optimizers: From Adam to Muon}
 
 % -----------------------------------------------------------------------
+\begin{frame}{Motivation: Bottlenecks in Deep Network Optimization}
+
+  Training large models is extraordinarily expensive: optimizer efficiency directly translates into compute savings. Three persistent bottlenecks limit naive gradient descent.
+
+  \vspace{0.5em}
+  \begin{columns}[T]
+    \begin{column}{0.32\textwidth}
+      \begin{center}\textbf{1. Gradient noise}\end{center}
+      \vspace{0.2em}
+      \begin{minipage}[t][2.4cm][t]{\linewidth}\centering
+        \begin{tikzpicture}[scale=0.5, >=stealth, baseline=(current bounding box.north)]
+          \useasboundingbox (-3.6, -0.7) rectangle (0.6, 1.8);
+          \clip (-3.6, -0.7) rectangle (0.6, 1.8);
+          % Contours (loss landscape)
+          \foreach \r in {0.5, 1.0, 1.5, 2.0, 2.5, 3.0} {
+            \draw[gray!50, thin] (0,0) ellipse ({\r*1.15} and {\r*0.75});
+          }
+          \fill[black] (0,0) circle (1.5pt);
+
+          % Noisy gradient samples at each anchor point (drawn first, behind clean)
+          \draw[red!55!black, semithick, ->] (-2.8, 1.5) -- (-1.85, 0.55);
+          \draw[red!55!black, semithick, ->] (-2.8, 1.5) -- (-2.0, 0.4);
+          \draw[red!55!black, semithick, ->] (-2.8, 1.5) -- (-1.6, 1.2);
+          \draw[red!55!black, semithick, ->] (-2.8, 1.5) -- (-2.3, 0.45);
+
+          \draw[red!55!black, semithick, ->] (-1.7, 0.85) -- (-0.95, 0.05);
+          \draw[red!55!black, semithick, ->] (-1.7, 0.85) -- (-0.5, 0.7);
+          \draw[red!55!black, semithick, ->] (-1.7, 0.85) -- (-1.15, -0.15);
+          \draw[red!55!black, semithick, ->] (-1.7, 0.85) -- (-0.65, 1.0);
+
+          \draw[red!55!black, semithick, ->] (-0.7, 0.3) -- (0.1, 0.45);
+          \draw[red!55!black, semithick, ->] (-0.7, 0.3) -- (-0.1, -0.3);
+          \draw[red!55!black, semithick, ->] (-0.7, 0.3) -- (0.15, 0.05);
+
+          % Clean trajectory arrows (on top)
+          \draw[blue!70!black, very thick, ->] (-2.8, 1.5) -- (-1.7, 0.85);
+          \draw[blue!70!black, very thick, ->] (-1.7, 0.85) -- (-0.7, 0.3);
+          \draw[blue!70!black, very thick, ->] (-0.7, 0.3) -- (-0.05, 0.0);
+
+          % Anchor dots
+          \fill[black] (-2.8, 1.5) circle (1.8pt);
+          \fill[black] (-1.7, 0.85) circle (1.8pt);
+          \fill[black] (-0.7, 0.3) circle (1.8pt);
+
+          % Labels
+          \node[font=\tiny, blue!70!black, anchor=south] at (-2.2, 1.55) {clean};
+          \node[font=\tiny, red!55!black, anchor=north] at (-1.8, -0.42) {noisy samples};
+        \end{tikzpicture}
+      \end{minipage}
+
+      \vspace{0.3em}
+      {\small At each step, mini-batch gradient samples scatter around the true direction.}
+    \end{column}
+
+    \begin{column}{0.32\textwidth}
+      \begin{center}\textbf{2. Per-parameter scale}\end{center}
+      \vspace{0.2em}
+      \begin{minipage}[t][2.4cm][t]{\linewidth}\centering
+        \begin{tikzpicture}[scale=0.42, >=stealth, baseline=(current bounding box.north)]
+          \draw[->, thin, gray!70] (0,0) -- (5.2,0) node[right, font=\tiny, black] {param};
+          \draw[->, thin, gray!70] (0,0) -- (0,3) node[above, font=\tiny, black] {grad};
+
+          \fill[red!60!black] (0.3,0) rectangle (0.85, 2.5);
+          \fill[red!60!black] (1.1,0) rectangle (1.65, 0.3);
+          \fill[red!60!black] (1.9,0) rectangle (2.45, 1.4);
+          \fill[red!60!black] (2.7,0) rectangle (3.25, 0.1);
+          \fill[red!60!black] (3.5,0) rectangle (4.05, 1.9);
+          \fill[red!60!black] (4.3,0) rectangle (4.85, 0.7);
+        \end{tikzpicture}
+      \end{minipage}
+
+      \vspace{0.3em}
+      {\small Different parameters have wildly different gradient magnitudes $\Rightarrow$ no single learning rate fits all.}
+    \end{column}
+
+    \begin{column}{0.32\textwidth}
+      \begin{center}\textbf{3. Matrix structure}\end{center}
+      \vspace{0.2em}
+      \begin{minipage}[t][2.4cm][t]{\linewidth}\centering
+        \begin{tikzpicture}[scale=0.45, >=stealth, baseline=(current bounding box.north)]
+          % Elongated contours showing directional imbalance
+          \foreach \r in {0.5, 1.0, 1.5, 2.0} {
+            \draw[gray!50, thin] (0,0) ellipse ({\r*1.7} and {\r*0.4});
+          }
+          \fill[black] (0,0) circle (1.5pt);
+
+          % Dominant direction (long axis): arrow extends past the ellipse
+          \draw[->, very thick, red!70!black] (0,0) -- (3.7, 0);
+          \node[font=\tiny, red!70!black, anchor=west] at (3.75, 0) {dominant};
+
+          % Weak direction (short axis): arrow extends past the ellipse upward
+          \draw[->, semithick, blue!60!black] (0,0) -- (0, 1.1);
+          \node[font=\tiny, blue!60!black, anchor=south] at (0, 1.15) {weak};
+
+          % A couple of other small arrows showing many small directions
+          \draw[->, semithick, blue!60!black] (0,0) -- (0.5, 0.95);
+          \draw[->, semithick, blue!60!black] (0,0) -- (-0.5, 0.95);
+        \end{tikzpicture}
+      \end{minipage}
+
+      \vspace{0.3em}
+      {\small 2D weight gradients have a few dominant directions $\Rightarrow$ element-wise rules ignore the geometry.}
+    \end{column}
+  \end{columns}
+
+  \vspace{0.5em}
+  \begin{itemize}
+    \item \textbf{Adam} (2015): smooths noise with momentum and equalizes per-parameter scales with adaptive learning rates. Default optimizer for a decade.
+    \item \textbf{Muon} (2024): additionally exploits matrix structure by orthogonalizing updates of 2D weight matrices, giving all directions equal weight.
+  \end{itemize}
+
+\end{frame}
+
+% -----------------------------------------------------------------------
 \subsection{The Adam Optimizer}
 
 % -----------------------------------------------------------------------
-\begin{frame}{Adam: Adaptive Moment Estimation~\cite{kingma2015adam}}
+\begin{frame}{First Moment: Smoothing the Gradient with Momentum}
 
   \begin{columns}[T]
     \begin{column}{0.50\textwidth}
-      \textbf{Key idea:} Maintain per-parameter running estimates of gradient mean and variance, then scale updates adaptively.
+      \textbf{Problem:} stochastic gradients oscillate, especially in directions of high curvature.
 
-      \vspace{0.3em}
-      \begin{algorithm}[H]
-        \small
-        \caption{Adam}
-        \KwInput{LR $\eta$, decay rates $\beta_1, \beta_2$, $\epsilon$}
-        Initialize $\vm_0 = 0, \vv_0 = 0$\;
-        \For{$t = 1, 2, \ldots$}{
-          $\vg_t \gets \nabla_{\vw} L(\vw_{t-1})$\;
-          $\vm_t \gets \beta_1 \vm_{t-1} + (1 - \beta_1) \vg_t$\;
-          $\vv_t \gets \beta_2 \vv_{t-1} + (1 - \beta_2) \vg_t^2$\;
-          $\hat{\vm}_t \gets \vm_t / (1 - \beta_1^t)$\;
-          $\hat{\vv}_t \gets \vv_t / (1 - \beta_2^t)$\;
-          $\vw_t \gets \vw_{t-1} - \eta \cdot \hat{\vm}_t / (\sqrt{\hat{\vv}_t} + \epsilon)$\;
-        }
-      \end{algorithm}
+      \vspace{0.4em}
+      \textbf{Idea:} maintain a running average of gradients to smooth out noise.
+
+      \vspace{0.4em}
+      \textbf{First moment} (exponential moving average of $\nabla_W L$):
+      \[
+        \underbrace{M_t}_{\text{new}} = \beta_1 \underbrace{M_{t-1}}_{\text{prev.}} + (1-\beta_1) \underbrace{\nabla_W L}_{\text{gradient}}
+      \]
+      typically $\beta_1 = 0.9$.
+
+      \vspace{0.4em}
+      \textbf{Update with $M_t$ in place of the raw gradient:}
+      \[
+        W_t = W_{t-1} - \eta \cdot M_t
+      \]
+
+      \vspace{0.4em}
+      {\small Oscillations in the high-curvature direction cancel; the consistent signal in the low-curvature direction accumulates $\Rightarrow$ smoother and faster descent.}
     \end{column}
     \begin{column}{0.47\textwidth}
-      \textbf{Components:}
-      \begin{description}[leftmargin=0.3em, labelwidth=\widthof{\bfseries Bias corr.}]
-        \item[$\vm_t$] First moment (mean): momentum-smoothed gradient
-        \item[$\vv_t$] Second moment (variance): tracks gradient magnitude per parameter
-        \item[Bias corr.] $\hat{\vm}_t, \hat{\vv}_t$ correct the zero-initialization bias
-        \item[$1/\sqrt{\hat{\vv}_t}$] Rescales each parameter's update inversely to its gradient magnitude
-      \end{description}
+      \begin{center}
+      \textbf{\small Computing $M_t$ from $M_{t-1}$ and $\nabla L$:}
+      \vspace{0.2em}
 
-      \vspace{0.3em}
-      \textbf{Defaults:} $\beta_1 {=} 0.9$, $\beta_2 {=} 0.999$, $\epsilon {=} 10^{-8}$
+      \begin{tikzpicture}[scale=0.85, >=stealth]
+        \fill[black] (0, 0) circle (1.5pt);
 
-      \vspace{0.3em}
-      \textbf{LLM defaults:} $\beta_2 {=} 0.95$, weight decay via AdamW~\cite{loshchilov2019adamw}
+        % β * M_{t-1}: long horizontal blue arrow (large weight)
+        \draw[->, very thick, blue!70!black] (0, 0) -- (2.6, 0);
+        \node[font=\scriptsize, blue!70!black, anchor=south] at (1.3, 0.05) {$\beta\, M_{t-1}$};
+
+        % (1-β) * ∇L: small red arrow pointing down (small weight)
+        \draw[->, thick, red!70!black] (0, 0) -- (0.15, -0.7);
+        \node[font=\scriptsize, red!70!black, anchor=east] at (0.05, -0.4) {$(1{-}\beta)\nabla L$};
+
+        % M_t = sum
+        \draw[->, very thick, slide_violet] (0, 0) -- (2.75, -0.7);
+        \node[font=\scriptsize, slide_violet, anchor=west] at (2.8, -0.55) {$M_t$};
+
+        % Parallelogram dashed lines
+        \draw[gray, dashed, thin] (2.6, 0) -- (2.75, -0.7);
+        \draw[gray, dashed, thin] (0.15, -0.7) -- (2.75, -0.7);
+      \end{tikzpicture}
+
+      {\scriptsize $M_t$ inherits most of $M_{t-1}$ ($\beta = 0.9$) with a small correction from the latest gradient.}
+      \end{center}
+
+      \vspace{0.5em}
+      \begin{center}
+      \textbf{\small Effect on the trajectory:}
+      \vspace{0.2em}
+
+        \begin{tikzpicture}[scale=0.6, >=stealth]
+          \clip (-4.8, -1.7) rectangle (1.5, 2.0);
+          % Elongated contours
+          \draw[gray!40, thin] (0,0) ellipse (1.0 and 0.28);
+          \draw[gray!35, thin] (0,0) ellipse (2.0 and 0.56);
+          \draw[gray!30, thin] (0,0) ellipse (3.0 and 0.84);
+          \draw[gray!25, thin] (0,0) ellipse (4.0 and 1.12);
+          \fill[black] (0,0) circle (1.5pt);
+          \node[font=\tiny, gray] at (0.4, -0.2) {$W^*$};
+
+          % SGD: zigzags
+          \draw[red!60!black, semithick, ->] (-4.2, 1.1) -- (-3.5, -0.55);
+          \draw[red!60!black, semithick, ->] (-3.5, -0.55) -- (-2.9, 0.42);
+          \draw[red!60!black, semithick, ->] (-2.9, 0.42) -- (-2.4, -0.28);
+          \draw[red!60!black, semithick, ->] (-2.4, -0.28) -- (-1.9, 0.2);
+          \draw[red!60!black, semithick, ->] (-1.9, 0.2) -- (-1.5, -0.12);
+          \node[font=\scriptsize, red!60!black] at (-4.2, 1.6) {SGD};
+
+          % Momentum: smooth
+          \draw[blue!70!black, very thick, ->] (-4.2, 1.1) -- (-3.1, 0.3);
+          \draw[blue!70!black, very thick, ->] (-3.1, 0.3) -- (-2.0, 0.03);
+          \draw[blue!70!black, very thick, ->] (-2.0, 0.03) -- (-1.0, -0.03);
+          \draw[blue!70!black, very thick, ->] (-1.0, -0.03) -- (-0.2, 0.0);
+          \node[font=\scriptsize, blue!70!black] at (-3.5, -1.4) {+ momentum};
+        \end{tikzpicture}
+      \end{center}
     \end{column}
   \end{columns}
+\end{frame}
+
+% -----------------------------------------------------------------------
+\begin{frame}{Second Moment: Per-Parameter Adaptive Learning Rate}
+
+  \begin{columns}[T]
+    \begin{column}{0.50\textwidth}
+      \textbf{Problem:} different parameters have wildly different gradient magnitudes; a single global learning rate cannot fit all.
+
+      \vspace{0.4em}
+      \textbf{Idea:} track the EMA of \emph{squared} gradients per parameter to estimate gradient scale.
+
+      \vspace{0.4em}
+      \textbf{Second moment} (EMA of $(\nabla_W L)^2$, element-wise):
+      \[
+        \underbrace{V_t}_{\text{new}} = \beta_2 \underbrace{V_{t-1}}_{\text{prev.}} + (1-\beta_2) \underbrace{(\nabla_W L)^2}_{\text{sq.\ gradient}}
+      \]
+      typically $\beta_2 = 0.999$.
+
+      \vspace{0.4em}
+      \textbf{Adaptive update:}
+      \[
+        W_t = W_{t-1} - \eta \cdot \frac{M_t}{\sqrt{V_t} + \epsilon}
+      \]
+
+      \vspace{0.4em}
+      {\small Each parameter gets its own effective learning rate based on its gradient history.}
+    \end{column}
+    \begin{column}{0.47\textwidth}
+      \begin{center}
+        \begin{tikzpicture}[scale=0.62]
+          \node[font=\scriptsize\bfseries] at (2.5, 3.6) {Gradient magnitudes $|m_i|$};
+          \draw[->, thick] (0,0) -- (5.3,0);
+          \draw[->, thick] (0,0) -- (0,3.3);
+
+          \fill[red!60!black] (0.3,0) rectangle (0.9, 2.8);
+          \fill[red!60!black] (1.2,0) rectangle (1.8, 0.3);
+          \fill[red!60!black] (2.1,0) rectangle (2.7, 1.6);
+          \fill[red!60!black] (3.0,0) rectangle (3.6, 0.12);
+          \fill[red!60!black] (3.9,0) rectangle (4.5, 2.2);
+
+          \node[font=\tiny] at (0.6, -0.3) {$w_1$};
+          \node[font=\tiny] at (1.5, -0.3) {$w_2$};
+          \node[font=\tiny] at (2.4, -0.3) {$w_3$};
+          \node[font=\tiny] at (3.3, -0.3) {$w_4$};
+          \node[font=\tiny] at (4.2, -0.3) {$w_5$};
+        \end{tikzpicture}
+      \end{center}
+
+      \vspace{-0.3em}
+      \begin{center}
+        {\small $\downarrow$ \; $\div\, (\sqrt{v_i} + \epsilon)$}
+      \end{center}
+      \vspace{-0.3em}
+
+      \begin{center}
+        \begin{tikzpicture}[scale=0.62]
+          \node[font=\scriptsize\bfseries] at (2.5, 2.0) {Adam updates $|\Delta w_i|$};
+          \draw[->, thick] (0,0) -- (5.3,0);
+          \draw[->, thick] (0,0) -- (0,1.8);
+
+          \fill[green!50!black] (0.3,0) rectangle (0.9, 1.1);
+          \fill[green!50!black] (1.2,0) rectangle (1.8, 1.0);
+          \fill[green!50!black] (2.1,0) rectangle (2.7, 1.05);
+          \fill[green!50!black] (3.0,0) rectangle (3.6, 0.95);
+          \fill[green!50!black] (3.9,0) rectangle (4.5, 1.08);
+
+          \node[font=\tiny] at (0.6, -0.3) {$w_1$};
+          \node[font=\tiny] at (1.5, -0.3) {$w_2$};
+          \node[font=\tiny] at (2.4, -0.3) {$w_3$};
+          \node[font=\tiny] at (3.3, -0.3) {$w_4$};
+          \node[font=\tiny] at (4.2, -0.3) {$w_5$};
+
+          \draw[gray, dashed] (0, 1.0) -- (5.3, 1.0);
+          \node[font=\tiny, gray, anchor=east] at (-0.1, 1.0) {$\approx \eta$};
+        \end{tikzpicture}
+      \end{center}
+
+      {\scriptsize Large gradients get scaled down, small ones amplified $\Rightarrow$ all per-parameter updates have similar magnitude $\approx \eta$.}
+    \end{column}
+  \end{columns}
+\end{frame}
+
+% -----------------------------------------------------------------------
+\begin{frame}{Second Moment as Preconditioning: Geometry View}
+
+  \textbf{Key insight:} Dividing by $\sqrt{\hat{v}_i}$ rescales each axis. This transforms an elongated (ill-conditioned) loss landscape into a less elongated (better-conditioned) one.
+
+  \vspace{0.4em}
+  \begin{columns}[T]
+    \begin{column}{0.42\textwidth}
+      \begin{center}
+      {\small \textbf{Original loss landscape}\\(ill-conditioned)}
+      \end{center}
+      \vspace{-0.2em}
+      \begin{center}
+        \begin{tikzpicture}[scale=0.55, >=stealth]
+          % Very elongated ellipses
+          \foreach \r in {0.5, 1.0, 1.5, 2.0, 2.5} {
+            \draw[gray!50, thin] (0,0) ellipse ({\r*2.0} and {\r*0.4});
+          }
+          \fill[black] (0,0) circle (1.5pt);
+          \node[font=\tiny, anchor=north west] at (0.05, -0.05) {$W^*$};
+
+          % Axes
+          \draw[->, thin, gray!60] (-5.2, 0) -- (5.2, 0) node[right, font=\tiny] {$w_1$};
+          \draw[->, thin, gray!60] (0, -1.7) -- (0, 1.7) node[above, font=\tiny] {$w_2$};
+
+          % Starting point and gradient (points mostly in steep direction)
+          \fill[red!75!black] (-3.8, 1.0) circle (2pt);
+          \node[font=\scriptsize, red!75!black, anchor=south] at (-3.8, 1.1) {$W_0$};
+          \draw[->, very thick, red!75!black] (-3.8, 1.0) -- (-3.65, -0.5);
+
+          % SGD zigzag
+          \draw[red!50!black, thick, dashed]
+            (-3.8, 1.0) -- (-3.3, -0.55) -- (-2.8, 0.45) -- (-2.3, -0.32)
+            -- (-1.8, 0.22) -- (-1.3, -0.13) -- (-0.8, 0.07) -- (-0.3, -0.03);
+
+          \node[font=\tiny, gray, anchor=south] at (4.0, 0.05) {long axis};
+          \node[font=\tiny, gray, anchor=west] at (0.1, 1.2) {short};
+        \end{tikzpicture}
+      \end{center}
+
+      \vspace{-0.2em}
+      {\scriptsize Curvatures very different: $h_2 \gg h_1$ \\
+      $\Rightarrow \sqrt{\hat{v}_2} \gg \sqrt{\hat{v}_1}$\\
+      Gradient mostly in steep direction $\Rightarrow$ zigzag.}
+    \end{column}
+
+    \begin{column}{0.16\textwidth}
+      \begin{center}
+        \vspace{2.5em}
+        \begin{tikzpicture}[>=stealth, scale=0.9]
+          \draw[->, very thick, slide_violet] (0,0) -- (1.6, 0);
+          \node[font=\scriptsize, anchor=south, slide_violet, align=center] at (0.8, 0.15) {$\tilde{w}_i {=} w_i\sqrt{\hat{v}_i}$};
+          \node[font=\scriptsize, anchor=north, slide_violet, align=center] at (0.8, -0.15) {Adam\\rescaling};
+        \end{tikzpicture}
+      \end{center}
+    \end{column}
+
+    \begin{column}{0.42\textwidth}
+      \begin{center}
+      {\small \textbf{After Adam rescaling}\\(better-conditioned)}
+      \end{center}
+      \vspace{-0.2em}
+      \begin{center}
+        \begin{tikzpicture}[scale=0.55, >=stealth]
+          % Less elongated ellipses (close to circles)
+          \foreach \r in {0.5, 1.0, 1.5, 2.0, 2.5} {
+            \draw[gray!50, thin] (0,0) ellipse ({\r*1.05} and {\r*0.95});
+          }
+          \fill[black] (0,0) circle (1.5pt);
+          \node[font=\tiny, anchor=north west] at (0.05, -0.05) {$W^*$};
+
+          % Axes
+          \draw[->, thin, gray!60] (-3.0, 0) -- (3.0, 0) node[right, font=\tiny] {$\tilde{w}_1$};
+          \draw[->, thin, gray!60] (0, -3.0) -- (0, 3.0) node[above, font=\tiny] {$\tilde{w}_2$};
+
+          % Starting point and gradient (points toward origin)
+          \fill[blue!75!black] (-1.9, 1.7) circle (2pt);
+          \node[font=\scriptsize, blue!75!black, anchor=south east] at (-1.85, 1.8) {$\tilde{W}_0$};
+          \draw[->, very thick, blue!80!black] (-1.9, 1.7) -- (-0.95, 0.85);
+
+          % Direct path
+          \draw[blue!60!black, thick, dashed]
+            (-1.9, 1.7) -- (-1.35, 1.2) -- (-0.85, 0.75) -- (-0.45, 0.4)
+            -- (-0.15, 0.13) -- (-0.03, 0.03);
+        \end{tikzpicture}
+      \end{center}
+
+      \vspace{-0.2em}
+      {\scriptsize Axes rescaled by $\sqrt{\hat{v}_i}$ \\
+      $\Rightarrow$ effective $\kappa \approx 1$\\
+      Gradient points toward $W^*$ $\Rightarrow$ direct descent.}
+    \end{column}
+  \end{columns}
+
+  \vspace{0.4em}
+  {\small Near the optimum, $\mathbb{E}[g_i^2] \approx h_i^2 \cdot \mathrm{Var}[w_i]$, so $\sqrt{\hat{v}_i} \propto h_i$. Adam's rescaling approximates the diagonal preconditioner $H^{-1/2}$, equivalent to changing variables to $\tilde{w}_i = w_i \sqrt{h_i}$ where the Hessian becomes $\approx I$.}
+
 \end{frame}
 
 % -----------------------------------------------------------------------
@@ -56,24 +398,202 @@
   \]
 
   \vspace{0.3em}
-  \textbf{Advantages:}
+  \begin{columns}[T]
+    \begin{column}{0.55\textwidth}
+      \textbf{Advantages:}
+      \begin{itemize}
+        \item Parameters with sparse/small gradients still get meaningful updates
+        \item Relatively insensitive to gradient scale $\Rightarrow$ less LR tuning
+        \item Works well across embeddings, attention, MLP
+      \end{itemize}
+
+      \vspace{0.3em}
+      \textbf{Limitation for matrix parameters:}
+      \begin{itemize}
+        \item Adam treats each entry $W_{ij}$ independently
+        \item Ignores the \emph{matrix structure} of $G = \nabla_W L$
+        \item Principal directions of $G$ (singular vectors $u_i$) are generally \emph{not aligned} with coordinate axes
+        \item Element-wise rescaling can stretch along axes but cannot ``un-tilt'' the geometry
+      \end{itemize}
+
+      \vspace{0.3em}
+      $\Rightarrow$ Can we design an optimizer that respects the matrix structure of 2D parameters?
+    \end{column}
+    \begin{column}{0.42\textwidth}
+      \begin{center}
+      \textbf{The limitation:}
+      \vspace{0.3em}
+
+      \begin{tikzpicture}[scale=0.65, >=stealth]
+        % Coordinate axes (parameter entries)
+        \draw[->, thin, gray!60] (-3, 0) -- (3, 0) node[right, font=\tiny, black] {$W_{a}$};
+        \draw[->, thin, gray!60] (0, -2.4) -- (0, 2.4) node[above, font=\tiny, black] {$W_{b}$};
+
+        % Tilted ellipse contours (rotated 30°)
+        \begin{scope}[rotate=30]
+          \foreach \r in {0.5, 1.0, 1.5, 2.0, 2.5} {
+            \draw[gray!50, thin] (0,0) ellipse ({\r*1.2} and {\r*0.4});
+          }
+        \end{scope}
+
+        % Principal axes (singular vectors of gradient)
+        \draw[->, very thick, red!75!black] (0,0) -- ({3.0*cos(30)}, {3.0*sin(30)});
+        \node[font=\scriptsize, red!75!black, anchor=south west] at ({2.7*cos(30)}, {2.7*sin(30)}) {$u_1$};
+
+        \draw[->, semithick, red!75!black] (0,0) -- ({-1.0*sin(30)}, {1.0*cos(30)});
+        \node[font=\scriptsize, red!75!black, anchor=south east] at ({-1.0*sin(30)}, {1.0*cos(30)}) {$u_2$};
+
+        % Adam's "knobs" - axis-aligned scaling
+        \draw[<->, semithick, blue!60!black, dashed] (-1.7, -2.0) -- (1.7, -2.0);
+        \node[font=\tiny, blue!60!black, anchor=north] at (0, -2.05) {scale $W_a$};
+      \end{tikzpicture}
+
+      \vspace{0.2em}
+      {\scriptsize Tilted contours: $u_1, u_2$ point at an angle to $(W_a, W_b)$. Adam can stretch along the dashed (axis-aligned) directions but cannot rotate to match $u_1$.}
+      \end{center}
+    \end{column}
+  \end{columns}
+
+\end{frame}
+
+% -----------------------------------------------------------------------
+\begin{frame}{AdamW: Decoupled Weight Decay~\cite{loshchilov2019adamw}}
+
+  \textbf{Weight decay} regularizes by penalizing large weights:
+  \[
+    L_{\text{reg}}(W) = L(W) + \tfrac{\lambda}{2} \|W\|^2
+  \]
+
+  \vspace{0.3em}
+  \textbf{Coupled (Adam + L2):} add $\lambda W_{t-1}$ to the gradient $G_t$ before the adaptive update.
   \begin{itemize}
-    \item Parameters with sparse/small gradients still get meaningful updates
-    \item Relatively insensitive to gradient scale $\Rightarrow$ less LR tuning
-    \item Works well across different parameter types (embeddings, attention, MLP)
+    \item Decay magnitude is then divided by $\sqrt{\hat{V}_t} + \epsilon$
+    \item Effective decay strength differs per parameter $\Rightarrow$ inconsistent regularization
   \end{itemize}
 
   \vspace{0.3em}
-  \textbf{Limitation for matrix parameters:}
-  \begin{itemize}
-    \item Adam treats each entry $W_{ij}$ independently
-    \item Ignores the \emph{matrix structure} of weight updates
-    \item The gradient $G = \nabla_W L$ often has high condition number: a few singular values dominate
-    \item Adam's element-wise rescaling does not fix this directional imbalance
-  \end{itemize}
+  \textbf{Decoupled (AdamW):} apply weight decay \emph{directly} to the parameters, separate from the adaptive step:
+  \[
+    W_t = W_{t-1} - \eta \left( \frac{\hat{M}_t}{\sqrt{\hat{V}_t} + \epsilon} + \lambda W_{t-1} \right)
+  \]
 
   \vspace{0.3em}
-  $\Rightarrow$ Can we design an optimizer that respects the matrix structure of 2D parameters?
+  \begin{itemize}
+    \item Decay applied uniformly, independent of the adaptive update
+    \item Improves generalization $\Rightarrow$ standard for LLM training
+  \end{itemize}
+
+\end{frame}
+
+% -----------------------------------------------------------------------
+\begin{frame}{Bias Correction: Why $\hat{M}_t$ and $\hat{V}_t$?}
+
+  \begin{columns}[T]
+    \begin{column}{0.50\textwidth}
+      \textbf{Issue:} moments are initialized at zero ($M_0 = V_0 = 0$).
+
+      \vspace{0.3em}
+      For a stationary gradient with mean $\mu$:
+      \[
+        \mathbb{E}[M_t] = (1-\beta_1^t)\,\mu
+      \]
+      $M_t$ is biased \emph{toward zero} early in training.
+
+      \vspace{0.3em}
+      Example with $\beta_1 = 0.9$:
+      \begin{itemize}
+        \item $t=1$: $\mathbb{E}[M_1] = 0.1\,\mu$ (only 10\% of true)
+        \item $t=10$: $\mathbb{E}[M_{10}] \approx 0.65\,\mu$
+        \item $t=100$: $\mathbb{E}[M_{100}] \approx \mu$
+      \end{itemize}
+
+      \vspace{0.3em}
+      \textbf{Fix: divide by the bias factor.}
+      \[
+        \hat{M}_t = \frac{M_t}{1-\beta_1^t}, \quad \hat{V}_t = \frac{V_t}{1-\beta_2^t}
+      \]
+
+      Now $\mathbb{E}[\hat{M}_t] = \mu$ at every step.
+    \end{column}
+    \begin{column}{0.47\textwidth}
+      \begin{center}
+      \textbf{$M_t/\mu$ vs step (with/without correction)}
+      \vspace{0.3em}
+
+      \begin{tikzpicture}[scale=0.65, >=stealth]
+        \draw[->, thick] (0,0) -- (5.2,0) node[right, font=\scriptsize] {step $t$};
+        \draw[->, thick] (0,0) -- (0,3.4);
+
+        % Reference line at 1 (true value μ)
+        \draw[gray, dashed] (0, 2.7) -- (5, 2.7);
+        \node[font=\tiny, gray, anchor=east] at (-0.05, 2.7) {$\mu$};
+
+        % Without correction
+        \draw[red!70!black, very thick, smooth] plot coordinates {
+          (0, 0) (0.5, 1.05) (1.0, 1.7) (1.5, 2.1) (2.0, 2.35) (2.5, 2.5)
+          (3.0, 2.59) (3.5, 2.64) (4.0, 2.67) (4.5, 2.69) (4.8, 2.7)
+        };
+        \node[font=\scriptsize, red!70!black, anchor=west] at (3.2, 2.0) {$M_t$};
+
+        % With correction (= μ from start)
+        \draw[blue!70!black, very thick] (0.05, 2.7) -- (4.9, 2.7);
+        \node[font=\scriptsize, blue!70!black, anchor=south west] at (1.5, 2.75) {$\hat{M}_t$};
+      \end{tikzpicture}
+
+      \vspace{0.4em}
+      \textbf{Even worse for $V$:}
+
+      \vspace{0.2em}
+      With $\beta_2 = 0.999$, at $t=1$, $V_1$ captures only $\approx 0.1\%$ of the true variance. Without correction, $\sqrt{V_1}$ in the denominator would explode the update.
+
+      \vspace{0.2em}
+      $\hat{V}_1 = V_1 / 0.001$ recovers the right scale.
+      \end{center}
+    \end{column}
+  \end{columns}
+
+\end{frame}
+
+% -----------------------------------------------------------------------
+\begin{frame}{Adam / AdamW: Adaptive Moment Estimation~\cite{kingma2015adam, loshchilov2019adamw}}
+
+  \begin{columns}[T]
+    \begin{column}{0.55\textwidth}
+      \begin{algorithm}[H]
+        \small
+        \caption{Adam / AdamW}
+        \KwInput{LR $\eta$, decay rates $\beta_1, \beta_2$, $\epsilon$; AdamW: weight decay $\lambda$}
+        Initialize $M_0 \gets 0, V_0 \gets 0$\;
+        \For{$t = 1, 2, \ldots$}{
+          $G_t \gets \nabla_W L(W_{t-1})$\;
+          $M_t \gets \beta_1 M_{t-1} + (1{-}\beta_1) G_t$\;
+          $V_t \gets \beta_2 V_{t-1} + (1{-}\beta_2) G_t^2$\;
+          $\hat{M}_t \gets M_t / (1{-}\beta_1^t)$\;
+          $\hat{V}_t \gets V_t / (1{-}\beta_2^t)$\;
+          {\color{blue!70!black} $W_t \gets W_{t-1} - \eta\, \hat{M}_t / (\sqrt{\hat{V}_t} + \epsilon)$}\tcp*{\color{blue!70!black} Adam}
+          {\color{slide_violet} $W_t \gets W_{t-1} - \eta\, [\hat{M}_t / (\sqrt{\hat{V}_t} + \epsilon) + \lambda W_{t-1}]$}\tcp*{\color{slide_violet} AdamW}
+        }
+      \end{algorithm}
+    \end{column}
+    \begin{column}{0.42\textwidth}
+      \textbf{Components:}
+      \begin{itemize}
+        \item $M_t$: momentum-smoothed gradient
+        \item $V_t$: tracks per-parameter gradient magnitude
+        \item $\hat{M}_t, \hat{V}_t$: bias-corrected moments
+        \item \textcolor{slide_violet}{$\lambda W_{t-1}$}: AdamW's decoupled weight decay
+      \end{itemize}
+
+      \vspace{0.3em}
+      \textbf{Defaults:} $\beta_1 {=} 0.9$, $\beta_2 {=} 0.999$, $\epsilon {=} 10^{-8}$\\
+      \textbf{LLM defaults:} $\beta_2 {=} 0.95$, AdamW with $\lambda {\approx} 0.1$
+
+      \vspace{0.4em}
+      \begin{alertblock}{Critical: warmup}
+        Early-training $\hat{V}_t$ from few samples is unreliable $\Rightarrow$ huge updates. \textbf{Always linearly ramp $\eta$ from $0$ to $\eta_{\max}$ over $\sim$100--2000 steps.} Same applies to Muon.
+      \end{alertblock}
+    \end{column}
+  \end{columns}
 
 \end{frame}
 
@@ -118,24 +638,24 @@
 
       \vspace{0.2em}
       \begin{center}
-      \begin{tikzpicture}[scale=0.65]
+      \begin{tikzpicture}[scale=0.42]
         % Before
-        \draw[->, thick] (0,0) -- (4.5,0) node[right, font=\scriptsize] {index $i$};
+        \draw[->, thick] (0,0) -- (4.5,0) node[right, font=\scriptsize] {$i$};
         \draw[->, thick] (0,0) -- (0,3) node[above, font=\scriptsize] {$\sigma_i$};
-        \node[font=\scriptsize\bfseries] at (2.2,3.4) {Before: $\Sigma$};
+        \node[font=\scriptsize\bfseries] at (2.0,3.4) {Before: $\Sigma$};
         \foreach \i/\h in {0.4/2.5, 1.0/1.8, 1.6/1.0, 2.2/0.5, 2.8/0.25, 3.4/0.1, 4.0/0.03} {
           \fill[red!60!black] (\i,0) rectangle (\i+0.4, \h);
         }
         % After
-        \begin{scope}[shift={(6,0)}]
-          \draw[->, thick] (0,0) -- (4.5,0) node[right, font=\scriptsize] {index $i$};
+        \begin{scope}[shift={(6.5,0)}]
+          \draw[->, thick] (0,0) -- (4.5,0) node[right, font=\scriptsize] {$i$};
           \draw[->, thick] (0,0) -- (0,3) node[above, font=\scriptsize] {};
-          \node[font=\scriptsize\bfseries] at (2.2,3.4) {After: $I$};
+          \node[font=\scriptsize\bfseries] at (2.0,3.4) {After: $I$};
           \foreach \i in {0.4, 1.0, 1.6, 2.2, 2.8, 3.4, 4.0} {
             \fill[green!50!black] (\i,0) rectangle (\i+0.4, 1.5);
           }
         \end{scope}
-        \draw[->, very thick, gray] (4.7, 1.5) -- (5.7, 1.5) node[midway, above, font=\scriptsize] {Ortho};
+        \draw[->, very thick, gray] (5.0, 1.5) -- (6.2, 1.5) node[midway, above, font=\scriptsize] {Ortho};
       \end{tikzpicture}
       \end{center}
 
@@ -209,32 +729,80 @@
 \subsection{Newton-Schulz Iteration}
 
 % -----------------------------------------------------------------------
-\begin{frame}{Newton-Schulz Iteration for Fast Orthogonalization}
+\begin{frame}{Newton-Schulz Iteration: Idea}
 
-  Computing SVD is expensive ($O(nm^2)$ for $n \times m$). The \textbf{Newton-Schulz (NS) iteration} approximates orthogonalization using only matrix multiplications.
+  \textbf{Goal:} compute $\text{Ortho}(X) = U V^\top$ without explicit SVD (slow, not GPU-friendly).
 
-  \vspace{0.3em}
-  \textbf{One NS step} for matrix $X$ with SVD $X = U S V^\top$:
-  \[
-    X' = a X + b (X X^\top) X + c (X X^\top)^2 X
-  \]
-  In terms of singular values, this applies a quintic polynomial:
-  \[
-    \phi(s) = a \cdot s + b \cdot s^3 + c \cdot s^5
-  \]
+  \vspace{0.4em}
+  \begin{columns}[T]
+    \begin{column}{0.52\textwidth}
+      \textbf{Key fact:} an odd polynomial in $X$ acts on the \emph{singular values only}, leaving singular vectors untouched:
+      \[
+        X = U \Sigma V^\top \;\;\Longrightarrow\;\; p(X) = U \, p(\Sigma) \, V^\top
+      \]
 
-  After $N$ steps: $X_N = U\, \phi^{(N)}(S)\, V^\top$, where $\phi^{(N)}$ is the $N$-fold composition.
+      \vspace{0.3em}
+      \textbf{Strategy:}
+      \begin{itemize}
+        \item Pick a polynomial $p$ that pulls every $\sigma \in (0, 1]$ toward $1$
+        \item Apply repeatedly: $X_{k+1} = p(X_k)$
+        \item After a few iterations all $\sigma_i \approx 1$ $\Rightarrow$ $X_K \approx UV^\top$
+      \end{itemize}
 
-  \vspace{0.3em}
-  \textbf{Goal:} Choose $a, b, c$ so that $\phi^{(N)}(s) \to 1$ for all $s \in (0, 1]$ as fast as possible.
+      \vspace{0.3em}
+      \textbf{Why this is great:}
+      \begin{itemize}
+        \item Only \textbf{matrix multiplications} -- ideal for GPUs
+        \item No SVD, no eigendecomposition, no division
+        \item Geometric convergence: $\sim 5$ steps suffice
+        \item We never explicitly compute $U, \Sigma, V$
+      \end{itemize}
+    \end{column}
+    \begin{column}{0.45\textwidth}
+      \begin{center}
+        \textbf{Iterating $p$ on a singular value $\sigma$}
+        \vspace{0.2em}
 
-  \vspace{0.3em}
-  \textbf{Requirements:}
-  \begin{itemize}
-    \item $\phi(1) = 1$ (fixed point): $a + b + c = 1$
-    \item $\phi'(1) = 0$ (stable fixed point): $a + 3b + 5c = 0$
-    \item $\phi(s) \to 1$ quickly for $s$ near $0$ (fast convergence for small singular values)
-  \end{itemize}
+        \begin{tikzpicture}[scale=0.7, >=stealth]
+          % Axes
+          \draw[->, thick] (0,0) -- (3.4,0) node[right, font=\scriptsize] {$\sigma$};
+          \draw[->, thick] (0,0) -- (0,3) node[above, font=\scriptsize] {};
+
+          % y=1 reference (at y=2)
+          \draw[gray, dashed] (0, 2) -- (3.2, 2);
+          \node[font=\tiny, gray, anchor=east] at (-0.05, 2) {$1$};
+
+          % x=1 reference (at x=2)
+          \draw[gray, thin] (2, 0.05) -- (2, -0.1);
+          \node[font=\tiny, gray, below] at (2, -0.15) {$1$};
+
+          % Identity y=σ
+          \draw[gray, dotted, thin] (0, 0) -- (2.5, 2.5);
+          \node[font=\tiny, gray, anchor=west] at (2.4, 2.55) {$y{=}\sigma$};
+
+          % Polynomial p(σ): amplifies small, plateau near 1
+          \draw[blue!70!black, very thick] plot coordinates {
+            (0, 0) (0.3, 1.0) (0.6, 1.55) (0.9, 1.85) (1.2, 1.96)
+            (1.5, 1.99) (1.8, 2.0) (2.0, 2.0) (2.3, 1.96) (2.6, 1.78)
+          };
+          \node[font=\scriptsize, blue!70!black, anchor=west] at (2.5, 1.55) {$p(\sigma)$};
+
+          % Cobweb iteration starting at σ_0=0.4
+          \fill[red!70!black] (0.4, 0) circle (1.5pt);
+          \node[font=\tiny, red!70!black, anchor=north] at (0.4, -0.05) {$\sigma_0$};
+
+          % σ_0 → p(σ_0) ≈ 1.2 → reflect → p(1.2) ≈ 1.96 → reflect → 1.99
+          \draw[red!70!black, semithick, ->] (0.4, 0) -- (0.4, 1.2);
+          \draw[red!70!black, semithick, ->] (0.4, 1.2) -- (1.2, 1.2);
+          \draw[red!70!black, semithick, ->] (1.2, 1.2) -- (1.2, 1.96);
+          \draw[red!70!black, semithick, ->] (1.2, 1.96) -- (1.96, 1.96);
+        \end{tikzpicture}
+
+        \vspace{0.2em}
+        {\scriptsize Cobweb diagram: each iteration pulls $\sigma$ toward~$1$, regardless of how small it started. Singular vectors are never touched.}
+      \end{center}
+    \end{column}
+  \end{columns}
 
 \end{frame}
 
@@ -316,43 +884,47 @@
 \end{frame}
 
 % -----------------------------------------------------------------------
-\begin{frame}[fragile]{Newton-Schulz Implementation}
+\begin{frame}{Newton-Schulz Implementation}
 
-  The complete NS orthogonalization in PyTorch:
+  \begin{columns}[T]
+    \begin{column}{0.50\textwidth}
+      \begin{algorithm}[H]
+        \small
+        \caption{Newton-Schulz Orthogonalization}
+        \KwInput{Gradient $G \in \mathbb{R}^{n \times m}$, steps $T{=}5$}
+        $(a, b, c) \gets (3.4445,\; -4.7750,\; 2.0315)$\;
+        $X \gets G / \|G\|_F$ \tcp*{$\sigma_i \in [0,1]$}
+        \If{$n > m$}{$X \gets X^\top$}
+        \For{$t = 1, \ldots, T$}{
+          $A \gets X X^\top$\;
+          $B \gets b \cdot A + c \cdot A^2$\;
+          $X \gets a \cdot X + BX$ \tcp*{quintic poly}
+        }
+        \If{$n > m$}{$X \gets X^\top$}
+        \Return{$X \approx UV^\top$}
+      \end{algorithm}
 
-  \vspace{0.3em}
-  \begin{center}
-  \begin{minipage}{0.85\textwidth}
-    \begin{tcolorbox}[colback=slide_blue!15, colframe=slide_blue!70, boxrule=0.5pt, arc=3pt, left=4pt, right=4pt, top=3pt, bottom=3pt]
-    {\small
-\begin{verbatim}
-def newtonschulz5(G, steps=5, eps=1e-7):
-    a, b, c = (3.4445, -4.7750, 2.0315)
-    X = G.bfloat16()
-    X /= (X.norm() + eps)  # normalize to [0,1]
-    if G.size(0) > G.size(1):
-        X = X.T              # work on smaller dim
-    for _ in range(steps):
-        A = X @ X.T
-        B = b * A + c * A @ A
-        X = a * X + B @ X   # quintic polynomial
-    if G.size(0) > G.size(1):
-        X = X.T
-    return X
-\end{verbatim}
-    }
-    \end{tcolorbox}
-  \end{minipage}
-  \end{center}
+      \vspace{0.3em}
+      {\small Runs entirely in \textbf{bfloat16}. If $n > m$, transpose before iterating to work on the smaller dimension.}
+    \end{column}
+    \begin{column}{0.47\textwidth}
+      \textbf{Computational cost per NS step} (for $n {\times} m$, $m {\leq} n$):
+      \begin{itemize}
+        \item $XX^\top$: $2nm^2$ FLOPs
+        \item $A \cdot A$: $2m^3$ FLOPs
+        \item $B \cdot X$: $2nm^2$ FLOPs
+        \item Total per step: $\leq 6nm^2$ FLOPs
+        \item For 5 steps: $30nm^2$ FLOPs
+      \end{itemize}
 
-  \vspace{0.3em}
-  \textbf{Computational cost per NS step} (for $n \times m$ matrix, $m \leq n$):
-  \begin{itemize}
-    \item $XX^\top$: $2nm^2$ FLOPs, then $A \cdot A$: $2m^3$ FLOPs, then $B \cdot X$: $2nm^2$ FLOPs
-    \item Total per step: $\leq 6nm^2$ FLOPs. \quad For 5 steps: $30nm^2$ FLOPs
-    \item \textbf{Relative overhead:} $\leq 5m/B$ of the forward pass (where $B$ = batch size in tokens)
-    \item Negligible for typical LLM training batch sizes ($B \gg m$)
-  \end{itemize}
+      \vspace{0.3em}
+      \textbf{Relative overhead:}
+      \begin{itemize}
+        \item $\leq 5m/B$ of the forward pass ($B$ = batch size in tokens)
+        \item Negligible for typical LLM training batch sizes ($B \gg m$)
+      \end{itemize}
+    \end{column}
+  \end{columns}
 
 \end{frame}
 
@@ -367,7 +939,7 @@ def newtonschulz5(G, steps=5, eps=1e-7):
         \KwInput{LR $\eta$, momentum $\beta$, NS steps $T{=}5$}
         Initialize $M_0 = 0$ for each 2D param $W$\;
         \For{$t = 1, 2, \ldots$}{
-          $G_t \gets \nabla_W L(\vw_{t-1})$\;
+          $G_t \gets \nabla_W L(W_{t-1})$\;
           \tcp{Nesterov momentum}
           $M_t \gets \beta \cdot M_{t-1} + G_t$\;
           $\tilde{M}_t \gets \beta \cdot M_t + G_t$\;
@@ -412,38 +984,6 @@ def newtonschulz5(G, steps=5, eps=1e-7):
       \end{center}
     \end{column}
   \end{columns}
-\end{frame}
-
-% -----------------------------------------------------------------------
-\begin{frame}{Connection to Shampoo}
-
-  \textbf{Shampoo}~\cite{gupta2018shampoo} is a second-order optimizer that preconditions gradients using accumulated outer products.
-
-  \vspace{0.3em}
-  \textbf{Instantaneous Shampoo update} (without accumulation):
-  \[
-    W_{t+1} = W_t - \eta \cdot (G_t G_t^\top)^{-1/4}\, G_t\, (G_t^\top G_t)^{-1/4}
-  \]
-
-  Substituting SVD $G_t = U \Sigma V^\top$:
-  \begin{align*}
-    (G G^\top)^{-1/4} &= (U \Sigma^2 U^\top)^{-1/4} = U \Sigma^{-1/2} U^\top \\
-    (G^\top G)^{-1/4} &= (V \Sigma^2 V^\top)^{-1/4} = V \Sigma^{-1/2} V^\top
-  \end{align*}
-
-  Therefore:
-  \[
-    (G G^\top)^{-1/4}\, G\, (G^\top G)^{-1/4}
-    = U \Sigma^{-1/2} \cdot \Sigma \cdot \Sigma^{-1/2} V^\top
-    = U V^\top
-  \]
-
-  \begin{alertblock}{Key equivalence}
-    Muon (without momentum) $=$ instantaneous Shampoo.\\
-    Both reduce to the orthogonalized gradient $UV^\top$.\\
-    Muon replaces Shampoo's expensive preconditioner accumulation with a lightweight NS iteration.
-  \end{alertblock}
-
 \end{frame}
 
 % -----------------------------------------------------------------------
