@@ -273,7 +273,7 @@
 \begin{frame}{Self-Attention: Computing Scores}
   The \textbf{attention score} from token $i$ to token $j$ is the dot product of their query and key:
   \[
-    s_{ij} = q_i^\top k_j
+    s_{ij} = q_i k_j^\top
   \]
 
   \begin{columns}[T]
@@ -868,7 +868,7 @@
     \begin{column}{0.50\textwidth}
       \vspace{0.3em}
       \[
-        s_{ij} = \begin{cases} q_i^\top k_j / \sqrt{d_k} & j \le i \\ -\infty & j > i \end{cases}
+        s_{ij} = \begin{cases} q_i k_j^\top / \sqrt{d_k} & j \le i \\ -\infty & j > i \end{cases}
       \]
       After softmax, $-\infty$ becomes $0$, so future positions receive zero weight.
 
@@ -924,6 +924,46 @@
       \end{center}
     \end{column}
   \end{columns}
+\end{frame}
+
+% -----------------------------------------------------------------------
+\begin{frame}{Training vs.\ Inference: Same Features per Position}
+  \begin{itemize}
+    \item Embedding, FFN, LayerNorm act per-token: trivially identical at training and inference.
+    \item Only the attention step at position $t$ needs to be compared.
+  \end{itemize}
+
+  \begin{columns}[T]
+    \begin{column}{0.46\textwidth}
+      \textbf{Training} (all $t$ in parallel):
+      \[
+        z_t \;=\; \mathrm{softmax}\!\left(\underbrace{\frac{q_t K^\top}{\sqrt{d_k}}}_{(s_1, \ldots, s_T)} + M_t\right) V
+      \]
+      with causal mask
+      $M_{tj} = \begin{cases} 0 & j \le t \\ -\infty & j > t \end{cases}$.
+    \end{column}
+    \begin{column}{0.52\textwidth}
+      \textbf{Inference} (step $t$, KV-cache holds $\{k_j, v_j\}_{j<t}$):
+      \begin{align*}
+        s_j &= q_t k_j^\top / \sqrt{d_k}, \qquad j = 1, \ldots, t \\[-1pt]
+        a_j &= \exp(s_j) \,\Big/ \!\!\sum_{j'=1}^{t}\! \exp(s_{j'}) \\[-1pt]
+        z_t &= \sum_{j=1}^{t} a_j\, v_j
+      \end{align*}
+    \end{column}
+  \end{columns}
+
+  \vspace{0.4em}
+  \begin{block}{Equivalence}
+    \vspace{-0.6em}
+    \[
+      z_t^{\mathrm{train}}
+      = \sum_{j=1}^{T} \frac{\exp(s_j + M_{tj})}{\sum_{j'=1}^{T} \exp(s_{j'} + M_{tj'})}\, v_j
+      \;\stackrel{\exp(-\infty)=0}{=}\;
+      \sum_{j=1}^{t} \frac{\exp(s_j)}{\sum_{j'=1}^{t} \exp(s_{j'})}\, v_j
+      = z_t^{\mathrm{infer}}
+    \]
+    Masked entries vanish from both numerator and denominator, collapsing the training sum to the inference sum.
+  \end{block}
 \end{frame}
 
 % -----------------------------------------------------------------------
@@ -1332,7 +1372,7 @@
       \textbf{Sub-layer 2} (feed-forward):
       \begin{align*}
         F &= \mathrm{FFN}(X') \\
-          &= \underbrace{W_2}_{d \times d_{\mathrm{ff}}}\,\mathrm{GELU}\!\bigl(\underbrace{W_1}_{d_{\mathrm{ff}} \times d}\, X'\bigr) \\
+          &= \mathrm{GELU}\!\bigl(X'\, \underbrace{W_1}_{d \times d_{\mathrm{ff}}}\bigr)\, \underbrace{W_2}_{d_{\mathrm{ff}} \times d} \\
         R &= \mathrm{LayerNorm}(X' + F)
       \end{align*}
 
@@ -1621,6 +1661,36 @@
       \begin{itemize}
         \item {\small Dashed lines \tikz[baseline=-0.5ex]{\draw[gray!50, thin, dashed] (0,0) -- (0.6,0);} = residual connections.}
       \end{itemize}
+    \end{column}
+  \end{columns}
+\end{frame}
+
+% -----------------------------------------------------------------------
+\begin{frame}{Layer Normalization}
+  \textbf{LayerNorm}~\cite{ba2016layernorm} normalizes each token's feature vector independently across the feature dimension $d$.
+
+  \begin{columns}[T]
+    \begin{column}{0.55\textwidth}
+      For a token vector $x \in \mathbb{R}^d$:
+      \begin{align*}
+        \mu      &= \tfrac{1}{d}\sum_{i=1}^{d} x_i \\
+        \sigma^2 &= \tfrac{1}{d}\sum_{i=1}^{d} (x_i - \mu)^2 \\
+        \hat{x}_i &= \frac{x_i - \mu}{\sqrt{\sigma^2 + \varepsilon}} \\
+        \mathrm{LN}(x)_i &= \gamma_i\, \hat{x}_i + \beta_i
+      \end{align*}
+      \begin{itemize}
+        \item $\gamma, \beta \in \mathbb{R}^d$ are learned scale and shift.
+        \item Applied per token, per layer: shape and statistics are independent of batch and sequence length.
+      \end{itemize}
+    \end{column}
+    \begin{column}{0.42\textwidth}
+      \begin{block}{Why LayerNorm in transformers?}
+        \begin{itemize}
+          \item BatchNorm depends on batch statistics; sequence lengths and padding make these noisy.
+          \item LayerNorm is independent of batch and length: identical at train and test.
+          \item Stabilizes residual streams whose magnitude grows with depth.
+        \end{itemize}
+      \end{block}
     \end{column}
   \end{columns}
 \end{frame}

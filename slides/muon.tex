@@ -12,10 +12,10 @@
     \begin{column}{0.32\textwidth}
       \begin{center}\textbf{1. Gradient noise}\end{center}
       \vspace{0.2em}
-      \begin{minipage}[t][2.4cm][t]{\linewidth}\centering
-        \begin{tikzpicture}[scale=0.5, >=stealth, baseline=(current bounding box.north)]
-          \useasboundingbox (-3.6, -0.7) rectangle (0.6, 1.8);
-          \clip (-3.6, -0.7) rectangle (0.6, 1.8);
+      \begin{minipage}[t][3.0cm][t]{\linewidth}\centering
+        \begin{tikzpicture}[scale=0.7, >=stealth, baseline=(current bounding box.north)]
+          \useasboundingbox (-3.6, -0.9) rectangle (0.6, 2.0);
+          \clip (-3.6, -0.9) rectangle (0.6, 2.0);
           % Contours (loss landscape)
           \foreach \r in {0.5, 1.0, 1.5, 2.0, 2.5, 3.0} {
             \draw[gray!50, thin] (0,0) ellipse ({\r*1.15} and {\r*0.75});
@@ -60,7 +60,7 @@
     \begin{column}{0.32\textwidth}
       \begin{center}\textbf{2. Per-parameter scale}\end{center}
       \vspace{0.2em}
-      \begin{minipage}[t][2.4cm][t]{\linewidth}\centering
+      \begin{minipage}[t][3.0cm][t]{\linewidth}\centering
         \begin{tikzpicture}[scale=0.42, >=stealth, baseline=(current bounding box.north)]
           \draw[->, thin, gray!70] (0,0) -- (5.2,0) node[right, font=\tiny, black] {param};
           \draw[->, thin, gray!70] (0,0) -- (0,3) node[above, font=\tiny, black] {grad};
@@ -81,7 +81,7 @@
     \begin{column}{0.32\textwidth}
       \begin{center}\textbf{3. Matrix structure}\end{center}
       \vspace{0.2em}
-      \begin{minipage}[t][2.4cm][t]{\linewidth}\centering
+      \begin{minipage}[t][3.0cm][t]{\linewidth}\centering
         \begin{tikzpicture}[scale=0.45, >=stealth, baseline=(current bounding box.north)]
           % Elongated contours showing directional imbalance
           \foreach \r in {0.5, 1.0, 1.5, 2.0} {
@@ -91,7 +91,7 @@
 
           % Dominant direction (long axis): arrow extends past the ellipse
           \draw[->, very thick, red!70!black] (0,0) -- (3.7, 0);
-          \node[font=\tiny, red!70!black, anchor=west] at (3.75, 0) {dominant};
+          \node[font=\tiny, red!70!black, anchor=north] at (3.7, -0.6) {dominant};
 
           % Weak direction (short axis): arrow extends past the ellipse upward
           \draw[->, semithick, blue!60!black] (0,0) -- (0, 1.1);
@@ -153,15 +153,23 @@
       \begin{tikzpicture}[scale=0.85, >=stealth]
         \fill[black] (0, 0) circle (1.5pt);
 
-        % β * M_{t-1}: long horizontal blue arrow (large weight)
+        % Full M_{t-1} (dashed, showing original length)
+        \draw[->, thin, blue!40!black, dashed] (0, 0) -- (2.9, 0);
+        \node[font=\scriptsize, blue!40!black, anchor=south west] at (2.7, 0.05) {$M_{t-1}$};
+
+        % β * M_{t-1}: scaled (solid)
         \draw[->, very thick, blue!70!black] (0, 0) -- (2.6, 0);
         \node[font=\scriptsize, blue!70!black, anchor=south] at (1.3, 0.05) {$\beta\, M_{t-1}$};
 
-        % (1-β) * ∇L: small red arrow pointing down (small weight)
+        % Full ∇L (dashed, showing original length)
+        \draw[->, thin, red!40!black, dashed] (0, 0) -- (0.45, -2.1);
+        \node[font=\scriptsize, red!40!black, anchor=west] at (0.5, -1.6) {$\nabla L$};
+
+        % (1-β) * ∇L: scaled (solid)
         \draw[->, thick, red!70!black] (0, 0) -- (0.15, -0.7);
         \node[font=\scriptsize, red!70!black, anchor=east] at (0.05, -0.4) {$(1{-}\beta)\nabla L$};
 
-        % M_t = sum
+        % M_t = weighted sum
         \draw[->, very thick, slide_violet] (0, 0) -- (2.75, -0.7);
         \node[font=\scriptsize, slide_violet, anchor=west] at (2.8, -0.55) {$M_t$};
 
@@ -397,62 +405,56 @@
     \qquad \Rightarrow \qquad |\Delta w_i| \approx \pm \eta
   \]
 
+  \vspace{0.2em}
+  \textbf{Advantages:}
+  \begin{itemize}
+    \item Parameters with sparse/small gradients still get meaningful updates
+    \item Relatively insensitive to gradient scale $\Rightarrow$ less LR tuning
+  \end{itemize}
+
   \vspace{0.3em}
-  \begin{columns}[T]
-    \begin{column}{0.55\textwidth}
-      \textbf{Advantages:}
-      \begin{itemize}
-        \item Parameters with sparse/small gradients still get meaningful updates
-        \item Relatively insensitive to gradient scale $\Rightarrow$ less LR tuning
-        \item Works well across embeddings, attention, MLP
-      \end{itemize}
+  \begin{center}
+  \textbf{Effect of Adam's rescaling:}
+  \vspace{0.2em}
 
-      \vspace{0.3em}
-      \textbf{Limitation for matrix parameters:}
-      \begin{itemize}
-        \item Adam treats each entry $W_{ij}$ independently
-        \item Ignores the \emph{matrix structure} of $G = \nabla_W L$
-        \item Principal directions of $G$ (singular vectors $u_i$) are generally \emph{not aligned} with coordinate axes
-        \item Element-wise rescaling can stretch along axes but cannot ``un-tilt'' the geometry
-      \end{itemize}
+  \begin{tikzpicture}[scale=0.85, >=stealth]
+    % --- Left: original landscape (15° tilt, 4:1 aspect ratio) ---
+    \begin{scope}[shift={(-3.5, 0)}]
+      \draw[->, thin, gray!60] (-2.5, 0) -- (2.5, 0) node[right, font=\tiny] {$w_1$};
+      \draw[->, thin, gray!60] (0, -1.5) -- (0, 1.5) node[above, font=\tiny] {$w_2$};
+      \begin{scope}[rotate=15]
+        \foreach \r in {0.4, 0.8, 1.2, 1.6} {
+          \draw[red!50!black, thin] (0,0) ellipse ({\r*1.4} and {\r*0.35});
+        }
+      \end{scope}
+      \fill[black] (0,0) circle (1.5pt);
+      \node[font=\scriptsize] at (0, -1.9) {before};
+    \end{scope}
 
-      \vspace{0.3em}
-      $\Rightarrow$ Can we design an optimizer that respects the matrix structure of 2D parameters?
-    \end{column}
-    \begin{column}{0.42\textwidth}
-      \begin{center}
-      \textbf{The limitation:}
-      \vspace{0.3em}
+    % --- Arrow between ---
+    \draw[->, very thick, blue!60!black] (-0.5, 0) -- (0.5, 0);
+    \node[font=\scriptsize, blue!60!black, anchor=south] at (0, 0.1) {$\frac{w_i}{\sqrt{\hat{v}_i}}$};
 
-      \begin{tikzpicture}[scale=0.65, >=stealth]
-        % Coordinate axes (parameter entries)
-        \draw[->, thin, gray!60] (-3, 0) -- (3, 0) node[right, font=\tiny, black] {$W_{a}$};
-        \draw[->, thin, gray!60] (0, -2.4) -- (0, 2.4) node[above, font=\tiny, black] {$W_{b}$};
+    % --- Right: after Adam rescaling (45° tilt, ~2.3:1 aspect ratio) ---
+    % 15° tilt: A_11≈1.02, A_22≈7.65, A_12≈-1.91
+    % After rescaling: B_12≈-0.68 → eigenvalues 1.68, 0.32 at 45°
+    % Aspect ratio sqrt(1.68/0.32) ≈ 2.3:1
+    \begin{scope}[shift={(3.5, 0)}]
+      \draw[->, thin, gray!60] (-2.5, 0) -- (2.5, 0) node[right, font=\tiny] {$\tilde{w}_1$};
+      \draw[->, thin, gray!60] (0, -1.5) -- (0, 1.5) node[above, font=\tiny] {$\tilde{w}_2$};
+      \begin{scope}[rotate=45]
+        \foreach \r in {0.4, 0.8, 1.2, 1.6} {
+          \draw[blue!50!black, thin] (0,0) ellipse ({\r*1.05} and {\r*0.45});
+        }
+      \end{scope}
+      \fill[black] (0,0) circle (1.5pt);
+      \node[font=\scriptsize] at (0, -1.9) {after};
+    \end{scope}
+  \end{tikzpicture}
 
-        % Tilted ellipse contours (rotated 30°)
-        \begin{scope}[rotate=30]
-          \foreach \r in {0.5, 1.0, 1.5, 2.0, 2.5} {
-            \draw[gray!50, thin] (0,0) ellipse ({\r*1.2} and {\r*0.4});
-          }
-        \end{scope}
-
-        % Principal axes (singular vectors of gradient)
-        \draw[->, very thick, red!75!black] (0,0) -- ({3.0*cos(30)}, {3.0*sin(30)});
-        \node[font=\scriptsize, red!75!black, anchor=south west] at ({2.7*cos(30)}, {2.7*sin(30)}) {$u_1$};
-
-        \draw[->, semithick, red!75!black] (0,0) -- ({-1.0*sin(30)}, {1.0*cos(30)});
-        \node[font=\scriptsize, red!75!black, anchor=south east] at ({-1.0*sin(30)}, {1.0*cos(30)}) {$u_2$};
-
-        % Adam's "knobs" - axis-aligned scaling
-        \draw[<->, semithick, blue!60!black, dashed] (-1.7, -2.0) -- (1.7, -2.0);
-        \node[font=\tiny, blue!60!black, anchor=north] at (0, -2.05) {scale $W_a$};
-      \end{tikzpicture}
-
-      \vspace{0.2em}
-      {\scriptsize Tilted contours: $u_1, u_2$ point at an angle to $(W_a, W_b)$. Adam can stretch along the dashed (axis-aligned) directions but cannot rotate to match $u_1$.}
-      \end{center}
-    \end{column}
-  \end{columns}
+  \vspace{0.2em}
+  {\scriptsize Axis-aligned rescaling reduces the aspect ratio ($4{:}1 \to 2.3{:}1$) but cannot remove the tilt. Off-diagonal curvature remains.}
+  \end{center}
 
 \end{frame}
 
@@ -565,13 +567,14 @@
         \KwInput{LR $\eta$, decay rates $\beta_1, \beta_2$, $\epsilon$; AdamW: weight decay $\lambda$}
         Initialize $M_0 \gets 0, V_0 \gets 0$\;
         \For{$t = 1, 2, \ldots$}{
-          $G_t \gets \nabla_W L(W_{t-1})$\;
+          {\color{blue!70!black} $G_t \gets \nabla_W [L(W_{t-1}) + \tfrac{\lambda}{2}\|W_{t-1}\|^2]$}\tcp*{\color{blue!70!black} Adam: grad incl.\ decay}
+          {\color{slide_violet} $G_t \gets \nabla_W L(W_{t-1})$}\tcp*{\color{slide_violet} AdamW}
           $M_t \gets \beta_1 M_{t-1} + (1{-}\beta_1) G_t$\;
           $V_t \gets \beta_2 V_{t-1} + (1{-}\beta_2) G_t^2$\;
           $\hat{M}_t \gets M_t / (1{-}\beta_1^t)$\;
           $\hat{V}_t \gets V_t / (1{-}\beta_2^t)$\;
-          {\color{blue!70!black} $W_t \gets W_{t-1} - \eta\, \hat{M}_t / (\sqrt{\hat{V}_t} + \epsilon)$}\tcp*{\color{blue!70!black} Adam}
-          {\color{slide_violet} $W_t \gets W_{t-1} - \eta\, [\hat{M}_t / (\sqrt{\hat{V}_t} + \epsilon) + \lambda W_{t-1}]$}\tcp*{\color{slide_violet} AdamW}
+          {\color{blue!70!black} $W_t \gets W_{t-1} - \eta\, \frac{\hat{M}_t}{\sqrt{\hat{V}_t} + \epsilon}$}\tcp*{\color{blue!70!black} Adam}
+          {\color{slide_violet} $W_t \gets W_{t-1} - \eta\!\left[\frac{\hat{M}_t}{\sqrt{\hat{V}_t} + \epsilon} + \lambda W_{t-1}\right]$}\tcp*{\color{slide_violet} AdamW}
         }
       \end{algorithm}
     \end{column}
@@ -636,30 +639,48 @@
 
       This \emph{replaces all singular values with 1}:
 
-      \vspace{0.2em}
+      \vspace{0.3em}
       \begin{center}
-      \begin{tikzpicture}[scale=0.42]
-        % Before
-        \draw[->, thick] (0,0) -- (4.5,0) node[right, font=\scriptsize] {$i$};
-        \draw[->, thick] (0,0) -- (0,3) node[above, font=\scriptsize] {$\sigma_i$};
-        \node[font=\scriptsize\bfseries] at (2.0,3.4) {Before: $\Sigma$};
-        \foreach \i/\h in {0.4/2.5, 1.0/1.8, 1.6/1.0, 2.2/0.5, 2.8/0.25, 3.4/0.1, 4.0/0.03} {
-          \fill[red!60!black] (\i,0) rectangle (\i+0.4, \h);
-        }
-        % After
-        \begin{scope}[shift={(6.5,0)}]
-          \draw[->, thick] (0,0) -- (4.5,0) node[right, font=\scriptsize] {$i$};
-          \draw[->, thick] (0,0) -- (0,3) node[above, font=\scriptsize] {};
-          \node[font=\scriptsize\bfseries] at (2.0,3.4) {After: $I$};
-          \foreach \i in {0.4, 1.0, 1.6, 2.2, 2.8, 3.4, 4.0} {
-            \fill[green!50!black] (\i,0) rectangle (\i+0.4, 1.5);
-          }
-        \end{scope}
-        \draw[->, very thick, gray] (5.0, 1.5) -- (6.2, 1.5) node[midway, above, font=\scriptsize] {Ortho};
+      \begin{tikzpicture}[scale=0.38, >=stealth,
+          mat/.style={draw, thick, minimum width=1.1cm, minimum height=1.4cm, font=\scriptsize},
+          sqmat/.style={draw, thick, minimum width=1.1cm, minimum height=1.1cm, font=\scriptsize}]
+        % --- Top row: M = U Σ V^T ---
+        \node[mat, fill=gray!15] (M) at (0, 0) {$M_t$};
+        \node[font=\scriptsize] at (1.2, 0) {$=$};
+        \node[mat, fill=blue!15] (U1) at (2.4, 0) {$U$};
+        \node[sqmat, fill=red!20] (S) at (4.2, 0) {
+          \begin{tikzpicture}[scale=0.25]
+            \fill[red!60!black] (0,3) circle (4pt);
+            \fill[red!60!black] (1,2) circle (3pt);
+            \fill[red!60!black] (2,1) circle (2pt);
+            \fill[red!60!black] (3,0) circle (1pt);
+          \end{tikzpicture}
+        };
+        \node[font=\tiny, red!60!black] at (4.2, -1.1) {$\Sigma$};
+        \node[mat, fill=green!15] (V1) at (6.0, 0) {$V^\top$};
+
+        % --- Arrow ---
+        \draw[->, very thick, blue!60!black] (0, -1.8) -- (0, -2.6);
+        \node[font=\tiny, blue!60!black, anchor=west] at (0.2, -2.2) {Ortho};
+
+        % --- Bottom row: Ortho(M) = U I V^T ---
+        \node[mat, fill=blue!10!gray!10] (O) at (0, -4.2) {$U V^\top$};
+        \node[font=\scriptsize] at (1.2, -4.2) {$=$};
+        \node[mat, fill=blue!15] (U2) at (2.4, -4.2) {$U$};
+        \node[sqmat, fill=green!20] (I) at (4.2, -4.2) {
+          \begin{tikzpicture}[scale=0.25]
+            \fill[green!50!black] (0,3) circle (3pt);
+            \fill[green!50!black] (1,2) circle (3pt);
+            \fill[green!50!black] (2,1) circle (3pt);
+            \fill[green!50!black] (3,0) circle (3pt);
+          \end{tikzpicture}
+        };
+        \node[font=\tiny, green!50!black] at (4.2, -5.3) {$I$};
+        \node[mat, fill=green!15] (V2) at (6.0, -4.2) {$V^\top$};
       \end{tikzpicture}
       \end{center}
 
-      {\scriptsize Rare gradient directions (small $\sigma_i$) get amplified to the same scale as dominant ones.}
+      {\scriptsize Directions $U, V$ preserved; all $\sigma_i \to 1$. Rare directions get amplified to the same scale as dominant ones.}
     \end{column}
   \end{columns}
 \end{frame}
@@ -733,30 +754,33 @@
 
   \textbf{Goal:} compute $\text{Ortho}(X) = U V^\top$ without explicit SVD (slow, not GPU-friendly).
 
-  \vspace{0.4em}
+  \vspace{0.3em}
   \begin{columns}[T]
     \begin{column}{0.52\textwidth}
-      \textbf{Key fact:} an odd polynomial in $X$ acts on the \emph{singular values only}, leaving singular vectors untouched:
+      \textbf{Key fact:} polynomials in $XX^\top$ applied to $X$ act \emph{only on singular values}, leaving $U, V$ untouched.
+
+      \vspace{0.3em}
+      Given $X = U \Sigma V^\top$:
+      \begin{itemize}
+        \item $XX^\top = U \Sigma^2 U^\top$ (orthogonality of $V$)
+        \item $(XX^\top)\, X = U \Sigma^2 U^\top \cdot U \Sigma V^\top = U \Sigma^3 V^\top$
+        \item $(XX^\top)^k X = U \Sigma^{2k+1} V^\top$
+      \end{itemize}
+
+      \vspace{0.3em}
+      So a polynomial step
       \[
-        X = U \Sigma V^\top \;\;\Longrightarrow\;\; p(X) = U \, p(\Sigma) \, V^\top
+        p(X) = aX + b(XX^\top)X + c(XX^\top)^2 X
+      \]
+      yields
+      \[
+        p(X) = U\, \underbrace{(a\Sigma {+} b\Sigma^3 {+} c\Sigma^5)}_{p(\Sigma)}\, V^\top
       \]
 
-      \vspace{0.3em}
-      \textbf{Strategy:}
-      \begin{itemize}
-        \item Pick a polynomial $p$ that pulls every $\sigma \in (0, 1]$ toward $1$
-        \item Apply repeatedly: $X_{k+1} = p(X_k)$
-        \item After a few iterations all $\sigma_i \approx 1$ $\Rightarrow$ $X_K \approx UV^\top$
-      \end{itemize}
+      $U, V$ are preserved; each $\sigma_i$ is independently transformed by $p(\sigma) = a\sigma + b\sigma^3 + c\sigma^5$.
 
       \vspace{0.3em}
-      \textbf{Why this is great:}
-      \begin{itemize}
-        \item Only \textbf{matrix multiplications} -- ideal for GPUs
-        \item No SVD, no eigendecomposition, no division
-        \item Geometric convergence: $\sim 5$ steps suffice
-        \item We never explicitly compute $U, \Sigma, V$
-      \end{itemize}
+      \textbf{Strategy:} choose $a, b, c$ so iterating $p$ drives every $\sigma_i \to 1$ quickly.
     \end{column}
     \begin{column}{0.45\textwidth}
       \begin{center}
@@ -799,86 +823,142 @@
         \end{tikzpicture}
 
         \vspace{0.2em}
-        {\scriptsize Cobweb diagram: each iteration pulls $\sigma$ toward~$1$, regardless of how small it started. Singular vectors are never touched.}
+        {\scriptsize Each iteration pulls $\sigma$ toward $1$, regardless of starting value.}
       \end{center}
+
+      \vspace{0.3em}
+      \textbf{Benefits:}
+      \begin{itemize}
+        \item Only \textbf{matrix multiplications} -- GPU-friendly
+        \item No SVD, no eigendecomposition, no division
+        \item $\sim 5$ iterations suffice (geometric convergence)
+        \item $U, V$ never explicitly computed
+      \end{itemize}
     \end{column}
   \end{columns}
 
 \end{frame}
 
 % -----------------------------------------------------------------------
-\begin{frame}{Tuning Newton-Schulz Coefficients}
+\begin{frame}{Newton-Schulz: Iterating the Polynomial}
 
   \begin{columns}[T]
     \begin{column}{0.50\textwidth}
-      \textbf{Baseline coefficients} (standard in literature):
-      \[
-        (a, b, c) = (2,\; -1.5,\; 0.5)
-      \]
-      Slow convergence near $s = 0$: many iterations needed.
+      \textbf{One NS step} (applied to matrix $X$):
 
-      \vspace{0.4em}
-      \textbf{Optimized coefficients}~\cite{jordan2024muon}:
+      \vspace{0.2em}
+      \begin{algorithm}[H]
+        \small
+        \caption{NS Step}
+        $A \gets X X^\top$\;
+        $X \gets a\, X + b\, AX + c\, A^2 X$\;
+      \end{algorithm}
+
+      Each step maps every singular value via:
+      \[
+        \sigma \;\mapsto\; p(\sigma) = a\sigma + b\sigma^3 + c\sigma^5
+      \]
+
+      \textbf{Iteration:} repeat the same step $N$ times. The \emph{composed} polynomial $p^{(N)}$ acts on each $\sigma_i$:
+      \[
+        \sigma_i^{(N)} = \underbrace{p \circ p \circ \cdots \circ p}_{N \text{ times}}(\sigma_i)
+      \]
+
+      \vspace{0.3em}
+      \textbf{Tuned coefficients}~\cite{jordan2024muon}:
       \[
         (a, b, c) = (3.4445,\; -4.7750,\; 2.0315)
       \]
-      Much steeper growth near $s = 0$ $\Rightarrow$ \textbf{only 5 iterations suffice} for good approximation.
 
-      \vspace{0.4em}
-      \textbf{Implementation detail:}
+      \textbf{Practical details:}
       \begin{itemize}
-        \item Normalize $X \gets X / \|X\|_F$ so singular values lie in $[0, 1]$
-        \item Runs entirely in \textbf{bfloat16}
-        \item If matrix is tall ($n > m$), transpose before iterating
+        \item Normalize $X \gets X/\|X\|_F$ first ($\sigma_i \in [0, 1]$)
+        \item 5 iterations suffice, runs in bfloat16
       \end{itemize}
     \end{column}
     \begin{column}{0.47\textwidth}
-      \textbf{Single NS polynomial $\phi(s)$:}
+      \textbf{Iterated $p^{(k)}(\sigma)$: original vs.\ tuned}
+
+      \vspace{0.2em}
       \begin{center}
-        \begin{tikzpicture}[scale=0.72]
-          \draw[->, thick] (0,0) -- (4.5,0) node[right, font=\scriptsize] {$s$};
-          \draw[->, thick] (0,0) -- (0,4) node[above, font=\scriptsize] {$\phi(s)$};
-          % y=1 reference
-          \draw[gray, dashed, thin] (0,3) -- (4.2,3);
+        % --- Original polynomial: (a,b,c) = (3/2, -1/2, 0) ---
+        \begin{tikzpicture}[scale=0.5, >=stealth,
+          declare function={
+            po(\s) = 1.5*\s - 0.5*(\s)^3;
+          }]
+          \draw[->, thick] (0,0) -- (3.5,0) node[right, font=\tiny] {$\sigma$};
+          \draw[->, thick] (0,0) -- (0,3.5) node[above, font=\tiny] {};
+          \draw[gray, dashed, thin] (0,3) -- (3.3,3);
           \node[font=\tiny, gray, anchor=east] at (-0.1,3) {$1$};
-          % Tick at s=1
-          \draw[gray, thin] (3,0.05) -- (3,-0.15);
-          \node[font=\tiny, gray, below] at (3,-0.15) {$1$};
+          \draw[gray, thin] (3,0.05) -- (3,-0.1);
+          \node[font=\tiny, gray, below] at (3,-0.1) {$1$};
 
-          % Baseline: phi(s) = 2s - 1.5s^3 + 0.5s^5, scaled: x axis 0..3 maps to s 0..1, y axis *3
-          \draw[red!60!black, thick, domain=0:3, samples=80, smooth]
-            plot (\x, {3*(2*(\x/3) - 1.5*(\x/3)^3 + 0.5*(\x/3)^5)});
-          \node[font=\scriptsize, red!60!black, anchor=west] at (3.3, 2.0) {baseline};
+          % Labels at x=0.9 (σ=0.3) where curves are spread:
+          % k=1: y≈1.31, k=2: y≈1.84, k=3: y≈2.41, k=4: y≈2.84, k=5: y≈3.0
+          \draw[blue!90!black!25, thick, domain=0.01:3, samples=50, smooth]
+            plot (\x, {3*po(\x/3)});
+          \node[font=\tiny, blue!90!black!25, anchor=east] at (0.85, 1.31) {$k{=}1$};
 
-          % Tuned: phi(s) = 3.4445s - 4.775s^3 + 2.0315s^5, scaled
-          \draw[green!50!black, very thick, domain=0:3, samples=80, smooth]
-            plot (\x, {3*(3.4445*(\x/3) - 4.775*(\x/3)^3 + 2.0315*(\x/3)^5)});
-          \node[font=\scriptsize, green!50!black, anchor=west] at (3.3, 3.5) {tuned};
+          \draw[blue!90!black!40, thick, domain=0.01:3, samples=50, smooth]
+            plot (\x, {3*po(po(\x/3))});
+          \node[font=\tiny, blue!90!black!40, anchor=east] at (0.85, 1.84) {$k{=}2$};
+
+          \draw[blue!90!black!55, thick, domain=0.01:3, samples=50, smooth]
+            plot (\x, {3*po(po(po(\x/3)))});
+          \node[font=\tiny, blue!90!black!55, anchor=east] at (0.85, 2.41) {$k{=}3$};
+
+          \draw[blue!90!black!70, thick, domain=0.01:3, samples=50, smooth]
+            plot (\x, {3*po(po(po(po(\x/3))))});
+          \node[font=\tiny, blue!90!black!70, anchor=east] at (0.85, 2.84) {$k{=}4$};
+
+          \draw[green!50!black, very thick, domain=0.01:3, samples=50, smooth]
+            plot (\x, {3*po(po(po(po(po(\x/3)))))});
+          \node[font=\tiny, green!50!black, anchor=east] at (0.85, 3.05) {$k{=}5$};
+
+          \node[font=\scriptsize\bfseries] at (1.5, -0.7) {Original: $(\tfrac{3}{2},\; {-}\tfrac{1}{2},\; 0)$};
+        \end{tikzpicture}
+
+        \vspace{0.5em}
+        % --- Tuned polynomial: (a,b,c) = (3.4445, -4.775, 2.0315) ---
+        \begin{tikzpicture}[scale=0.5, >=stealth,
+          declare function={
+            pt(\s) = 3.4445*\s - 4.775*(\s)^3 + 2.0315*(\s)^5;
+          }]
+          \clip (-0.3, -0.3) rectangle (4.5, 4.2);
+          \draw[->, thick] (0,0) -- (3.5,0) node[right, font=\tiny] {$\sigma$};
+          \draw[->, thick] (0,0) -- (0,3.9) node[above, font=\tiny] {};
+          \draw[gray, dashed, thin] (0,3) -- (3.3,3);
+          \node[font=\tiny, gray, anchor=east] at (-0.1,3) {$1$};
+          \draw[gray, thin] (3,0.05) -- (3,-0.1);
+          \node[font=\tiny, gray, below] at (3,-0.1) {$1$};
+
+          % Labels at x=0.6 (σ=0.2): k=1: y≈1.95, k=2: y≈3.51, k=3: y≈2.81, k=4: y≈2.30, k=5: y≈3.08
+          \draw[red!90!black!30, thick, domain=0.01:3, samples=60, smooth]
+            plot (\x, {3*pt(\x/3)});
+          \node[font=\tiny, red!90!black!30, anchor=north east] at (0.55, 1.95) {$k{=}1$};
+
+          \draw[red!90!black!45, thick, domain=0.01:3, samples=60, smooth]
+            plot (\x, {3*pt(pt(\x/3))});
+          \node[font=\tiny, red!90!black!45, anchor=south east] at (0.55, 3.51) {$k{=}2$};
+
+          \draw[red!90!black!60, thick, domain=0.01:3, samples=60, smooth]
+            plot (\x, {3*pt(pt(pt(\x/3)))});
+          \node[font=\tiny, red!90!black!60, anchor=east] at (0.55, 2.81) {$k{=}3$};
+
+          \draw[red!90!black!75, thick, domain=0.01:3, samples=60, smooth]
+            plot (\x, {3*pt(pt(pt(pt(\x/3))))});
+          \node[font=\tiny, red!90!black!75, anchor=north east] at (0.55, 2.30) {$k{=}4$};
+
+          \draw[green!50!black, very thick, domain=0.01:3, samples=60, smooth]
+            plot (\x, {3*pt(pt(pt(pt(pt(\x/3)))))});
+          \node[font=\tiny, green!50!black, anchor=south east] at (0.55, 3.08) {$k{=}5$};
+
+          \node[font=\scriptsize\bfseries] at (1.5, -0.7) {Tuned: $(3.44,\; {-}4.78,\; 2.03)$};
         \end{tikzpicture}
       \end{center}
 
-      \textbf{After 5 iterations $\phi^{(5)}(s)$:}
-      \begin{center}
-        \begin{tikzpicture}[scale=0.72]
-          \draw[->, thick] (0,0) -- (4.5,0) node[right, font=\scriptsize] {$s$};
-          \draw[->, thick] (0,0) -- (0,4) node[above, font=\scriptsize] {$\phi^{(5)}(s)$};
-          \draw[gray, dashed, thin] (0,3) -- (4.2,3);
-          \node[font=\tiny, gray, anchor=east] at (-0.1,3) {$1$};
-          \draw[gray, thin] (3,0.05) -- (3,-0.15);
-          \node[font=\tiny, gray, below] at (3,-0.15) {$1$};
-
-          % Baseline after 5 iters: slow convergence, still curved
-          \draw[red!60!black, thick, domain=0.01:3, samples=80, smooth]
-            plot (\x, {3*min(1, max(0, 0.5 + 0.5*tanh(2.5*(\x/3 - 0.35))))});
-          \node[font=\scriptsize, red!60!black, anchor=west] at (3.3, 1.8) {baseline};
-
-          % Tuned after 5 iters: nearly step function
-          \draw[green!50!black, very thick, domain=0.01:3, samples=80, smooth]
-            plot (\x, {3*min(1, max(0, 0.5 + 0.5*tanh(min(5, max(-5, 12*(\x/3 - 0.05))))))});
-          \node[font=\scriptsize, green!50!black, anchor=west] at (3.3, 3.5) {tuned};
-        \end{tikzpicture}
-      \end{center}
-      {\scriptsize Tuned coefficients converge to a near-step function after 5 iterations: $\phi^{(5)}(s) \approx 1$ for all $s > 0$.}
+      \vspace{0.2em}
+      {\scriptsize Original: monotone convergence to $\sigma{=}1$, slow for small $\sigma$. Tuned: overshoots but equalizes all $\sigma_i$ much faster $\Rightarrow$ $X \propto UV^\top$ after 5 steps.}
     \end{column}
   \end{columns}
 \end{frame}
@@ -1043,10 +1123,6 @@
       \end{center}
       {\scriptsize Schematic of Muon vs AdamW training curves. Muon reaches the same validation loss with fewer steps.}
 
-      \vspace{0.3em}
-      \textbf{Why trust these results?}
-
-      The NanoGPT speedrunning task is a \emph{competitive benchmark}: researchers are incentivized to find the best optimizer. If Muon were worse, competitors would discard it. Its persistent adoption across records by independent researchers is strong evidence.
     \end{column}
   \end{columns}
 \end{frame}

@@ -520,53 +520,413 @@
 \end{frame}
 
 % -----------------------------------------------------------------------
-\begin{frame}{The Selective Scan}
+\begin{frame}{The Parallel Scan}
 
-  With input-dependent $(A_t, B_t, C_t, \Delta_t)$ the model is no longer LTI and the FFT convolutional mode is gone. We fall back to the recurrence itself:
+  With input-dependent parameters, the convolutional mode is gone. We need to evaluate
   \[
-    h_t \;=\; A_t\, h_{t-1} + B_t\, x_t, \qquad y_t \;=\; C_t^\top h_t.
+    h_t = A_t\, h_{t-1} + B_t\, x_t, \qquad t = 0, \ldots, T{-}1
   \]
-  Computing $(h_t, y_t)_{t=0}^{T-1}$ this way is called the \textbf{selective scan}.
+  for the full sequence. Naively this is sequential ($T$ steps). Can we do better?
 
-  \vspace{0.3em}
-  \textbf{Is this sequential like an RNN?} No --- the scan is still parallelizable over $T$:
   \begin{itemize}
-    \item Each step is an \emph{affine} map $h_{t-1} \mapsto A_t h_{t-1} + B_t x_t$.
-    \item Composition of affine maps is again affine, and composition is \emph{associative}.
-    \item Any associative operation admits a \textbf{Blelloch parallel scan} (generalized prefix-sum):
-      \[
-        O(T)\ \text{work},\qquad O(\log T)\ \text{depth}.
-      \]
+    \item Each step is an \textbf{affine map}: $h \mapsto A_t h + b_t$ \quad (with $b_t = B_t x_t$).
+    \item Composition of affine maps is again affine, and \textbf{associative}.
+    \item Any associative operation over a sequence can be computed via a \textbf{parallel prefix scan} (generalized prefix-sum).
   \end{itemize}
 
   \vspace{0.3em}
-  In principle, the selective scan is as parallel as the sequence length allows: losing the convolutional mode does \emph{not} force us back to slow RNN-style inference.
+  \begin{center}
+    \begin{tabular}{lcc}
+      \toprule
+      & \textbf{Sequential (RNN)} & \textbf{Parallel scan} \\
+      \midrule
+      Depth (parallel steps) & $T$ & $O(\log T)$ \\
+      Total work             & $O(T)$ & $O(T)$--$O(T\log T)$ \\
+      \bottomrule
+    \end{tabular}
+  \end{center}
+
+  \begin{itemize}
+    \item Losing the convolutional mode does \emph{not} force us back to slow sequential inference.
+    \item Next: how the parallel prefix scan works.
+  \end{itemize}
+\end{frame}
+
+% -----------------------------------------------------------------------
+\begin{frame}{Parallel Prefix Sum (Hillis-Steele Scan)}
+
+  \textbf{Problem}: given $(x_1,\ldots,x_8)$, compute all prefix sums $s_t = \sum_{k=1}^{t} x_k$ in parallel.
+
+  \textbf{Idea}: at each step, every element adds the element \emph{stride} positions to its left. After $\lceil\log_2 T\rceil$ steps every prefix is complete. We write $x_{i:j} := \sum_{k=i}^{j} x_k$.
+
+  \begin{center}
+  \begin{tikzpicture}[
+    cell/.style={minimum width=1.0cm, minimum height=0.48cm, draw, rounded corners=1pt,
+                 font=\tiny, inner sep=1pt},
+    combine/.style={-Stealth, semithick},
+    scale=0.85, every node/.style={scale=0.85},
+  ]
+    \def\dy{-1.35}
+    \def\dx{1.25}
+
+    % ---------- Row 0: input ----------
+    \node[cell, fill=mambared!15] (a0) at (0*\dx, 0) {$x_1$};
+    \node[cell, fill=mambared!15] (a1) at (1*\dx, 0) {$x_2$};
+    \node[cell, fill=mambared!15] (a2) at (2*\dx, 0) {$x_3$};
+    \node[cell, fill=mambared!15] (a3) at (3*\dx, 0) {$x_4$};
+    \node[cell, fill=mambared!15] (a4) at (4*\dx, 0) {$x_5$};
+    \node[cell, fill=mambared!15] (a5) at (5*\dx, 0) {$x_6$};
+    \node[cell, fill=mambared!15] (a6) at (6*\dx, 0) {$x_7$};
+    \node[cell, fill=mambared!15] (a7) at (7*\dx, 0) {$x_8$};
+    \node[font=\scriptsize, anchor=east] at (-0.6, 0) {Input};
+
+    % ---------- Row 1: stride 1 ----------
+    \node[cell, fill=yellow!25] (b0) at (0*\dx, \dy) {$x_1$};
+    \node[cell, fill=yellow!25] (b1) at (1*\dx, \dy) {$x_{1:2}$};
+    \node[cell, fill=yellow!25] (b2) at (2*\dx, \dy) {$x_{2:3}$};
+    \node[cell, fill=yellow!25] (b3) at (3*\dx, \dy) {$x_{3:4}$};
+    \node[cell, fill=yellow!25] (b4) at (4*\dx, \dy) {$x_{4:5}$};
+    \node[cell, fill=yellow!25] (b5) at (5*\dx, \dy) {$x_{5:6}$};
+    \node[cell, fill=yellow!25] (b6) at (6*\dx, \dy) {$x_{6:7}$};
+    \node[cell, fill=yellow!25] (b7) at (7*\dx, \dy) {$x_{7:8}$};
+    \node[font=\scriptsize, anchor=east] at (-0.6, \dy) {Step 1};
+    \node[font=\tiny, mambagray, anchor=west] at (7*\dx+0.65, \dy) {stride $1$};
+    \foreach \i in {1,...,7} {
+      \pgfmathtruncatemacro{\j}{\i-1}
+      \draw[combine, mambagreen!80!black] (a\j.south) -- (b\i.north);
+    }
+
+    % ---------- Row 2: stride 2 ----------
+    \node[cell, fill=yellow!40] (c0) at (0*\dx, 2*\dy) {$x_1$};
+    \node[cell, fill=yellow!40] (c1) at (1*\dx, 2*\dy) {$x_{1:2}$};
+    \node[cell, fill=yellow!40] (c2) at (2*\dx, 2*\dy) {$x_{1:3}$};
+    \node[cell, fill=yellow!40] (c3) at (3*\dx, 2*\dy) {$x_{1:4}$};
+    \node[cell, fill=yellow!40] (c4) at (4*\dx, 2*\dy) {$x_{2:5}$};
+    \node[cell, fill=yellow!40] (c5) at (5*\dx, 2*\dy) {$x_{3:6}$};
+    \node[cell, fill=yellow!40] (c6) at (6*\dx, 2*\dy) {$x_{4:7}$};
+    \node[cell, fill=yellow!40] (c7) at (7*\dx, 2*\dy) {$x_{5:8}$};
+    \node[font=\scriptsize, anchor=east] at (-0.6, 2*\dy) {Step 2};
+    \node[font=\tiny, mambagray, anchor=west] at (7*\dx+0.65, 2*\dy) {stride $2$};
+    \foreach \i in {2,...,7} {
+      \pgfmathtruncatemacro{\j}{\i-2}
+      \draw[combine, mambablue!80!black] (b\j.south) -- (c\i.north);
+    }
+
+    % ---------- Row 3: stride 4 (result = all prefixes from x_1) ----------
+    \node[cell, fill=mambagreen!25] (d0) at (0*\dx, 3*\dy) {$x_1$};
+    \node[cell, fill=mambagreen!25] (d1) at (1*\dx, 3*\dy) {$x_{1:2}$};
+    \node[cell, fill=mambagreen!25] (d2) at (2*\dx, 3*\dy) {$x_{1:3}$};
+    \node[cell, fill=mambagreen!25] (d3) at (3*\dx, 3*\dy) {$x_{1:4}$};
+    \node[cell, fill=mambagreen!25] (d4) at (4*\dx, 3*\dy) {$x_{1:5}$};
+    \node[cell, fill=mambagreen!25] (d5) at (5*\dx, 3*\dy) {$x_{1:6}$};
+    \node[cell, fill=mambagreen!25] (d6) at (6*\dx, 3*\dy) {$x_{1:7}$};
+    \node[cell, fill=mambagreen!25] (d7) at (7*\dx, 3*\dy) {$x_{1:8}$};
+    \node[font=\scriptsize, anchor=east] at (-0.6, 3*\dy) {Result};
+    \node[font=\tiny, mambagray, anchor=west] at (7*\dx+0.65, 3*\dy) {stride $4$};
+    \foreach \i in {4,...,7} {
+      \pgfmathtruncatemacro{\j}{\i-4}
+      \draw[combine, violet!80!black] (c\j.south) -- (d\i.north);
+    }
+
+    % ---------- legend ----------
+    \draw[combine, mambagreen!80!black] (0.3, 3*\dy-0.75) -- ++(0.5,0)
+      node[right, font=\tiny, black] {combine from stride 1};
+    \draw[combine, mambablue!80!black] (3.2, 3*\dy-0.75) -- ++(0.5,0)
+      node[right, font=\tiny, black] {combine from stride 2};
+    \draw[combine, violet!80!black] (6.1, 3*\dy-0.75) -- ++(0.5,0)
+      node[right, font=\tiny, black] {combine from stride 4};
+  \end{tikzpicture}
+  \end{center}
+
+  \begin{itemize}
+    \item Cells without an incoming arrow pass through unchanged.
+    \item $\lceil\log_2 T\rceil$ parallel steps $\Rightarrow$ depth $O(\log T)$, work $O(T\log T)$.
+    \item Here we use $+$ for illustration. The same algorithm works for \emph{any} associative operator $\oplus$, as we will see next.
+  \end{itemize}
+\end{frame}
+
+% -----------------------------------------------------------------------
+\begin{frame}{Blelloch Scan: Up-Sweep (Reduce)}
+
+  \begin{itemize}
+    \item Hillis-Steele does $O(T\log T)$ total work. The \textbf{Blelloch scan} reduces this to $O(T)$ using two phases.
+    \item \textbf{Phase 1 (up-sweep)}: at each level, only positions at stride $2^{d+1}$ accumulate from their left neighbor at distance $2^d$.
+  \end{itemize}
+
+  \begin{center}
+  \begin{tikzpicture}[
+    cell/.style={minimum width=1.0cm, minimum height=0.48cm, draw, rounded corners=1pt,
+                 font=\tiny, inner sep=1pt},
+    gray cell/.style={cell, fill=gray!12, text=gray!50},
+    combine/.style={-Stealth, semithick},
+    scale=0.85, every node/.style={scale=0.85},
+  ]
+    \def\dy{-1.35}
+    \def\dx{1.25}
+
+    % ---------- Row 0: input ----------
+    \node[cell, fill=mambared!15] (a0) at (0*\dx, 0) {$x_1$};
+    \node[cell, fill=mambared!15] (a1) at (1*\dx, 0) {$x_2$};
+    \node[cell, fill=mambared!15] (a2) at (2*\dx, 0) {$x_3$};
+    \node[cell, fill=mambared!15] (a3) at (3*\dx, 0) {$x_4$};
+    \node[cell, fill=mambared!15] (a4) at (4*\dx, 0) {$x_5$};
+    \node[cell, fill=mambared!15] (a5) at (5*\dx, 0) {$x_6$};
+    \node[cell, fill=mambared!15] (a6) at (6*\dx, 0) {$x_7$};
+    \node[cell, fill=mambared!15] (a7) at (7*\dx, 0) {$x_8$};
+    \node[font=\scriptsize, anchor=east] at (-0.6, 0) {Input};
+
+    % ---------- Row 1: stride 1 (positions 1,3,5,7 active) ----------
+    \node[gray cell] (b0) at (0*\dx, \dy) {$x_1$};
+    \node[cell, fill=yellow!25] (b1) at (1*\dx, \dy) {$x_{1:2}$};
+    \node[gray cell] (b2) at (2*\dx, \dy) {$x_3$};
+    \node[cell, fill=yellow!25] (b3) at (3*\dx, \dy) {$x_{3:4}$};
+    \node[gray cell] (b4) at (4*\dx, \dy) {$x_5$};
+    \node[cell, fill=yellow!25] (b5) at (5*\dx, \dy) {$x_{5:6}$};
+    \node[gray cell] (b6) at (6*\dx, \dy) {$x_7$};
+    \node[cell, fill=yellow!25] (b7) at (7*\dx, \dy) {$x_{7:8}$};
+    \node[font=\scriptsize, anchor=east] at (-0.6, \dy) {Level 1};
+    \node[font=\tiny, mambagray, anchor=west] at (7*\dx+0.65, \dy) {stride $1$};
+    % arrows: each active position accumulates from its left neighbor
+    \foreach \src/\dst in {0/1, 2/3, 4/5, 6/7} {
+      \draw[combine, mambagreen!80!black] (a\src.south) -- (b\dst.north);
+    }
+
+    % ---------- Row 2: stride 2 (positions 3,7 active) ----------
+    \node[gray cell] (c0) at (0*\dx, 2*\dy) {$x_1$};
+    \node[gray cell] (c1) at (1*\dx, 2*\dy) {$x_{1:2}$};
+    \node[gray cell] (c2) at (2*\dx, 2*\dy) {$x_3$};
+    \node[cell, fill=yellow!40] (c3) at (3*\dx, 2*\dy) {$x_{1:4}$};
+    \node[gray cell] (c4) at (4*\dx, 2*\dy) {$x_5$};
+    \node[gray cell] (c5) at (5*\dx, 2*\dy) {$x_{5:6}$};
+    \node[gray cell] (c6) at (6*\dx, 2*\dy) {$x_7$};
+    \node[cell, fill=yellow!40] (c7) at (7*\dx, 2*\dy) {$x_{5:8}$};
+    \node[font=\scriptsize, anchor=east] at (-0.6, 2*\dy) {Level 2};
+    \node[font=\tiny, mambagray, anchor=west] at (7*\dx+0.65, 2*\dy) {stride $2$};
+    \draw[combine, mambablue!80!black] (b1.south) -- (c3.north);
+    \draw[combine, mambablue!80!black] (b5.south) -- (c7.north);
+
+    % ---------- Row 3: stride 4 (position 7 active = root) ----------
+    \node[gray cell] (d0) at (0*\dx, 3*\dy) {$x_1$};
+    \node[gray cell] (d1) at (1*\dx, 3*\dy) {$x_{1:2}$};
+    \node[gray cell] (d2) at (2*\dx, 3*\dy) {$x_3$};
+    \node[gray cell] (d3) at (3*\dx, 3*\dy) {$x_{1:4}$};
+    \node[gray cell] (d4) at (4*\dx, 3*\dy) {$x_5$};
+    \node[gray cell] (d5) at (5*\dx, 3*\dy) {$x_{5:6}$};
+    \node[gray cell] (d6) at (6*\dx, 3*\dy) {$x_7$};
+    \node[cell, fill=mambagreen!25] (d7) at (7*\dx, 3*\dy) {$x_{1:8}$};
+    \node[font=\scriptsize, anchor=east] at (-0.6, 3*\dy) {Root};
+    \node[font=\tiny, mambagray, anchor=west] at (7*\dx+0.65, 3*\dy) {stride $4$};
+    \draw[combine, violet!80!black] (c3.south) -- (d7.north);
+  \end{tikzpicture}
+  \end{center}
+
+  \begin{itemize}
+    \item Only the colored cells participate at each level; gray cells are untouched.
+    \item Total additions: $4 + 2 + 1 = T{-}1$. After up-sweep, only position 7 (the root) holds a complete prefix sum.
+  \end{itemize}
+\end{frame}
+
+% -----------------------------------------------------------------------
+\begin{frame}{Blelloch Scan: Down-Sweep}
+
+  \begin{itemize}
+    \item \textbf{Phase 2 (down-sweep)}: propagate prefix sums top-down.
+    \item Set root to $0$. At each level, for each pair at distance stride: left gets parent, right gets parent $+$ old left.
+  \end{itemize}
+
+  \begin{center}
+  \begin{tikzpicture}[
+    cell/.style={minimum width=1.0cm, minimum height=0.48cm, draw, rounded corners=1pt,
+                 font=\tiny, inner sep=1pt},
+    gray cell/.style={cell, fill=gray!12, text=gray!45},
+    parent/.style={-Stealth, semithick, mambablue!80!black},
+    oldleft/.style={-Stealth, semithick, mambared!70!black},
+    scale=0.85, every node/.style={scale=0.85},
+  ]
+    \def\dy{-1.35}
+    \def\dx{1.25}
+
+    % ---------- Row 0: up-sweep result with root zeroed ----------
+    % Gray cells show carried up-sweep values; pos 7 is zeroed (blue)
+    \node[gray cell] (a0) at (0*\dx, 0) {$x_1$};
+    \node[gray cell] (a1) at (1*\dx, 0) {$x_{1:2}$};
+    \node[gray cell] (a2) at (2*\dx, 0) {$x_3$};
+    \node[gray cell] (a3) at (3*\dx, 0) {$x_{1:4}$};
+    \node[gray cell] (a4) at (4*\dx, 0) {$x_5$};
+    \node[gray cell] (a5) at (5*\dx, 0) {$x_{5:6}$};
+    \node[gray cell] (a6) at (6*\dx, 0) {$x_7$};
+    \node[cell, fill=mambablue!20] (a7) at (7*\dx, 0) {$0$};
+    \node[font=\scriptsize, anchor=east] at (-0.6, 0) {Start};
+
+    % ---------- Row 1: stride 4 (positions 3,7 active) ----------
+    \node[gray cell] (b0) at (0*\dx, \dy) {$x_1$};
+    \node[gray cell] (b1) at (1*\dx, \dy) {$x_{1:2}$};
+    \node[gray cell] (b2) at (2*\dx, \dy) {$x_3$};
+    \node[cell, fill=mambablue!20] (b3) at (3*\dx, \dy) {$0$};
+    \node[gray cell] (b4) at (4*\dx, \dy) {$x_5$};
+    \node[gray cell] (b5) at (5*\dx, \dy) {$x_{5:6}$};
+    \node[gray cell] (b6) at (6*\dx, \dy) {$x_7$};
+    \node[cell, fill=mambablue!20] (b7) at (7*\dx, \dy) {$x_{1:4}$};
+    \node[font=\scriptsize, anchor=east] at (-0.6, \dy) {Level 1};
+    \node[font=\tiny, mambagray, anchor=west] at (7*\dx+0.65, \dy) {stride $4$};
+    % parent (right pos) propagates to left child
+    \draw[parent] (a7.south) -- (b3.north);
+    % right child = parent + old left
+    \draw[parent] (a7.south) -- (b7.north);
+    \draw[oldleft] (a3.south) -- (b7.north);
+
+    % ---------- Row 2: stride 2 (positions 1,3,5,7 active) ----------
+    \node[gray cell] (c0) at (0*\dx, 2*\dy) {$x_1$};
+    \node[cell, fill=mambablue!20] (c1) at (1*\dx, 2*\dy) {$0$};
+    \node[gray cell] (c2) at (2*\dx, 2*\dy) {$x_3$};
+    \node[cell, fill=mambablue!20] (c3) at (3*\dx, 2*\dy) {$x_{1:2}$};
+    \node[gray cell] (c4) at (4*\dx, 2*\dy) {$x_5$};
+    \node[cell, fill=mambablue!20] (c5) at (5*\dx, 2*\dy) {$x_{1:4}$};
+    \node[gray cell] (c6) at (6*\dx, 2*\dy) {$x_7$};
+    \node[cell, fill=mambablue!20] (c7) at (7*\dx, 2*\dy) {$x_{1:6}$};
+    \node[font=\scriptsize, anchor=east] at (-0.6, 2*\dy) {Level 2};
+    \node[font=\tiny, mambagray, anchor=west] at (7*\dx+0.65, 2*\dy) {stride $2$};
+    % parent to left
+    \draw[parent] (b3.south) -- (c1.north);
+    \draw[parent] (b7.south) -- (c5.north);
+    % right = parent + old left
+    \draw[parent] (b3.south) -- (c3.north);
+    \draw[oldleft] (b1.south) -- (c3.north);
+    \draw[parent] (b7.south) -- (c7.north);
+    \draw[oldleft] (b5.south) -- (c7.north);
+
+    % ---------- Row 3: stride 1 (all positions active = result) ----------
+    \node[cell, fill=mambagreen!20] (d0) at (0*\dx, 3*\dy) {$0$};
+    \node[cell, fill=mambagreen!20] (d1) at (1*\dx, 3*\dy) {$x_1$};
+    \node[cell, fill=mambagreen!20] (d2) at (2*\dx, 3*\dy) {$x_{1:2}$};
+    \node[cell, fill=mambagreen!20] (d3) at (3*\dx, 3*\dy) {$x_{1:3}$};
+    \node[cell, fill=mambagreen!20] (d4) at (4*\dx, 3*\dy) {$x_{1:4}$};
+    \node[cell, fill=mambagreen!20] (d5) at (5*\dx, 3*\dy) {$x_{1:5}$};
+    \node[cell, fill=mambagreen!20] (d6) at (6*\dx, 3*\dy) {$x_{1:6}$};
+    \node[cell, fill=mambagreen!20] (d7) at (7*\dx, 3*\dy) {$x_{1:7}$};
+    \node[font=\scriptsize, anchor=east] at (-0.6, 3*\dy) {Result};
+    \node[font=\tiny, mambagray, anchor=west] at (7*\dx+0.65, 3*\dy) {stride $1$};
+    % parent to left
+    \foreach \src in {1,3,5,7} {
+      \pgfmathtruncatemacro{\dst}{\src-1}
+      \draw[parent] (c\src.south) -- (d\dst.north);
+    }
+    % right = parent + old left
+    \foreach \src in {1,3,5,7} {
+      \pgfmathtruncatemacro{\oleft}{\src-1}
+      \draw[parent] (c\src.south) -- (d\src.north);
+      \draw[oldleft] (c\oleft.south) -- (d\src.north);
+    }
+
+    % ---------- legend ----------
+    \draw[parent] (0.3, 3*\dy-0.75) -- ++(0.5,0)
+      node[right, font=\tiny, black] {parent $\to$ child};
+    \draw[oldleft] (4.0, 3*\dy-0.75) -- ++(0.5,0)
+      node[right, font=\tiny, black] {old left $\to$ right child};
+  \end{tikzpicture}
+  \end{center}
+
+  \begin{itemize}
+    \item Leaves hold the \textbf{exclusive prefix sums}: position $i$ gets $\sum_{k=1}^{i-1} x_k$. Adding $x_i$ gives the inclusive prefix sum.
+    \item Work: $T{-}1$ ops. Both phases together: $2(T{-}1) = O(T)$ total, $2\log_2 T$ depth.
+  \end{itemize}
+
+  \begin{center}
+    \begin{tabular}{lcc}
+      \toprule
+      & \textbf{Hillis-Steele} & \textbf{Blelloch} \\
+      \midrule
+      Total work & $O(T\log T)$ & $O(T)$ \\
+      Depth      & $\log_2 T$ & $2\log_2 T$ \\
+      \bottomrule
+    \end{tabular}
+  \end{center}
+\end{frame}
+
+% -----------------------------------------------------------------------
+\begin{frame}{Applying the Parallel Scan to the SSM}
+
+  \begin{itemize}
+    \item Map each time step to a pair $e_t = (A_t,\, b_t)$ with $b_t = B_t x_t$.
+    \item Apply the scan under
+    \(
+      (A',\, b') \oplus (A,\, b) = (A'\!A,\ A'\!b + b').
+    \)
+  \end{itemize}
+
+  \begin{center}
+  \begin{tikzpicture}[
+    cell/.style={minimum width=1.3cm, minimum height=0.5cm, draw, rounded corners=2pt,
+                 font=\tiny, inner sep=2pt, align=center},
+    combine/.style={-Stealth, semithick},
+    scale=0.85, every node/.style={scale=0.85},
+  ]
+    \def\dy{-1.4}
+    \def\dx{2.1}
+
+    % ---------- Row 0: input pairs ----------
+    \node[cell, fill=mambared!15] (a0) at (0*\dx, 0) {$e_0 = (A_0, b_0)$};
+    \node[cell, fill=mambared!15] (a1) at (1*\dx, 0) {$e_1 = (A_1, b_1)$};
+    \node[cell, fill=mambared!15] (a2) at (2*\dx, 0) {$e_2 = (A_2, b_2)$};
+    \node[cell, fill=mambared!15] (a3) at (3*\dx, 0) {$e_3 = (A_3, b_3)$};
+    \node[font=\scriptsize, anchor=east] at (-1.1, 0) {Input};
+
+    % ---------- Row 1: after stride 1 ----------
+    \node[cell, fill=yellow!25] (b0) at (0*\dx, \dy) {$e_0$};
+    \node[cell, fill=yellow!25] (b1) at (1*\dx, \dy) {$e_{0:1}$};
+    \node[cell, fill=yellow!25] (b2) at (2*\dx, \dy) {$e_{1:2}$};
+    \node[cell, fill=yellow!25] (b3) at (3*\dx, \dy) {$e_{2:3}$};
+    \node[font=\scriptsize, anchor=east] at (-1.1, \dy) {Step 1};
+    \node[font=\tiny, mambagray, anchor=west] at (3*\dx+0.8, \dy) {stride $1$};
+    \foreach \i in {1,...,3} {
+      \pgfmathtruncatemacro{\j}{\i-1}
+      \draw[combine, mambagreen!80!black] (a\j.south) -- (b\i.north);
+    }
+
+    % ---------- Row 2: after stride 2 (= result for T=4) ----------
+    \node[cell, fill=mambagreen!20] (c0) at (0*\dx, 2*\dy) {$e_0$};
+    \node[cell, fill=mambagreen!20] (c1) at (1*\dx, 2*\dy) {$e_{0:1}$};
+    \node[cell, fill=mambagreen!20] (c2) at (2*\dx, 2*\dy) {$e_{0:2}$};
+    \node[cell, fill=mambagreen!20] (c3) at (3*\dx, 2*\dy) {$e_{0:3}$};
+    \node[font=\scriptsize, anchor=east] at (-1.1, 2*\dy) {Result};
+    \node[font=\tiny, mambagray, anchor=west] at (3*\dx+0.8, 2*\dy) {stride $2$};
+    \foreach \i in {2,3} {
+      \pgfmathtruncatemacro{\j}{\i-2}
+      \draw[combine, mambablue!80!black] (b\j.south) -- (c\i.north);
+    }
+  \end{tikzpicture}
+  \end{center}
+
+  \begin{itemize}
+    \item \textbf{Reading off $h_t$:} the second component of $e_{0:t}$ (applied to $h_{-1}=0$) gives $h_t$.
+    \item Example for position 2:
+  \end{itemize}
+  \[
+    e_{0:2} = \underbrace{e_{1:2}}_{\text{step 1, pos 2}} \!\oplus\, \underbrace{e_0}_{\text{step 1, pos 0}}
+    = (A_2 A_1,\, A_2 b_1 + b_2) \oplus (A_0,\, b_0)
+    = (\cdots,\, \underbrace{A_2 A_1 b_0 + A_2 b_1 + b_2}_{= h_2}).
+  \]
+  \begin{itemize}
+    \item All $T$ hidden states computed in $\lceil\log_2 T\rceil$ parallel rounds instead of $T$ sequential steps.
+    \item Each round involves only matrix multiplications and additions.
+    \item The same idea works with Blelloch (up-sweep + down-sweep) for $O(T)$ total work.
+  \end{itemize}
 \end{frame}
 
 % -----------------------------------------------------------------------
 \begin{frame}{But the Selective Scan is Memory-Bound}
 
-  On paper the parallel scan looks cheap: $O(T)$ work, $O(\log T)$ depth. In practice the bottleneck on modern GPUs is \alert{memory bandwidth}, not arithmetic.
-  \begin{center}
-    \begin{tabular}{lcc}
-      \toprule
-      & \textbf{SRAM (on-chip)} & \textbf{HBM (off-chip)} \\
-      \midrule
-      Size      & $\sim$20 MB   & $\sim$80 GB \\
-      Bandwidth & $\sim$19 TB/s & $\sim$3 TB/s \\
-      \bottomrule
-    \end{tabular}
-  \end{center}
+  On paper the parallel scan looks cheap: $O(T)$ work, $O(\log T)$ depth. In practice, the bottleneck on modern GPUs is \alert{memory bandwidth}, not arithmetic.
 
-  \textbf{Why the scan hurts:}
   \begin{itemize}
-    \item The hidden state $h_t \in \R^N$ per channel, across $D$ channels, is much larger than the scalar input $x_t$: per token, the state can hold $D\cdot N \sim 10^4$--$10^5$ numbers.
-    \item A naive implementation runs discretization, scan and output projection as \emph{separate} GPU kernels, each reading/writing the full $h_t$ tensor to HBM at every time step.
-    \item Result: the SSM is \emph{memory-bound}, not compute-bound. HBM traffic, not FLOPs, determines wall-clock time.
+    \item GPUs have a small, very fast \textbf{on-chip memory} (SRAM) and a large, much slower \textbf{off-chip memory} (HBM). The bandwidth gap is $\sim$6$\times$.
+    \item The hidden state $h_t \in \R^N$ per channel is \emph{much} larger than the scalar input $x_t$. The full state tensor across all channels can hold $10^4$--$10^5$ numbers per token.
+    \item A naive implementation runs discretization, scan and output projection as \emph{separate} GPU kernels. Each kernel writes the full $h_t$ tensor to off-chip memory and the next kernel reads it back.
+    \item These repeated round-trips to slow off-chip memory dominate wall-clock time. The scan becomes \emph{memory-bound}, not compute-bound.
   \end{itemize}
 
   \begin{alertblock}{Takeaway}
-    Arithmetic cost is fine; the cost that matters is \textbf{HBM round-trips per step}. We need an implementation that keeps the intermediate state off of HBM.
+    Arithmetic cost is fine; the cost that matters is \textbf{off-chip memory round-trips per step}. We need an implementation that keeps the intermediate state in fast on-chip memory.
   \end{alertblock}
 \end{frame}
 
@@ -604,57 +964,168 @@
 \end{frame}
 
 % -----------------------------------------------------------------------
-\begin{frame}{Mamba-1 Architecture}
+\begin{frame}{Mamba-1 Block~\cite{gu2024mamba}}
+  \begin{columns}[T]
+    \begin{column}{0.64\textwidth}
+      \begin{center}
+      \begin{tikzpicture}[
+        op/.style={draw, thick, rounded corners=1pt, fill=white,
+                   minimum height=0.45cm, minimum width=2.1cm,
+                   font=\tiny, align=center, inner sep=2pt},
+        ssmbox/.style={draw, thick, rounded corners=1pt, fill=black!80, text=white,
+                       minimum height=0.55cm, minimum width=2.1cm,
+                       font=\tiny, align=center, inner sep=2pt},
+        silu/.style={draw, thick, rounded corners=1pt, fill=white,
+                     minimum height=0.4cm, minimum width=1.0cm, font=\tiny},
+        mul/.style={draw, thick, circle, fill=white, inner sep=0pt,
+                    minimum size=0.42cm, font=\tiny},
+        dim/.style={font=\tiny, mambagray},
+        arr/.style={-Stealth, semithick},
+        cellB/.style={fill=cyan!40, draw=cyan!60!black, thin},
+        cellO/.style={fill=orange!55, draw=orange!70!black, thin},
+        scale=0.72, every node/.style={scale=0.72},
+      ]
+        \def\cw{0.28}
+        \def\ch{0.32}
 
-  \begin{columns}
-    \begin{column}{0.55\textwidth}
-      Each Mamba layer processes tokens via:
-      \begin{enumerate}
-        \item \textbf{Two parallel branches} from input projection:
-          \begin{itemize}
-            \item Branch A: Linear $\to$ Conv1d $\to$ SiLU $\to$ SSM
-            \item Branch B: Linear $\to$ SiLU (gate)
-          \end{itemize}
-        \item SSM branch produces $B_t, C_t, \Delta_t$ from the activated input
-        \item Selective scan computes output
-        \item \textbf{Gated output}: multiply SSM output with Branch B, then project
-      \end{enumerate}
+        % stream centers
+        \def\Hx{-1.0}   % hidden_states stream x
+        \def\Rx{5.2}    % residual stream x
+        \def\Lb{-2.0}   % left (conv) branch x
+        \def\Rb{1.9}    % right (gate) branch x
 
-      \vspace{0.5em}
+        % ===================== Top inputs =====================
+        \node[font=\scriptsize] at (\Hx, 9.3) {hidden\_states};
+        \foreach \i in {0,1,2,3,4} {
+          \draw[cellB] (\Hx-0.7+\i*\cw, 8.55) rectangle (\Hx-0.7+\cw+\i*\cw, 8.55+\ch);
+        }
+        \node[dim, anchor=west] at (\Hx+0.85, 8.72) {$[L,\,d_{\text{model}}]$};
+
+        \node[font=\scriptsize] at (\Rx, 9.3) {residual};
+        \foreach \i in {0,1,2,3,4} {
+          \draw[cellO] (\Rx-0.7+\i*\cw, 8.55) rectangle (\Rx-0.7+\cw+\i*\cw, 8.55+\ch);
+        }
+        \node[dim, anchor=west] at (\Rx+0.85, 8.72) {$[L,\,d_{\text{model}}]$};
+
+        % ===================== Block border =====================
+        \draw[very thick, rounded corners=10pt, black!65, densely dashed]
+          (-3.8, -1.25) rectangle (7.3, 8.2);
+
+        % ===================== RMS Norm =====================
+        \node[op] (norm) at (\Hx, 7.55) {RMS Norm};
+        \draw[arr] (\Hx, 8.55) -- (norm.north);
+
+        \foreach \i in {0,1,2,3,4} {
+          \draw[cellB] (\Hx-0.7+\i*\cw, 6.75) rectangle (\Hx-0.7+\cw+\i*\cw, 6.75+\ch);
+        }
+        \node[dim, anchor=west] at (\Hx+0.85, 6.92) {$[L,\,d_{\text{model}}]$};
+        \draw[arr] (norm.south) -- (\Hx, 7.10);
+
+        % ===================== Input Projection =====================
+        \node[op] (inproj) at (\Hx, 6.15) {Input Projection};
+        \node[dim, anchor=east] at (-2.4, 6.15) {\textit{in\_proj}};
+        \draw[arr] (\Hx, 6.75) -- (inproj.north);
+
+        % cells after in_proj: 2 * d_inner (two clusters of 5 cells each)
+        \foreach \i in {0,1,2,3,4} {
+          \draw[cellB] (\Lb-0.7+\i*\cw, 5.25) rectangle (\Lb-0.7+\cw+\i*\cw, 5.25+\ch);
+        }
+        \foreach \i in {0,1,2,3,4} {
+          \draw[cellB] (\Rb-0.7+\i*\cw, 5.25) rectangle (\Rb-0.7+\cw+\i*\cw, 5.25+\ch);
+        }
+        \node[dim, anchor=west] at (3.35, 5.42) {$[L,\,2\,d_{\text{inner}}]$};
+
+        % split arrows
+        \draw[arr] (inproj.south) -- (\Hx, 5.85) -| (\Lb, 5.60);
+        \draw[arr] (\Hx, 5.85) -| (\Rb, 5.60);
+
+        % ===================== Convolution =====================
+        \node[op, minimum width=1.8cm] (conv) at (\Lb, 4.55) {Convolution};
+        \draw[arr] (\Lb, 5.25) -- (conv.north);
+
+        \foreach \i in {0,1,2,3,4} {
+          \draw[cellB] (\Lb-0.7+\i*\cw, 3.70) rectangle (\Lb-0.7+\cw+\i*\cw, 3.70+\ch);
+        }
+        \node[dim, anchor=east] at (-3.0, 3.87) {$[L,\,d_{\text{inner}}]$};
+        \draw[arr] (conv.south) -- (\Lb, 4.05);
+
+        % ===================== SiLU left / right =====================
+        \node[silu] (siluL) at (\Lb, 3.20) {SiLU};
+        \draw[arr] (\Lb, 3.70) -- (siluL.north);
+
+        \node[silu] (siluR) at (\Rb, 3.20) {SiLU};
+        \draw[arr] (\Rb, 5.25) -- (siluR.north);
+
+        % ===================== Selective SSM =====================
+        \node[ssmbox] (ssm) at (\Lb, 2.20) {Selective SSM};
+        \draw[arr] (siluL.south) -- (ssm.north);
+        \node[dim, anchor=east] at (-3.0, 2.20) {\textit{mamba\_inner\_fn}};
+
+        \foreach \i in {0,1,2,3,4} {
+          \draw[cellB] (\Lb-0.7+\i*\cw, 1.25) rectangle (\Lb-0.7+\cw+\i*\cw, 1.25+\ch);
+        }
+        \draw[arr] (ssm.south) -- (\Lb, 1.60);
+        \node[dim, anchor=east] at (-3.0, 1.42) {$[L,\,d_{\text{inner}}]$};
+
+        % ===================== Multiply =====================
+        \node[mul] (mult) at (-0.05, 0.60) {$\times$};
+        \draw[arr] (\Lb, 1.25) |- (mult.west);
+        \draw[arr] (\Rb, 2.95) |- (mult.east);
+
+        \foreach \i in {0,1,2,3,4} {
+          \draw[cellB] (-0.05-0.7+\i*\cw, -0.25) rectangle (-0.05-0.7+\cw+\i*\cw, -0.25+\ch);
+        }
+        \draw[arr] (mult.south) -- (-0.05, 0.10);
+
+        % ===================== Output Projection =====================
+        \node[op] (outproj) at (-0.05, -0.90) {Output Projection};
+        \draw[arr] (-0.05, -0.25) -- (outproj.north);
+        \node[dim, anchor=west] at (2.2, -0.90) {\textit{out\_proj}};
+
+        % ===================== Outputs =====================
+        \draw[arr] (outproj.south) -- (-0.05, -1.90);
+        \foreach \i in {0,1,2,3,4} {
+          \draw[cellB] (-0.05-0.7+\i*\cw, -2.25) rectangle (-0.05-0.7+\cw+\i*\cw, -2.25+\ch);
+        }
+        \node[dim, anchor=west] at (-0.05+0.85, -2.08) {$[L,\,d_{\text{model}}]$};
+        \node[font=\scriptsize] at (-0.05, -2.75) {hidden\_states};
+
+        % residual pass-through (straight down on right side)
+        \draw[arr] (\Rx, 8.55) -- (\Rx, -1.90);
+        \foreach \i in {0,1,2,3,4} {
+          \draw[cellO] (\Rx-0.7+\i*\cw, -2.25) rectangle (\Rx-0.7+\cw+\i*\cw, -2.25+\ch);
+        }
+        \node[dim, anchor=west] at (\Rx+0.85, -2.08) {$[L,\,d_{\text{model}}]$};
+        \node[font=\scriptsize] at (\Rx, -2.75) {residual};
+
+      \end{tikzpicture}
+      \end{center}
+    \end{column}
+    \begin{column}{0.34\textwidth}
       \textbf{Key design choices:}
       \begin{itemize}
-        \item $A$ is diagonal with $N$ elements per channel
-        \item $P = 1$: each channel has its own SSM (no shared heads)
-        \item Typical: $N = 16$, $d_\text{model}$ up to 2048+
+        \item $\bar{A}$ diagonal: $N$ decay rates per channel
+        \item $P\!=\!1$: each of the $E$ channels runs its own SSM
+        \item $B_t, C_t \in \R^N$ shared across channels; $\Delta_t \in \R^E$ per-channel
+        \item Expansion $E/D = 2$
+        \item Conv1d: causal depthwise, kernel $4$
       \end{itemize}
-    \end{column}
-    \begin{column}{0.42\textwidth}
-      \begin{tikzpicture}[
-        box/.style={draw, rounded corners, fill=mambablue!10, text width=2.8cm,
-                    align=center, font=\small, minimum height=0.6cm},
-        arr/.style={-Stealth, thick},
-        scale=0.9, every node/.style={scale=0.9},
-      ]
-        \node[box] (inp) at (0,6.0) {Input $u$};
-        \node[box, text width=1.2cm] (la) at (-1.2,4.8) {Linear};
-        \node[box, text width=1.2cm] (lb) at (1.2,4.8) {Linear};
-        \node[box, text width=1.4cm] (conv) at (-1.2,3.6) {Conv1d};
-        \node[box, text width=1.4cm] (silu1) at (-1.2,2.6) {SiLU};
-        \node[box, text width=1.4cm] (silu2) at (1.2,2.6) {SiLU};
-        \node[box, fill=mambagreen!15, text width=1.4cm] (ssm) at (-1.2,1.4) {SSM};
-        \node[box] (mul) at (0,0.4) {$\otimes$};
-        \node[box] (out) at (0,-0.6) {Linear};
 
-        \draw[arr] (inp) -- (la);
-        \draw[arr] (inp) -- (lb);
-        \draw[arr] (la) -- (conv);
-        \draw[arr] (conv) -- (silu1);
-        \draw[arr] (silu1) -- (ssm);
-        \draw[arr] (lb) -- (silu2);
-        \draw[arr] (ssm) -- (mul);
-        \draw[arr] (silu2) -- (mul);
-        \draw[arr] (mul) -- (out);
-      \end{tikzpicture}
+      \vspace{0.3em}
+      \textbf{Typical values:}
+      \begin{itemize}
+        \item $D = 2048$
+        \item $E = 2D = 4096$
+        \item $N = 16$
+      \end{itemize}
+
+      \vspace{0.3em}
+      \textbf{Color code:}
+      \begin{itemize}
+        \item \textcolor{cyan!70!black}{Blue cells}: hidden states
+        \item \textcolor{orange!80!black}{Orange cells}: residual stream
+        \item \textcolor{black!80}{\textbf{Dark box}}: Selective SSM (fused kernel)
+      \end{itemize}
     \end{column}
   \end{columns}
 \end{frame}
@@ -724,51 +1195,145 @@
   \textbf{The one structural change in Mamba-2:}
 
   \begin{center}
-    \begin{tabular}{lcl}
-      \toprule
-      Structure & Shape of $A$ & Description \\
-      \midrule
-      General   & $(T, N, N)$   & Unrestricted matrix \\
-      Diagonal  & $(T, N)$      & Mamba-1 \\
-      \textbf{Scalar $\times$ Identity} & $(T)$ & \textbf{Mamba-2 / SSD} \\
-      \bottomrule
-    \end{tabular}
+  \begin{tikzpicture}[
+    cell/.style={minimum size=0.38cm, draw, thin, inner sep=0pt, font=\tiny},
+    scale=0.85, every node/.style={scale=0.85},
+  ]
+    \def\sz{0.42}
+    % --- General (full matrix) ---
+    \node[font=\scriptsize\bfseries] at (1.5*\sz, 4.5*\sz) {General};
+    \foreach \r in {0,...,3} {
+      \foreach \c in {0,...,3} {
+        \node[cell, fill=yellow!35] at (\c*\sz, -\r*\sz) {};
+      }
+    }
+    \node[font=\tiny, mambagray] at (1.5*\sz, -4.2*\sz) {$A_t \in \R^{N \times N}$};
+    \node[font=\tiny, mambagray] at (1.5*\sz, -5*\sz) {$(T, N, N)$ params};
+
+    % --- Diagonal (Mamba-1) ---
+    \def\offx{3.5}
+    \node[font=\scriptsize\bfseries] at (\offx+1.5*\sz, 4.5*\sz) {Diagonal (Mamba-1)};
+    \foreach \r in {0,...,3} {
+      \foreach \c in {0,...,3} {
+        \ifnum\r=\c
+          \node[cell, fill=mambagreen!40] at (\offx+\c*\sz, -\r*\sz) {$a_{\the\numexpr\r+1}$};
+        \else
+          \node[cell, fill=gray!10] at (\offx+\c*\sz, -\r*\sz) {};
+        \fi
+      }
+    }
+    \node[font=\tiny, mambagray] at (\offx+1.5*\sz, -4.2*\sz) {$A_t = \operatorname{diag}(a_1,\ldots,a_N)$};
+    \node[font=\tiny, mambagray] at (\offx+1.5*\sz, -5*\sz) {$(T, N)$ params};
+
+    % --- Scalar x I (Mamba-2) ---
+    \def\offxx{7.5}
+    \node[font=\scriptsize\bfseries, mambablue] at (\offxx+1.5*\sz, 4.5*\sz) {Scalar $\times\, I$ (Mamba-2)};
+    \foreach \r in {0,...,3} {
+      \foreach \c in {0,...,3} {
+        \ifnum\r=\c
+          \node[cell, fill=mambablue!30] at (\offxx+\c*\sz, -\r*\sz) {$a$};
+        \else
+          \node[cell, fill=gray!10] at (\offxx+\c*\sz, -\r*\sz) {};
+        \fi
+      }
+    }
+    \node[font=\tiny, mambagray] at (\offxx+1.5*\sz, -4.2*\sz) {$A_t = a_t \cdot I_N$};
+    \node[font=\tiny, mambagray] at (\offxx+1.5*\sz, -5*\sz) {$(T)$ params};
+
+    % --- Arrows between matrices ---
+    \draw[-Stealth, thick, mambagray] (2.8, -0.6*\sz) -- (3.2, -0.6*\sz);
+    \draw[-Stealth, thick, mambagray] (2.8+\offx-0.5, -0.6*\sz) -- (3.2+\offx-0.5, -0.6*\sz);
+  \end{tikzpicture}
   \end{center}
 
-  \vspace{0.5em}
-  By forcing all diagonal elements of $A_t$ to be the \emph{same} scalar $a_t$:
-  \[
-    A_t = a_t \cdot I_N, \qquad a_t \in \R
-  \]
-
   \begin{itemize}
-    \item Fewer parameters per step, but enables a fundamentally new algorithm
-    \item Opens the door to the \textbf{quadratic (attention) mode}
+    \item All $N$ diagonal entries share the \emph{same} scalar $a_t$ per time step.
+    \item Fewer parameters per step, but enables a fundamentally new algorithm.
+    \item Opens the door to the \textbf{quadratic (attention) mode}.
   \end{itemize}
 \end{frame}
 
 % -----------------------------------------------------------------------
 \begin{frame}{Multihead SSMs}
 
-  For real language models, inputs have $\mathtt{P}$ channels: $X \in \R^{(T, P)}$
+  \begin{columns}[T]
+    \begin{column}{0.52\textwidth}
+      For real language models, inputs have $D$ channels. We split them into $H$ heads of size $P = D/H$:
+      \[
+        Y^{(T,P)} = \mathsf{SSM}\!\left(a^{(T)},\, B^{(T,N)},\, C^{(T,N)}\right)\!\left(X^{(T,P)}\right)
+      \]
 
-  \[
-    Y^{(T,P)} = \mathsf{SSM}\!\left(A^{(T)},\, B^{(T,N)},\, C^{(T,N)}\right)\!\left(X^{(T,P)}\right)
-  \]
+      \begin{itemize}
+        \item Head dim $P \in \{64, 128\}$ (vs.\ $P=1$ in Mamba-1).
+        \item \textbf{Within a head}: same $(a_t, B_t, C_t)$ for all $P$ channels.
+        \item \textbf{Across heads}: independent $(a, B, C)$.
+      \end{itemize}
 
-  \vspace{0.4em}
-  \textbf{Multihead structure} (like Transformers):
-  \begin{itemize}
-    \item Heads of dimension $\mathtt{P} \in \{64, 128\}$ (vs.\ $\mathtt{P}=1$ in Mamba-1)
-    \item Within a head, the \emph{same} $(a_t, B_t, C_t)$ are applied to all $\mathtt{P}$ channels
-    \item Across heads, $(a, B, C)$ are independent
-  \end{itemize}
+      \begin{block}{Key advantage over Mamba-1}
+        Larger state: $N = 16$ (Mamba-1) $\to$ $N \in [64, 256]$ (Mamba-2), while training faster.
+      \end{block}
+    \end{column}
+    \begin{column}{0.46\textwidth}
+      \centering
+      \begin{tikzpicture}[
+        scale=0.75, every node/.style={scale=0.75},
+        hbox/.style={draw, rounded corners=3pt, minimum height=0.55cm, inner sep=2pt,
+                     font=\tiny, align=center},
+      ]
+        % Input tensor
+        \node[hbox, fill=mambared!15, minimum width=4.5cm] (inp) at (0, 5.2) {Input $X \in \R^{T \times D}$};
 
-  \vspace{0.5em}
-  \begin{block}{Key advantage over Mamba-1}
-    Larger state dimensions become tractable: $\mathtt{N} = 16$ (Mamba-1) $\to$ $\mathtt{N} \in [64, 256]$ (Mamba-2), while \emph{simultaneously} training faster.
-  \end{block}
+        % Split
+        \node[font=\tiny, mambagray] at (0, 4.6) {split into $H$ heads};
 
+        % Heads
+        \def\hw{1.0}
+        \def\hgap{0.15}
+        \node[hbox, fill=mambablue!20, minimum width=\hw cm] (h1) at (-1.8, 3.8) {Head 1\\[-1pt]$T \!\times\! P$};
+        \node[hbox, fill=mambablue!20, minimum width=\hw cm] (h2) at (-0.6, 3.8) {Head 2\\[-1pt]$T \!\times\! P$};
+        \node[font=\tiny] at (0.35, 3.8) {$\cdots$};
+        \node[hbox, fill=mambablue!20, minimum width=\hw cm] (hH) at (1.3, 3.8) {Head $H$\\[-1pt]$T \!\times\! P$};
+
+        % Arrows from input to heads
+        \draw[-Stealth, thin] (inp.south) -- (h1.north);
+        \draw[-Stealth, thin] (inp.south) -- (h2.north);
+        \draw[-Stealth, thin] (inp.south) -- (hH.north);
+
+        % SSM per head
+        \node[hbox, fill=mambagreen!20, minimum width=\hw cm] (s1) at (-1.8, 2.4) {SSM\\[-1pt]$(a, B, C)_1$};
+        \node[hbox, fill=mambagreen!20, minimum width=\hw cm] (s2) at (-0.6, 2.4) {SSM\\[-1pt]$(a, B, C)_2$};
+        \node[font=\tiny] at (0.35, 2.4) {$\cdots$};
+        \node[hbox, fill=mambagreen!20, minimum width=\hw cm] (sH) at (1.3, 2.4) {SSM\\[-1pt]$(a, B, C)_H$};
+
+        \draw[-Stealth, thin] (h1) -- (s1);
+        \draw[-Stealth, thin] (h2) -- (s2);
+        \draw[-Stealth, thin] (hH) -- (sH);
+
+        % Outputs per head
+        \node[hbox, fill=yellow!20, minimum width=\hw cm] (o1) at (-1.8, 1.2) {$Y_1$\\[-1pt]$T \!\times\! P$};
+        \node[hbox, fill=yellow!20, minimum width=\hw cm] (o2) at (-0.6, 1.2) {$Y_2$\\[-1pt]$T \!\times\! P$};
+        \node[font=\tiny] at (0.35, 1.2) {$\cdots$};
+        \node[hbox, fill=yellow!20, minimum width=\hw cm] (oH) at (1.3, 1.2) {$Y_H$\\[-1pt]$T \!\times\! P$};
+
+        \draw[-Stealth, thin] (s1) -- (o1);
+        \draw[-Stealth, thin] (s2) -- (o2);
+        \draw[-Stealth, thin] (sH) -- (oH);
+
+        % Concat
+        \node[font=\tiny, mambagray] at (0, 0.55) {concatenate};
+        \node[hbox, fill=violet!15, minimum width=4.5cm] (out) at (0, 0.0) {Output $Y \in \R^{T \times D}$};
+
+        \draw[-Stealth, thin] (o1.south) -- (out.north);
+        \draw[-Stealth, thin] (o2.south) -- (out.north);
+        \draw[-Stealth, thin] (oH.south) -- (out.north);
+
+        % Annotation: shared within head
+        \draw[decorate, decoration={brace, mirror, amplitude=4pt}, mambagray]
+          (-2.5, 2.0) -- (-2.5, 4.15);
+        \node[font=\tiny, mambagray, rotate=90, anchor=south] at (-2.8, 3.1) {same $(a,B,C)$};
+      \end{tikzpicture}
+    \end{column}
+  \end{columns}
 \end{frame}
 
 % -----------------------------------------------------------------------
