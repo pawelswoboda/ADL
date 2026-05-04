@@ -76,6 +76,11 @@ compile = True # use PyTorch 2.0 to compile the model to be faster
 # hellaswag evaluation
 hellaswag_eval = True # if True, evaluate on HellaSwag val set at each eval_interval
 hellaswag_num_examples = 200 # number of val examples to evaluate (full val = 10042)
+# sample generation during eval
+generate_samples = False # if True, generate example completions from sample_prompts at each eval_interval
+sample_max_new_tokens = 128
+sample_temperature = 0.8
+sample_top_k = 200
 # -----------------------------------------------------------------------------
 config_keys = [k for k,v in globals().items() if not k.startswith('_') and isinstance(v, (int, float, bool, str))]
 exec(open('configurator.py').read()) # overrides from command line or config file
@@ -83,7 +88,7 @@ config = {k: globals()[k] for k in config_keys} # will be useful for logging
 
 # import model class based on model_type
 if model_type == 'gpt':
-    from model import GPTConfig as ModelConfig, GPT as Model
+    from model_transformer import GPTConfig as ModelConfig, GPT as Model
 elif model_type == 'rnn':
     from model_rnn import RNNConfig as ModelConfig, VanillaRNN as Model
 elif model_type == 'gru':
@@ -361,17 +366,19 @@ while True:
         losses = estimate_loss()
         print(f"step {iter_num}: train loss {losses['train']:.4f}, val loss {losses['val']:.4f}")
         # generate sample completions using model's generate method
-        model.eval()
         sample_completions = []
-        for prompt in sample_prompts:
-            ids = encode(prompt)
-            x = torch.tensor(ids, dtype=torch.long, device=device)[None, ...]
-            with ctx:
-                y = raw_model.generate(x, max_new_tokens=128, temperature=0.8, top_k=200)
-            completion = decode(y[0].tolist())
-            print(f"--- Sample ---\n{completion}\n--------------")
-            sample_completions.append((prompt, completion))
-        model.train()
+        if generate_samples:
+            model.eval()
+            for prompt in sample_prompts:
+                ids = encode(prompt)
+                x = torch.tensor(ids, dtype=torch.long, device=device)[None, ...]
+                with ctx:
+                    y = raw_model.generate(x, max_new_tokens=sample_max_new_tokens,
+                                           temperature=sample_temperature, top_k=sample_top_k)
+                completion = decode(y[0].tolist())
+                print(f"--- Sample ---\n{completion}\n--------------")
+                sample_completions.append((prompt, completion))
+            model.train()
         # HellaSwag evaluation
         hellaswag_acc = None
         if hellaswag_eval:
@@ -452,7 +459,7 @@ while True:
         elapsed = time.time() - train_start_time
         elapsed_h, elapsed_rem = divmod(int(elapsed), 3600)
         elapsed_m, elapsed_s = divmod(elapsed_rem, 60)
-        print(f"iter {iter_num}: loss {lossf:.4f}, iter_time {int(dt)}s:{int((dt%1)*1000):03d}ms, elapsed {elapsed_h:02d}:{elapsed_m:02d}:{elapsed_s:02d}, mfu {running_mfu*100:.2f}%")
+        print(f"iter {iter_num}: loss {lossf:.4f}, iter_time {int(dt)}s:{int((dt%1)*1000):03d}ms, elapsed {elapsed_h:02d}:{elapsed_m:02d}:{elapsed_s:02d}")
         if wandb_log:
             tokens_seen = iter_num * tokens_per_iter
             log_dict = {
