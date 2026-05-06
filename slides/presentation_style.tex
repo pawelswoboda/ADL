@@ -68,7 +68,7 @@
     \begin{frame}
       \begin{multicols}{2}
         \frametitle{Table of Contents}
-        \tableofcontents[currentsection,hideothersubsections]
+        \tableofcontents[currentsection, hideothersubsections, subsubsectionstyle=hide]
       \end{multicols}
     \end{frame}
 }
@@ -79,7 +79,18 @@
     \begin{frame}
       \begin{multicols}{2}
         \frametitle{Table of Contents}
-        \tableofcontents[currentsection, subsectionstyle=show/shaded/hide]
+        \tableofcontents[currentsection, subsectionstyle=show/shaded/hide, subsubsectionstyle=show/show/hide/hide]
+      \end{multicols}
+    \end{frame}
+}
+
+% add subsubsection title slides
+\AtBeginSubsubsection[]
+{
+    \begin{frame}
+      \begin{multicols}{2}
+        \frametitle{Table of Contents}
+        \tableofcontents[currentsection, subsectionstyle=show/shaded/hide, subsubsectionstyle=show/shaded/hide/hide]
       \end{multicols}
     \end{frame}
 }

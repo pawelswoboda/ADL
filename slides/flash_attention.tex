@@ -22,7 +22,7 @@
 }
 
 % -----------------------------------------------------------------------
-\section{Flash Attention}
+\section{Flash Attention}\label{ch:flash}
 
 % -----------------------------------------------------------------------
 \begin{frame}{The Problem with Standard Attention}
@@ -92,7 +92,7 @@
         \KwIn{$Q, K, V \in \mathbb{R}^{T \times d}$ in HBM}
         \KwOut{$O \in \mathbb{R}^{T \times d}$}
         \Load{$Q, K$ from HBM} \tcp*{$2Td$}
-        \Comp{$S = QK^\top \in \mathbb{R}^{T \times T}$}\;
+        \Comp{$S = QK^\top / \sqrt{d_k} \in \mathbb{R}^{T \times T}$}\;
         \Store{$S$ to HBM} \tcp*{$T^2$}
         \Load{$S$ from HBM} \tcp*{$T^2$}
         \Comp{$P = \text{softmax}(S) \in \mathbb{R}^{T \times T}$}\;
@@ -104,7 +104,12 @@
       \end{algorithm}
 
       \vspace{0.3em}
-      Total HBM access: $\mathcal{O}(T^2 + Td)$. Each step is a separate kernel (no fusion). $S, P$ are $T \times T$ $\to$ quadratic memory. Must store $P$ for backward pass.
+      \begin{itemize}
+        \item Total HBM access: $\mathcal{O}(T^2 + Td)$
+        \item Each step is a separate kernel (no fusion)
+        \item $S, P$ are $T \times T \to$ quadratic memory
+        \item Must store $P$ for backward pass
+      \end{itemize}
 
 \end{frame}
 
@@ -214,21 +219,30 @@
 
 \begin{frame}{Streaming (Online) Softmax}
   \begin{columns}[T]
-    \begin{column}{0.55\textwidth}
-      \textbf{Key insight:} Fuse max and sum into a \emph{single pass}.
+    \begin{column}{0.50\textwidth}
+      \begin{itemize}
+        \item \textbf{Key insight:} fuse max and sum into a \emph{single pass}
+        \item Maintain running max $m$ and rescaled sum $\ell$
+        \item When seeing $x_i$:
+          \vspace{-0.3em}
+          \begin{align*}
+            m' &= \max(m, x_i) \\
+            \ell' &= \ell \cdot e^{m - m'} + e^{x_i - m'}
+          \end{align*}
+          \vspace{-0.5em}
+        \item The correction $e^{m - m'}$ rescales the previous sum to the new max
+      \end{itemize}
 
-      \vspace{0.3em}
-      Maintain running max $m$ and rescaled sum $\ell$. When seeing $x_i$:
-      \vspace{-0.3em}
-      \begin{align*}
-        m' &= \max(m, x_i) \\
-        \ell' &= \ell \cdot e^{m - m'} + e^{x_i - m'}
-      \end{align*}
-      \vspace{-0.5em}
-
-      The correction $e^{m - m'}$ rescales the previous sum to the new max.
-
-      \vspace{0.3em}
+      \vspace{0.5em}
+      \begin{block}{\small Why this matters}
+        {\small 
+        \begin{itemize}
+        \item Online softmax lets us process $K$ blocks one at a time without knowing the global max
+        \item Used in flash attention for streaming output computation
+\end{itemize}}
+      \end{block}
+    \end{column}
+    \begin{column}{0.48\textwidth}
       {\small
       \begin{algorithm}[H]
         \caption{\small Online Softmax}
@@ -243,8 +257,7 @@
         \Return $(o_1, \ldots, o_n)$\;
       \end{algorithm}
       }
-    \end{column}
-    \begin{column}{0.42\textwidth}
+
       \vspace{0.5em}
       \centering
       \begin{tikzpicture}[
@@ -260,11 +273,6 @@
           ([xshift=1mm,yshift=-5mm]o6.south) node[right,font=\tiny] {$o_i$};
         \node[font=\tiny, anchor=west] at ([xshift=1mm,yshift=-7.5mm]o6.south) {2 HBM reads};
       \end{tikzpicture}
-
-      \vspace{0.8em}
-      \begin{block}{\small Why this matters}
-        {\small Online softmax lets us process $K$ blocks one at a time without knowing the global max, exactly what tiled attention needs.}
-      \end{block}
     \end{column}
   \end{columns}
 \end{frame}
@@ -303,7 +311,7 @@
         lbl/.style={font=\tiny, text=fagray},
       ]
         \node[blk, fill=orange!25, minimum width=1.3cm] (S1) at (0, 0) {$S^{(1)}$};
-        \node[blk, fill=orange!50, minimum width=1.3cm] (S2) at (2.8, 0) {$S^{(2)}$};
+        \node[blk, fill=orange!50, minimum width=1.3cm] (S2) at (2.05, 0) {$S^{(2)}$};
         \node[lbl, above=2pt] at ($(S1.north)!0.5!(S2.north)$)
           {$S = QK^\top$};
         \draw[decorate, decoration={brace, mirror, amplitude=3pt}, thick]
@@ -605,6 +613,36 @@
   \begin{align*}
     dQ &= dS \cdot K & dK &= dS^\top \cdot Q
   \end{align*}
+\end{frame}
+
+\begin{frame}{Recomputing $P$ from the Stored Log-Sum-Exp $L$}
+
+  The backward pass needs $P$ but we did not store it. Instead, the forward stored a single scalar per row:
+  \[
+    L_i = m_i + \log(\ell_i), \qquad
+    m_i = \max_j S_{ij}, \quad \ell_i = \sum_j e^{S_{ij} - m_i}
+  \]
+
+  \vspace{0.3em}
+  \textbf{Identity used in the backward:}
+  \vspace{-0.3em}
+  \[
+    P_{ij} = \frac{e^{S_{ij} - m_i}}{\ell_i}
+           = \frac{e^{S_{ij} - m_i}}{e^{\log \ell_i}}
+           = e^{S_{ij} - m_i - \log \ell_i}
+           = e^{S_{ij} - L_i}
+  \]
+
+  \vspace{-0.3em}
+  So in the backward kernel we simply recompute $S_{ij} = Q_i K_j^\top$ block-wise and apply $P_{ij} = \exp(S_{ij} - L_i)$.
+
+  \vspace{0.4em}
+  \begin{itemize}
+    \item \textbf{One scalar per row, not two.} Storing $L_i$ instead of $(m_i, \ell_i)$ halves the saved auxiliary memory and fuses the normalization into a single $\exp$
+    \item \textbf{Numerical stability is preserved.} Since $L_i \geq m_i \geq S_{ij}$, the exponent $S_{ij} - L_i \leq 0$, so $\exp(\cdot) \in (0,1]$, no overflow
+    \item \textbf{Memory vs.\ compute trade-off.} We pay one extra $QK^\top$ block-matmul per backward, but avoid materializing the $T \times T$ matrix $P$ in HBM
+    \item \textbf{Only $L$ couples forward and backward.} $L$ is the sole forward-pass artifact (besides $O$) carried into the backward, hence the line ``$L_i \gets m_i + \log(\ell_i)$'' marked \emph{Trick 2} in the forward algorithm
+  \end{itemize}
 \end{frame}
 
 \begin{frame}{Flash Attention 2: Backward Pass}

@@ -1,19 +1,5 @@
 % !TEX root=./adl.tex
 
-% ---------------------------------------------------------------------------
-%  Shared TikZ styles and colours for attention illustrations
-% ---------------------------------------------------------------------------
-\tikzset{
-  acell/.style={minimum width=0.26cm, minimum height=0.26cm,
-                draw=gray!50, inner sep=0, line width=0.3pt},
-  attn arrow/.style={-{Stealth[length=3pt,width=2.5pt]}, gray!60, thin},
-}
-\colorlet{xcol}{green!40}
-\colorlet{qcol}{violet!30}
-\colorlet{kcol}{orange!35}
-\colorlet{vcol}{cyan!25}
-\colorlet{zcol}{pink!50}
-
 \section{Attention \& Transformers}
 
 \subsection{Self-Attention}
@@ -1786,8 +1772,8 @@
         % Compute PE value: even dims → sin, odd dims → cos
         \pgfmathtruncatemacro{\iseven}{mod(\dimi,2) == 0 ? 1 : 0}
         \pgfmathtruncatemacro{\halfdi}{int(\dimi/2)}
-        % freq = 10000^(2*halfdi/64) = exp(ln(10000)*2*halfdi/64)
-        \pgfmathsetmacro{\freq}{exp(ln(10000)*2*\halfdi/64)}
+        % freq = 10000^(2*halfdi/d) with d = \cols
+        \pgfmathsetmacro{\freq}{exp(ln(10000)*2*\halfdi/\cols)}
         \pgfmathsetmacro{\myangle}{\pos / \freq * 180 / 3.14159}
         \pgfmathsetmacro{\peval}{\iseven == 1 ? sin(\myangle) : cos(\myangle)}
         % Map peval from [-1,1] to color percentage
