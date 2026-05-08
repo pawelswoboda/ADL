@@ -7,6 +7,12 @@
 \definecolor{fagray}{RGB}{90, 90, 90}
 \definecolor{fasram}{RGB}{255, 180, 50}
 \definecolor{fahbm}{RGB}{100, 160, 220}
+\definecolor{barblue}{RGB}{99, 135, 177}
+\definecolor{baredge}{RGB}{30, 30, 60}
+\definecolor{sramcol}{RGB}{232, 126, 50}
+\definecolor{hbmcol}{RGB}{105, 165, 110}
+\definecolor{dramcol}{RGB}{120, 185, 175}
+\definecolor{pyredge}{RGB}{20, 20, 20}
 
 \lstset{
   language=Python,
@@ -46,7 +52,74 @@
     \end{column}
     \begin{column}{0.42\textwidth}
       \centering
-      \includegraphics[width=\linewidth]{images/flash_attention_time_ablation.png}
+      \resizebox{\linewidth}{!}{%
+      \begin{tikzpicture}[
+          font=\sffamily,
+          seg/.style={draw=baredge, line width=0.7pt, fill=barblue},
+          brace/.style={decorate, decoration={brace, amplitude=10pt, raise=3pt}, line width=0.9pt},
+          lab/.style={font=\sffamily\bfseries, anchor=west},
+        ]
+        \def\barx{0}
+        \def\barxR{4.0}
+        \def\barw{1.2}
+        \def\unit{0.32}
+        \pgfmathsetmacro{\yMax}{17.2*\unit}
+
+        % y axis
+        \draw[line width=1pt] (-0.1,0) -- (-0.1,\yMax);
+        \foreach \v in {0,5,10,15} {
+          \draw[line width=1pt] (-0.28,{\v*\unit}) -- (-0.1,{\v*\unit});
+          \node[anchor=east, font=\sffamily\bfseries] at (-0.32,{\v*\unit}) {\v};
+        }
+        \node[rotate=90, font=\sffamily\bfseries] at (-1.05, {\yMax/2}) {Time (ms)};
+
+        % x axis
+        \draw[line width=1pt] (-0.1,0) -- (6.0,0);
+
+        % title
+        \node[font=\sffamily\bfseries\large, anchor=south] at (2.7, {\yMax+0.05}) {Attention on GPT-2};
+
+        % left bar segments (heights in ms)
+        \def\hMatA{2.2}
+        \def\hMask{4.6}
+        \def\hSoft{3.6}
+        \def\hDrop{4.4}
+        \def\hMatB{2.2}
+        \pgfmathsetmacro{\yA}{\hMatA}
+        \pgfmathsetmacro{\yB}{\yA+\hMask}
+        \pgfmathsetmacro{\yC}{\yB+\hSoft}
+        \pgfmathsetmacro{\yD}{\yC+\hDrop}
+        \pgfmathsetmacro{\yE}{\yD+\hMatB}
+        \draw[seg] (\barx,0) rectangle ({\barx+\barw},{\yA*\unit});
+        \draw[seg] (\barx,{\yA*\unit}) rectangle ({\barx+\barw},{\yB*\unit});
+        \draw[seg] (\barx,{\yB*\unit}) rectangle ({\barx+\barw},{\yC*\unit});
+        \draw[seg] (\barx,{\yC*\unit}) rectangle ({\barx+\barw},{\yD*\unit});
+        \draw[seg] (\barx,{\yD*\unit}) rectangle ({\barx+\barw},{\yE*\unit});
+
+        % braces and labels
+        \def\bex{\barx+\barw+0.05}
+        \def\bx{1.85}
+        \draw[brace] ({\bex},{0*\unit}) -- ({\bex},{\yA*\unit});
+        \node[lab] at (\bx,{(\yA/2)*\unit}) {Matmul};
+        \draw[brace] ({\bex},{\yA*\unit}) -- ({\bex},{\yB*\unit});
+        \node[lab] at (\bx,{((\yA+\yB)/2)*\unit}) {Mask};
+        \draw[brace] ({\bex},{\yB*\unit}) -- ({\bex},{\yC*\unit});
+        \node[lab] at (\bx,{((\yB+\yC)/2)*\unit}) {Softmax};
+        \draw[brace] ({\bex},{\yC*\unit}) -- ({\bex},{\yD*\unit});
+        \node[lab] at (\bx,{((\yC+\yD)/2)*\unit}) {Dropout};
+        \draw[brace] ({\bex},{\yD*\unit}) -- ({\bex},{\yE*\unit});
+        \node[lab] at (\bx,{((\yD+\yE)/2)*\unit}) {Matmul};
+
+        % right bar
+        \def\hFused{2.2}
+        \draw[seg] (\barxR,0) rectangle ({\barxR+\barw},{\hFused*\unit});
+        \draw[brace] ({\barxR+\barw+0.05},{0*\unit}) -- ({\barxR+\barw+0.05},{\hFused*\unit});
+        \node[lab, align=left] at ({\barxR+\barw+0.6},{(\hFused/2)*\unit + 0.1}) {Fused\\Kernel};
+
+        % x labels
+        \node[font=\sffamily\bfseries, anchor=north] at ({\barx+\barw/2},-0.08) {PyTorch};
+        \node[font=\sffamily\bfseries, anchor=north] at ({\barxR+\barw/2},-0.08) {FlashAttention};
+      \end{tikzpicture}}
     \end{column}
   \end{columns}
 \end{frame}
@@ -73,7 +146,36 @@
     \end{column}
     \begin{column}{0.42\textwidth}
       \centering
-      \includegraphics[width=\linewidth]{images/hbm_vs_sram.png}
+      \resizebox{\linewidth}{!}{%
+      \begin{tikzpicture}[font=\sffamily\bfseries]
+        \def\H{4.6}
+        \def\W{2.8}
+        \def\yA{3.15}
+        \def\yB{1.55}
+        \pgfmathsetmacro{\xA}{(1-\yA/\H)*\W}
+        \pgfmathsetmacro{\xB}{(1-\yB/\H)*\W}
+
+        % Slices
+        \fill[sramcol] (0,\H) -- (\xA,\yA) -- (-\xA,\yA) -- cycle;
+        \fill[hbmcol] (-\xA,\yA) -- (\xA,\yA) -- (\xB,\yB) -- (-\xB,\yB) -- cycle;
+        \fill[dramcol] (-\xB,\yB) -- (\xB,\yB) -- (\W,0) -- (-\W,0) -- cycle;
+
+        % Internal dividers
+        \draw[pyredge, line width=1.0pt] (-\xA,\yA) -- (\xA,\yA);
+        \draw[pyredge, line width=1.0pt] (-\xB,\yB) -- (\xB,\yB);
+        % Outline
+        \draw[pyredge, line width=1.4pt] (-\W,0) -- (\W,0) -- (0,\H) -- cycle;
+
+        % Slice labels
+        \node[white, font=\sffamily\bfseries\footnotesize, align=center] at (0,{(\H+\yA)/2}) {GPU\\SRAM};
+        \node[white, font=\sffamily\bfseries, align=center] at (0,{(\yA+\yB)/2}) {GPU\\HBM};
+        \node[white, font=\sffamily\bfseries\large, align=center] at (0,{\yB/2}) {Main Memory\\(CPU DRAM)};
+
+        % Right-side labels
+        \node[anchor=west, font=\sffamily\bfseries] at ({\W+0.3},{(\H+\yA)/2}) {\textcolor{sramcol}{SRAM:} 19 TB/s (20 MB)};
+        \node[anchor=west, font=\sffamily\bfseries] at ({\W+0.3},{(\yA+\yB)/2}) {\textcolor{hbmcol}{HBM:} 1.5 TB/s (40 GB)};
+        \node[anchor=west, font=\sffamily\bfseries, align=left] at ({\W+0.3},{\yB/2}) {\textcolor{dramcol}{DRAM:} 12.8 GB/s\\\hphantom{\textcolor{dramcol}{DRAM:} }($>$1 TB)};
+      \end{tikzpicture}}
     \end{column}
   \end{columns}
 \end{frame}
@@ -571,78 +673,84 @@
 \end{frame}
 
 \begin{frame}{Attention Backward Pass: Gradient Derivation}
-  \textbf{Forward:} $S = QK^\top$, \; $P = \text{softmax}(S)$, \; $O = PV$.
-  \quad Given $dO$, derive $dQ, dK, dV$.
+  \textbf{Forward:} $S = QK^\top$, \; $P = \text{softmax}(S)$, \; $O = PV$. \;
+  Given $dO$, derive $dQ, dK, dV$.
 
-  \vspace{0.3em}
-  \textbf{Step 1: Gradients through $O = PV$}
-  \vspace{-0.5em}
-  \begin{align*}
-    dV &= P^\top dO & dP &= dO\, V^\top
-  \end{align*}
+  \vspace{0.6em}
+  \begin{description}
+    \item[Through $O = PV$:] \quad $dV = P^\top dO$, \quad $dP = dO\, V^\top$
+    \item[Through softmax (row-wise):] Jacobian $\partial P_i/\partial S_i = \text{diag}(P_i) - P_i P_i^\top$, so
+      \vspace{-0.3em}
+      \[
+        dS_i = P_i \odot dP_i - D_i\, P_i,
+        \qquad D_i := P_i^\top dP_i = \sum_j P_{ij}\, dP_{ij}
+      \]
+      \vspace{-1.0em}
+      \begin{center}
+        Componentwise: $\; dS_{ij} = P_{ij}(dP_{ij} - D_i)$
+      \end{center}
+    \item[Through $S = QK^\top$:] \quad $dQ = dS \cdot K$, \quad $dK = dS^\top \cdot Q$
+  \end{description}
 
-  \vspace{-0.5em}
-  \textbf{Step 2: Gradient through softmax} $P_i = \text{softmax}(S_i)$ (row-wise).
+  \vspace{0.6em}
+  \begin{alertblock}{What we still need block-wise}
+    Computing $dV, dS, dQ, dK$ requires $P$ and $dP$. Naively that means writing the $T \times T$ matrices to HBM. Next two slides: how to avoid that.
+  \end{alertblock}
+\end{frame}
 
-  The Jacobian of softmax is $\frac{\partial P_i}{\partial S_i} = \text{diag}(P_i) - P_i P_i^\top$ (symmetric). By the chain rule, the row gradient $dS_i$ is obtained by multiplying $dP_i$ with this Jacobian:
-  \vspace{-0.3em}
-  \[
-    dS_i = \frac{\partial P_i}{\partial S_i}\, dP_i
-         = \big(\text{diag}(P_i) - P_i P_i^\top\big)\, dP_i
-         = P_i \odot dP_i - \underbrace{(P_i^\top dP_i)}_{=:\, D_i}\, P_i
-  \]
+\begin{frame}{Avoiding $P$ and $dP$ in HBM}
 
-  \vspace{-0.3em}
-  Componentwise: $dS_{ij} = P_{ij}(dP_{ij} - D_i)$, where the scalar $D_i = \sum_j P_{ij}\, dP_{ij}$.
-
-  \vspace{0.2em}
-  Substituting $dP_{ij} = (dO\, V^\top)_{ij} = \sum_k dO_{ik} V_{jk}$:
+  \textbf{Observation.} Substitute $dP_{ij} = \sum_k dO_{ik} V_{jk}$ into $D_i$:
   \vspace{-0.3em}
   \[
     D_i = \sum_j P_{ij} \sum_k dO_{ik} V_{jk}
         = \sum_k dO_{ik} \underbrace{\sum_j P_{ij} V_{jk}}_{= O_{ik}}
         = \sum_k dO_{ik}\, O_{ik}
   \]
-
   \vspace{-0.3em}
-  \textbf{Key insight:} $D = \text{rowsum}(dO \odot O)$ can be precomputed from $dO$ and $O$ alone. No need to materialize $P$ or $dP$.
+  \[
+    \boxed{\; D = \text{rowsum}(dO \odot O) \;}
+  \]
 
-  \vspace{0.3em}
-  \textbf{Step 3: Gradients through $S = QK^\top$}
-  \vspace{-0.5em}
-  \begin{align*}
-    dQ &= dS \cdot K & dK &= dS^\top \cdot Q
-  \end{align*}
+  \vspace{0.4em}
+  \textbf{Why this matters.} $D$ depends only on $dO$ and $O$, not on $P$ or $dP$.
+
+  \vspace{0.4em}
+  \textbf{Backward streaming pattern:}
+  \begin{enumerate}
+    \item Precompute $D \in \mathbb{R}^{T}$ from $dO, O$ in one pass
+    \item For each $(i,j)$ block: recompute $S_{ij}, P_{ij}, dP_{ij}$ in SRAM, then accumulate into $dQ, dK, dV$
+  \end{enumerate}
+
+  \vspace{0.4em}
+  \begin{alertblock}{Result}
+    Neither $P$ nor $dP$ is ever materialized in HBM as a $T \times T$ matrix.
+  \end{alertblock}
 \end{frame}
 
 \begin{frame}{Recomputing $P$ from the Stored Log-Sum-Exp $L$}
 
-  The backward pass needs $P$ but we did not store it. Instead, the forward stored a single scalar per row:
-  \[
-    L_i = m_i + \log(\ell_i), \qquad
-    m_i = \max_j S_{ij}, \quad \ell_i = \sum_j e^{S_{ij} - m_i}
-  \]
+  The forward stored \emph{one scalar per row}, $L_i = m_i + \log \ell_i$, with $m_i = \max_j S_{ij}$ and $\ell_i = \sum_j e^{S_{ij} - m_i}$.
 
-  \vspace{0.3em}
-  \textbf{Identity used in the backward:}
+  \vspace{0.4em}
+  \textbf{Backward identity:}
   \vspace{-0.3em}
   \[
     P_{ij} = \frac{e^{S_{ij} - m_i}}{\ell_i}
-           = \frac{e^{S_{ij} - m_i}}{e^{\log \ell_i}}
            = e^{S_{ij} - m_i - \log \ell_i}
            = e^{S_{ij} - L_i}
   \]
 
-  \vspace{-0.3em}
-  So in the backward kernel we simply recompute $S_{ij} = Q_i K_j^\top$ block-wise and apply $P_{ij} = \exp(S_{ij} - L_i)$.
+  \vspace{-0.2em}
+  Recipe: recompute $S_{ij} = Q_i K_j^\top$ block-wise in SRAM, then $P_{ij} = \exp(S_{ij} - L_i)$.
 
-  \vspace{0.4em}
-  \begin{itemize}
-    \item \textbf{One scalar per row, not two.} Storing $L_i$ instead of $(m_i, \ell_i)$ halves the saved auxiliary memory and fuses the normalization into a single $\exp$
-    \item \textbf{Numerical stability is preserved.} Since $L_i \geq m_i \geq S_{ij}$, the exponent $S_{ij} - L_i \leq 0$, so $\exp(\cdot) \in (0,1]$, no overflow
-    \item \textbf{Memory vs.\ compute trade-off.} We pay one extra $QK^\top$ block-matmul per backward, but avoid materializing the $T \times T$ matrix $P$ in HBM
-    \item \textbf{Only $L$ couples forward and backward.} $L$ is the sole forward-pass artifact (besides $O$) carried into the backward, hence the line ``$L_i \gets m_i + \log(\ell_i)$'' marked \emph{Trick 2} in the forward algorithm
-  \end{itemize}
+  \vspace{0.5em}
+  \begin{description}
+    \item[One scalar per row.] $L_i$ replaces $(m_i, \ell_i)$, fuses normalization into a single $\exp$
+    \item[Numerically stable.] $L_i \geq m_i \geq S_{ij} \Rightarrow \exp(S_{ij} - L_i) \in (0, 1]$
+    \item[Memory vs.\ compute.] One extra $QK^\top$ block-matmul, no $T \times T$ matrix in HBM
+    \item[Sole forward-to-backward link.] $L$ is the only auxiliary (besides $O$) carried over, justifying ``$L_i \gets m_i + \log \ell_i$'' (\emph{Trick 2}) in the forward
+  \end{description}
 \end{frame}
 
 \begin{frame}{Flash Attention 2: Backward Pass}
