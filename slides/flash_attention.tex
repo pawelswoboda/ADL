@@ -31,6 +31,26 @@
 \section{Flash Attention}\label{ch:flash}
 
 % -----------------------------------------------------------------------
+\begin{frame}{Flash Attention: Overview}
+
+  \begin{block}{Acknowledgements}
+    {\footnotesize Materials based on Umar Jamil's lecture \cite{jamil2024flashattention} and repository \cite{jamil2024tritonflash}.}
+  \end{block}
+
+  \begin{description}
+    \item[What] Exact attention, reformulated to match the GPU memory hierarchy. Same outputs, much faster, linear memory.
+    \item[Why] Standard kernel in modern transformers; canonical example of algorithm/hardware co-design.
+    \item[Topics]
+      \begin{itemize}
+        \item GPU memory hierarchy, online softmax.
+        \item Forward and backward pass.
+        \item GPU programming: CUDA, Triton, tiled matmul.
+        \item Flash Attention in Triton with PyTorch autograd.
+      \end{itemize}
+  \end{description}
+\end{frame}
+
+% -----------------------------------------------------------------------
 \begin{frame}{The Problem with Standard Attention}
 
   Recall: $\text{Attn}(Q,K,V) = \text{softmax}\!\left(\frac{QK^\top}{\sqrt{d}}\right) V$
@@ -950,12 +970,12 @@ cuda_vector_add<<<1, N>>>(d_OUT, d_A, d_B, N);
 
   \vspace{0.2em}
   {\scriptsize
-  \begin{description}
-    \item[\texttt{\_\_global\_\_}] Marks a function as a \emph{kernel}: callable from the host, runs on the device.
-    \item[\texttt{cudaMalloc} / \texttt{cudaMemcpy}] Allocate GPU memory and transfer data from host to device.
-    \item[\texttt{threadIdx.x}] Built-in: index of the current thread within its block (here the only block).
-    \item[\texttt{<{}<{}<1, N>{}>{}>}] Launch configuration: 1 block of $N$ threads. Each thread computes one element \texttt{OUT[i] = A[i] + B[i]}.
-  \end{description}
+  \begin{itemize}
+    \item \texttt{\_\_global\_\_}: marks a function as a \emph{kernel}: callable from the host, runs on the device.
+    \item \texttt{cudaMalloc} / \texttt{cudaMemcpy}: allocate GPU memory and transfer data from host to device.
+    \item \texttt{threadIdx.x}: built-in index of the current thread within its block (here the only block).
+    \item \texttt{<{}<{}<1, N>{}>{}>}: launch configuration: 1 block of $N$ threads. Each thread computes one element \texttt{OUT[i] = A[i] + B[i]}.
+  \end{itemize}
   }
 \end{frame}
 
@@ -980,105 +1000,172 @@ cuda_matrix_add<<<grid, block>>>(d_OUT, d_A, d_B, NUM_ROWS, NUM_COLS);
 \end{lstlisting}
 
   \vspace{0.3em}
-  Uses 2D indexing: \texttt{blockIdx} selects the tile, \texttt{threadIdx} selects the element within the tile.
-\end{frame}
-
-\begin{frame}{Triton: A Higher-Level GPU Language}
-
-  \textbf{Triton} \cite{tillet2019triton} abstracts away low-level CUDA details:
-
-  \vspace{0.5em}
-  \begin{center}
-  \begin{tabular}{lll}
-    \toprule
-    \textbf{Concept} & \textbf{CUDA} & \textbf{Triton} \\
-    \midrule
-    Parallelism unit & Thread & Program (block-level) \\
-    Memory access & Per-element load/store & Block load/store with masks \\
-    Shared memory & Manual management & Automatic \\
-    Synchronization & \texttt{\_\_syncthreads()} & Implicit \\
-    \bottomrule
-  \end{tabular}
-  \end{center}
-
-  \vspace{0.5em}
-  \begin{itemize}
-    \item Programs (``tasks'') replace blocks; threads are not directly exposed
-    \item Block-level operations: \texttt{tl.load}, \texttt{tl.store}, \texttt{tl.dot}
-    \item \texttt{tl.constexpr} annotations enable compile-time optimizations
-    \item \texttt{pid = tl.program\_id(axis)} identifies which block we are in
-  \end{itemize}
-\end{frame}
-
-\begin{frame}[fragile]{Triton Example: Vector Addition}
-
-\begin{lstlisting}
-@triton.jit
-def add_kernel(x_ptr, y_ptr, output_ptr, n_elements,
-               BLOCK_SIZE: tl.constexpr):
-    pid = tl.program_id(0)
-    block_start = pid * BLOCK_SIZE
-    offsets = block_start + tl.arange(0, BLOCK_SIZE)
-    mask = offsets < n_elements
-    x = tl.load(x_ptr + offsets, mask=mask)
-    y = tl.load(y_ptr + offsets, mask=mask)
-    result = x + y
-    tl.store(output_ptr + offsets, result, mask=mask)
-
-# Allocate vectors directly on the GPU (PyTorch tensors)
-x      = torch.rand(n, device='cuda')
-y      = torch.rand(n, device='cuda')
-output = torch.empty(n, device='cuda')
-
-# Launch
-grid = lambda meta: (triton.cdiv(n, meta['BLOCK_SIZE']),)
-add_kernel[grid](x, y, output, n, BLOCK_SIZE=256)
-\end{lstlisting}
-
-  \vspace{0.2em}
   {\scriptsize
-  \begin{description}
-    \item[\texttt{@triton.jit}] JIT-compiles the Python function into a GPU kernel.
-    \item[\texttt{tl.constexpr}] Marks a kernel parameter as a compile-time constant (specialised per value).
-    \item[\texttt{tl.program\_id(0)}] ID of the current program instance along axis 0 (like CUDA \texttt{blockIdx.x}).
-    \item[\texttt{tl.arange(0, BLOCK\_SIZE)}] Vector of indices $[0, \text{BLOCK\_SIZE})$; the kernel operates on whole tiles, not single threads.
-    \item[\texttt{mask}] Boolean vector that disables lanes past \texttt{n\_elements} for the tail block.
-    \item[\texttt{tl.load} / \texttt{tl.store}] Masked, vectorised reads/writes from/to global memory.
-    \item[\texttt{grid = lambda meta: \ldots}] Number of program instances to launch, computed from the chosen \texttt{BLOCK\_SIZE}.
-  \end{description}
+  \begin{itemize}
+    \item \texttt{block(16, 16, 1)}: each block contains $16 \times 16 = 256$ threads, arranged as a 2D tile that covers a $16 \times 16$ patch of the matrix.
+    \item \texttt{grid(ceil(NUM\_COLS/16), ceil(NUM\_ROWS/16), 1)}: enough blocks to tile the entire matrix; \texttt{ceil} rounds up so partial tiles at the boundary are still covered (the \texttt{if} guards out-of-range threads).
+    \item 2D indexing: \texttt{blockIdx} selects the tile, \texttt{threadIdx} selects the element within the tile.
+  \end{itemize}
+  }
+
+  \vspace{0.3em}
+  {\scriptsize
+  \begin{block}{Why not a single block as in vector addition?}
+    \begin{itemize}
+      \item A block is capped at $1024$ threads: \texttt{<{}<{}<1, N>{}>{}>} only works for tiny inputs.
+      \item One block runs on a single SM; many blocks run in parallel across all SMs.
+    \end{itemize}
+  \end{block}
   }
 \end{frame}
 
-\begin{frame}[fragile]{Triton Example: Matrix Addition}
+\begin{frame}{Tensor Memory Layout}
 
-\begin{lstlisting}
-@triton.jit
-def mat_add_kernel(A, B, C, M, N,
-                   BLOCK_M: tl.constexpr, BLOCK_N: tl.constexpr):
-    pid_m = tl.program_id(0)
-    pid_n = tl.program_id(1)
-    offs_m = pid_m * BLOCK_M + tl.arange(0, BLOCK_M)
-    offs_n = pid_n * BLOCK_N + tl.arange(0, BLOCK_N)
-    mask = (offs_m[:, None] < M) & (offs_n[None, :] < N)
-    A_block = tl.load(A + offs_m[:, None] * N + offs_n[None, :], mask=mask)
-    B_block = tl.load(B + offs_m[:, None] * N + offs_n[None, :], mask=mask)
-    tl.store(C + offs_m[:, None] * N + offs_n[None, :],
-             A_block + B_block, mask=mask)
+  Tensors are flat arrays in memory, described by \textbf{shape} and \textbf{strides}:
+  \begin{itemize}\small
+    \item \textbf{shape}: number of elements per dimension
+    \item \textbf{stride}: number of elements to skip in memory to advance one step in that dimension
+  \end{itemize}
 
-# 2D grid launch
-grid = lambda meta: (triton.cdiv(M, meta['BLOCK_M']),
-                     triton.cdiv(N, meta['BLOCK_N']))
-mat_add_kernel[grid](A, B, C, M, N, BLOCK_M=64, BLOCK_N=64)
-\end{lstlisting}
+  \vspace{0.4em}
+  \centering
+  % --- Vector layout ---
+  \begin{tikzpicture}[
+    font=\scriptsize,
+    cell/.style={draw=fagray!70, minimum width=6mm, minimum height=6mm, inner sep=0pt, font=\scriptsize},
+  ]
+    \node[anchor=east, font=\small] at (-0.15, 0.8) {logical:};
+    \foreach \i/\v in {0/1, 1/2, 2/3, 3/5, 4/8, 5/13, 6/21} {
+      \node[cell, fill=fablue!15] (l\i) at (\i*0.7, 0.8) {$\v$};
+    }
+    \foreach \i in {0,...,6} {
+      \node[font=\tiny, fagray, above=-1pt of l\i] {[\i]};
+    }
+    \node[anchor=east, font=\small] at (-0.15, -0.8) {memory:};
+    \foreach \i/\v in {0/1, 1/2, 2/3, 3/5, 4/8, 5/13, 6/21} {
+      \node[cell, fill=fagreen!15] (p\i) at (\i*0.7, -0.8) {$\v$};
+    }
+    \foreach \i/\addr in {0/100, 1/104, 2/108, 3/112, 4/116, 5/120, 6/124} {
+      \node[font=\tiny, fagray, below=-1pt of p\i] {\addr};
+    }
+    \node[anchor=west, font=\small] at (5.4, 0.4) {1D vector:\; shape $= [7]$};
+    \node[anchor=west, font=\small] at (5.4, -0.4) {\hphantom{1D vector:\;} stride $= [1]$};
+  \end{tikzpicture}
 
-  \vspace{0.3em}
-  2D program grid: \texttt{program\_id(0)} for rows, \texttt{program\_id(1)} for columns.
+  \vspace{0.5em}
+  % --- Matrix layout (row-major) ---
+  \begin{tikzpicture}[
+    font=\scriptsize,
+    cell/.style={draw=fagray!70, minimum width=6mm, minimum height=6mm, inner sep=0pt, font=\scriptsize},
+  ]
+    \node[anchor=south, font=\small] at (0.7, 1.55) {logical $(2{\times}3)$};
+    \foreach \j/\v in {0/1, 1/2, 2/3} {
+      \node[cell, fill=fablue!25] (m0\j) at (\j*0.7, 0.85) {$\v$};
+    }
+    \foreach \j/\v in {0/5, 1/8, 2/13} {
+      \node[cell, fill=fasram!35] (m1\j) at (\j*0.7, 0.15) {$\v$};
+    }
+    \node[font=\tiny, fagray, left=2pt of m00] {row 0};
+    \node[font=\tiny, fagray, left=2pt of m10] {row 1};
+
+    \node[anchor=south, font=\small] at (5.5, 1.55) {memory (row-major)};
+    \foreach \i/\v/\c in {0/1/fablue!25, 1/2/fablue!25, 2/3/fablue!25, 3/5/fasram!35, 4/8/fasram!35, 5/13/fasram!35} {
+      \node[cell, fill=\c] (p\i) at (3.4 + \i*0.7, 0.5) {$\v$};
+    }
+    \foreach \i/\addr in {0/62, 1/66, 2/70, 3/74, 4/78, 5/82} {
+      \node[font=\tiny, fagray, below=-1pt of p\i] {\addr};
+    }
+    \draw[decorate, decoration={brace, amplitude=2pt}, fagray]
+      (p0.north west) -- node[above=2pt, font=\tiny] {row 0} (p2.north east);
+    \draw[decorate, decoration={brace, amplitude=2pt}, fagray]
+      (p3.north west) -- node[above=2pt, font=\tiny] {row 1} (p5.north east);
+
+    \node[anchor=west, font=\small] at (8.0, 0.85) {2D matrix:\; shape $= [2,3]$};
+    \node[anchor=west, font=\small] at (8.0, 0.30) {\hphantom{2D matrix:\;} stride $= [3,1]$};
+    \node[anchor=west, font=\tiny, fagray, align=left] at (8.0, -0.30)
+      {next row $\to +3$, next col $\to +1$};
+  \end{tikzpicture}
 \end{frame}
 
-\begin{frame}{Block Matrix Multiplication in Triton}
+\begin{frame}[fragile]{Naive Matrix Multiplication in CUDA}
+\begin{columns}[T]
+  \begin{column}{0.55\textwidth}
+\begin{lstlisting}[language=C++, keywordstyle=\color{fablue}\bfseries, basicstyle=\ttfamily\scriptsize]
+// C = A * B, with A: M x K, B: K x N, C: M x N
+__global__ void cuda_matmul_naive(float *C, float *A, float *B,
+                                  int M, int N, int K)
+{
+    int row = blockIdx.y * blockDim.y + threadIdx.y;
+    int col = blockIdx.x * blockDim.x + threadIdx.x;
+    if (row < M && col < N) {
+        float sum = 0.0f;
+        for (int k = 0; k < K; ++k)
+            sum += A[row * K + k] * B[k * N + col];
+        C[row * N + col] = sum;
+    }
+}
 
-  For computing $S = QK^\top$ in tiles, we need blockwise matrix multiplication.
-  Same formula as for scalars, but each entry is a sub-matrix:
+dim3 grid(ceil(N/16.0), ceil(M/16.0), 1);
+dim3 block(16, 16, 1);
+cuda_matmul_naive<<<grid, block>>>(d_C, d_A, d_B, M, N, K);
+\end{lstlisting}
+  \end{column}
+  \begin{column}{0.45\textwidth}
+    \centering
+    \begin{tikzpicture}[scale=0.42, font=\tiny]
+      % --- B (top): K rows x N cols ---
+      \draw[thick] (3.5, 5) rectangle (9.5, 8);
+      \fill[fablue!30] (5.0, 5) rectangle (5.5, 8);
+      \fill[fablue!55] (5.5, 5) rectangle (6.0, 8);
+      \node[font=\scriptsize] at (8.2, 6.5) {$B$};
+      \draw[decorate, decoration={brace, amplitude=4pt}]
+        (3.5, 8.15) -- (9.5, 8.15)
+        node[midway, above=2pt, font=\scriptsize] {$N$};
+      \draw[decorate, decoration={brace, amplitude=4pt}]
+        (3.35, 5) -- (3.35, 8)
+        node[midway, left=2pt, font=\scriptsize] {$K$};
+
+      % --- A (left): M rows x K cols ---
+      \draw[thick] (0, 0) rectangle (3, 5);
+      \fill[fared!40] (0, 3.0) rectangle (3, 3.5);
+      \node[font=\scriptsize] at (1.5, 1.0) {$A$};
+      \draw[decorate, decoration={brace, amplitude=4pt}]
+        (-0.15, 0) -- (-0.15, 5)
+        node[midway, left=2pt, font=\scriptsize] {$M$};
+      \draw[decorate, decoration={brace, amplitude=4pt, mirror}]
+        (0, -0.15) -- (3, -0.15)
+        node[midway, below=2pt, font=\scriptsize] {$K$};
+
+      % --- C (bottom right): M rows x N cols ---
+      \draw[thick] (3.5, 0) rectangle (9.5, 5);
+      \fill[purple!50] (5.0, 3.0) rectangle (5.5, 3.5);
+      \fill[purple!75] (5.5, 3.0) rectangle (6.0, 3.5);
+      \node[font=\scriptsize] at (8.2, 2.5) {$C$};
+      \draw[decorate, decoration={brace, amplitude=4pt}]
+        (9.65, 5) -- (9.65, 0)
+        node[midway, right=2pt, font=\scriptsize] {$M$};
+      \draw[decorate, decoration={brace, amplitude=4pt, mirror}]
+        (3.5, -0.15) -- (9.5, -0.15)
+        node[midway, below=2pt, font=\scriptsize] {$N$};
+    \end{tikzpicture}
+
+    \vspace{0.4em}
+    {\scriptsize
+    \begin{itemize}\itemsep0.2em
+      \item Every output element costs $2K$ global loads: one row of $A$ plus one column of $B$.
+      \item Threads computing $C_{i,j}$ and $C_{i,j+1}$ both fetch \emph{the same} row of $A$ from global memory: no reuse.
+      \item Same waste in the column direction for $B$.
+      \item Total global loads: $\Theta(MNK)$, equal to the FLOP count: roughly 1 load per FLOP.
+      \item Global memory latency is hundreds of cycles. The kernel is bandwidth-bound, far below peak compute.
+    \end{itemize}
+    }
+  \end{column}
+\end{columns}
+\end{frame}
+
+\begin{frame}{Block Matrix Multiplication}
+
+  Matrix multiplication factors blockwise: partition $A$, $B$, $C$ into sub-matrices, and the same formula holds with each entry now a sub-matrix.
   \vspace{-0.3em}
   \[
     \setlength{\arraycolsep}{3pt}
@@ -1091,7 +1178,8 @@ mat_add_kernel[grid](A, B, C, M, N, BLOCK_M=64, BLOCK_N=64)
 
   \vspace{-0.4em}
   \begin{itemize}\small
-    \item Each Triton program computes one output block $C_{ij}$, iterating over the $K$ dimension in chunks of \texttt{BLOCK\_SIZE\_K}
+    \item Each output block $C_{ij}$ can be computed \emph{independently}: parallelism over $(i,j)$ pairs.
+    \item Inner sum over $k$ is the same structure as scalar matmul, one level coarser.
   \end{itemize}
 
   \vspace{0.2em}
@@ -1161,72 +1249,457 @@ mat_add_kernel[grid](A, B, C, M, N, BLOCK_M=64, BLOCK_N=64)
   \end{tikzpicture}
 \end{frame}
 
-\begin{frame}{Tensor Memory Layout}
+\begin{frame}{Tiled Matrix Multiplication: The Idea}
+\begin{columns}[T]
+  \begin{column}{0.52\textwidth}
+    \textbf{Naive matmul is bandwidth-bound:}
+    \begin{itemize}\itemsep0.15em
+      \item Every output element costs $2K$ global loads.
+      \item Neighbouring threads re-fetch overlapping rows of $A$ and columns of $B$.
+    \end{itemize}
 
-  Tensors are flat arrays in memory, described by \textbf{shape} and \textbf{strides}:
-  \begin{itemize}\small
-    \item \textbf{shape}: number of elements per dimension
-    \item \textbf{stride}: number of elements to skip in memory to advance one step in that dimension
+    \vspace{0.4em}
+    \textbf{Tiling idea:}
+    \begin{itemize}\itemsep0.15em
+      \item Partition $C$ into $T \times T$ output tiles.
+      \item Assign \emph{one CUDA block per tile}; its $T^2$ threads cooperate.
+      \item Walk $K$ in chunks of size $T$: at each step load one $A$-tile and one $B$-tile into \emph{shared memory}, then accumulate $A_t B_t$ into the $C$-tile.
+    \end{itemize}
+
+    \vspace{0.4em}
+    \textbf{Why this wins:}
+    \begin{itemize}\itemsep0.15em
+      \item Each tile is loaded \emph{once}, reused $T$ times by every thread.
+      \item Global loads per output: $2K \to 2K/T$ ($16\times$ drop for $T{=}16$).
+      \item Shared memory is ${\sim}100\times$ faster than global.
+    \end{itemize}
+  \end{column}
+
+  \begin{column}{0.48\textwidth}
+    \centering
+    \begin{tikzpicture}[scale=0.45, font=\tiny]
+      % --- B (top): K rows x N cols, partitioned ---
+      \fill[fablue!20] (3.5, 5) rectangle (9.5, 8);
+      \fill[fablue!55] (5.5, 5) rectangle (6.5, 8);
+      \foreach \i in {4.5, 5.5, 6.5, 7.5, 8.5} { \draw[gray!50, thin] (\i, 5) -- (\i, 8); }
+      \foreach \j in {6, 7} { \draw[gray!50, thin] (3.5, \j) -- (9.5, \j); }
+      \draw[thick] (3.5, 5) rectangle (9.5, 8);
+      \draw[thick, fablue!90!black] (5.5, 5) rectangle (6.5, 8);
+      \node[font=\scriptsize] at (8.7, 7.6) {$B$};
+      \draw[decorate, decoration={brace, amplitude=4pt}]
+        (3.5, 8.15) -- (9.5, 8.15)
+        node[midway, above=2pt, font=\scriptsize] {$N$};
+      \draw[decorate, decoration={brace, amplitude=4pt}]
+        (3.35, 5) -- (3.35, 8)
+        node[midway, left=2pt, font=\scriptsize] {$K$};
+
+      % --- A (left): M rows x K cols, partitioned ---
+      \fill[fared!20] (0, 0) rectangle (3, 5);
+      \fill[fared!55] (0, 3.0) rectangle (3, 4.0);
+      \foreach \i in {1, 2} { \draw[gray!50, thin] (\i, 0) -- (\i, 5); }
+      \foreach \j in {1, 2, 3, 4} { \draw[gray!50, thin] (0, \j) -- (3, \j); }
+      \draw[thick] (0, 0) rectangle (3, 5);
+      \draw[thick, fared!90!black] (0, 3.0) rectangle (3, 4.0);
+      \node[font=\scriptsize] at (2.5, 4.6) {$A$};
+      \draw[decorate, decoration={brace, amplitude=4pt}]
+        (-0.15, 0) -- (-0.15, 5)
+        node[midway, left=2pt, font=\scriptsize] {$M$};
+      \draw[decorate, decoration={brace, amplitude=4pt, mirror}]
+        (0, -0.15) -- (3, -0.15)
+        node[midway, below=2pt, font=\scriptsize] {$K$};
+
+      % --- C (bottom right): partitioned, one tile highlighted ---
+      \foreach \i in {4.5, 5.5, 6.5, 7.5, 8.5} { \draw[gray!50, thin] (\i, 0) -- (\i, 5); }
+      \foreach \j in {1, 2, 3, 4} { \draw[gray!50, thin] (3.5, \j) -- (9.5, \j); }
+      \fill[purple!55] (5.5, 3.0) rectangle (6.5, 4.0);
+      \draw[thick] (3.5, 0) rectangle (9.5, 5);
+      \draw[thick, purple!85!black] (5.5, 3.0) rectangle (6.5, 4.0);
+      \node[font=\scriptsize] at (8.7, 4.6) {$C$};
+      \node[font=\tiny, purple!95!black, anchor=west] at (6.65, 3.5) {$C$-tile};
+      \draw[decorate, decoration={brace, amplitude=4pt}]
+        (9.65, 5) -- (9.65, 0)
+        node[midway, right=2pt, font=\scriptsize] {$M$};
+      \draw[decorate, decoration={brace, amplitude=4pt, mirror}]
+        (3.5, -0.15) -- (9.5, -0.15)
+        node[midway, below=2pt, font=\scriptsize] {$N$};
+    \end{tikzpicture}
+
+    \vspace{0.4em}
+    {\scriptsize One $C$-tile is built from a row stripe of $A$ and a column stripe of $B$, walked in chunks of $T$ along the $K$ axis.}
+  \end{column}
+\end{columns}
+\end{frame}
+
+\newcommand{\tilestep}[1]{%
+  \begin{tikzpicture}[scale=0.42, font=\tiny]
+    \def\T{0.7}
+    % --- Matrix B ---
+    \begin{scope}[shift={(4*\T + 0.4, 3*\T + 0.4)}]
+      \fill[fablue!20] (\T, 0) rectangle (2*\T, 4*\T);
+      \fill[fablue!60] (\T, {(3-#1)*\T}) rectangle (2*\T, {(4-#1)*\T});
+      \draw[thick] (0, 0) rectangle (3*\T, 4*\T);
+      \foreach \i in {1,2} { \draw[gray!50, thin] (\i*\T, 0) -- (\i*\T, 4*\T); }
+      \foreach \i in {1,2,3} { \draw[gray!50, thin] (0, \i*\T) -- (3*\T, \i*\T); }
+      \draw[thick, fablue!90!black] (\T, {(3-#1)*\T}) rectangle (2*\T, {(4-#1)*\T});
+      \node[above, font=\scriptsize] at (1.5*\T, 4*\T) {$B$};
+      \node[font=\tiny, fablue!95!black] at (1.5*\T, {(3.5-#1)*\T}) {$B_{#1}$};
+    \end{scope}
+    % --- Matrix A ---
+    \fill[fared!20] (0, \T) rectangle (4*\T, 2*\T);
+    \fill[fared!60] ({#1*\T}, \T) rectangle ({(#1+1)*\T}, 2*\T);
+    \draw[thick] (0, 0) rectangle (4*\T, 3*\T);
+    \foreach \i in {1,2,3} { \draw[gray!50, thin] (\i*\T, 0) -- (\i*\T, 3*\T); }
+    \foreach \i in {1,2} { \draw[gray!50, thin] (0, \i*\T) -- (4*\T, \i*\T); }
+    \draw[thick, fared!90!black] ({#1*\T}, \T) rectangle ({(#1+1)*\T}, 2*\T);
+    \node[above, font=\scriptsize] at (2*\T, 3*\T) {$A$};
+    \node[font=\tiny, fared!95!black] at ({(#1+0.5)*\T}, 1.5*\T) {$A_{#1}$};
+    % --- Matrix C ---
+    \begin{scope}[shift={(4*\T + 0.4, 0)}]
+      \draw[thick] (0, 0) rectangle (3*\T, 3*\T);
+      \foreach \i in {1,2} { \draw[gray!50, thin] (\i*\T, 0) -- (\i*\T, 3*\T); }
+      \foreach \i in {1,2} { \draw[gray!50, thin] (0, \i*\T) -- (3*\T, \i*\T); }
+      \fill[purple!50] (\T, \T) rectangle (2*\T, 2*\T);
+      \draw[thick, purple!80!black] (\T, \T) rectangle (2*\T, 2*\T);
+      \node[right, font=\scriptsize] at (3*\T, 1.5*\T) {$C$};
+      \node[font=\tiny, purple!95!black, align=center] at (1.5*\T, 1.5*\T) {$+\!\!=$\\$A_{#1} B_{#1}$};
+    \end{scope}
+    % --- Arrows ---
+    \draw[->, thick, fared!90!black]
+      ({(#1+1)*\T + 0.05}, 1.5*\T) -- (4*\T + 0.4 + \T - 0.05, 1.5*\T);
+    \draw[->, thick, fablue!90!black]
+      (4*\T + 0.4 + 1.5*\T, {3*\T + 0.4 + (3-#1)*\T - 0.05})
+      -- (4*\T + 0.4 + 1.5*\T, 2*\T + 0.05);
+  \end{tikzpicture}%
+}
+
+\begin{frame}{Tiled Matmul: Step by Step}
+  \begin{columns}[T]
+    \begin{column}{0.24\textwidth}
+      \centering
+      \tilestep{0}\\[0.2em]
+      {\scriptsize Step $t = 0$}
+    \end{column}
+    \begin{column}{0.24\textwidth}
+      \centering
+      \tilestep{1}\\[0.2em]
+      {\scriptsize Step $t = 1$}
+    \end{column}
+    \begin{column}{0.24\textwidth}
+      \centering
+      \tilestep{2}\\[0.2em]
+      {\scriptsize Step $t = 2$}
+    \end{column}
+    \begin{column}{0.24\textwidth}
+      \centering
+      \tilestep{3}\\[0.2em]
+      {\scriptsize Step $t = 3$}
+    \end{column}
+  \end{columns}
+
+  \vspace{0.6em}
+  {\small One block walks $K$ in chunks of $\mathtt{TILE}$. At each step $t$ it loads one $A$-tile $A_t$ and one $B$-tile $B_t$ into shared memory, then accumulates $A_t B_t$ into its $C$-tile.}
+\end{frame}
+
+\begin{frame}[fragile]{Tiled Matmul in CUDA: Walkthrough}
+\begin{columns}[T]
+  \begin{column}{0.58\textwidth}
+\begin{lstlisting}[language=C++, keywordstyle=\color{fablue}\bfseries, basicstyle=\ttfamily\tiny, commentstyle=\color{fagreen!60!black}\itshape]
+#define TILE 16
+__global__ void cuda_matmul_tiled(float *C, float *A, float *B,
+                                  int M, int N, int K)
+{
+    // (1) Setup
+    __shared__ float As[TILE][TILE], Bs[TILE][TILE];
+    int row = blockIdx.y * TILE + threadIdx.y;
+    int col = blockIdx.x * TILE + threadIdx.x;
+    float sum = 0.0f;
+
+    // (2) Tile loop: walk K in chunks of TILE
+    for (int t = 0; t < (K + TILE - 1) / TILE; ++t) {
+        // (2a) Cooperative load of one tile pair
+        As[threadIdx.y][threadIdx.x] =
+            (row < M && t*TILE + threadIdx.x < K)
+              ? A[row*K + t*TILE + threadIdx.x] : 0.0f;
+        Bs[threadIdx.y][threadIdx.x] =
+            (col < N && t*TILE + threadIdx.y < K)
+              ? B[(t*TILE + threadIdx.y)*N + col] : 0.0f;
+        __syncthreads();
+
+        // (2b) Multiply-accumulate from shared mem
+        for (int k = 0; k < TILE; ++k)
+            sum += As[threadIdx.y][k] * Bs[k][threadIdx.x];
+        __syncthreads();
+    }
+    // (3) Write-back
+    if (row < M && col < N) C[row*N + col] = sum;
+}
+\end{lstlisting}
+  \end{column}
+
+  \begin{column}{0.42\textwidth}
+    {\scriptsize
+    \textbf{(1) Setup.}
+    \begin{itemize}\itemsep0.1em
+      \item \texttt{\_\_shared\_\_} declares per-block shared memory: visible to all $T^2$ threads in the block.
+      \item \texttt{row, col}: this thread's output coordinate in $C$.
+      \item \texttt{sum}: register-resident accumulator (private to the thread).
+    \end{itemize}
+
+    \vspace{0.4em}
+    \textbf{(2a) Cooperative load.}
+    \begin{itemize}\itemsep0.1em
+      \item Each thread fetches \emph{one} element of $A_s$ and one of $B_s$; the $T^2$ threads together pull a full $T \times T$ tile pair.
+      \item Boundary check pads with $0$ at the matrix edge.
+      \item First \texttt{\_\_syncthreads()}: wait until every load lands before anyone reads.
+    \end{itemize}
+
+    \vspace{0.4em}
+    \textbf{(2b) Multiply\textendash{}accumulate.}
+    \begin{itemize}\itemsep0.1em
+      \item Inner loop reads a row of $A_s$ and a column of $B_s$ from shared memory.
+      \item Each shared-memory value is reused by $T$ threads $\Rightarrow$ global loads per output drop from $2K$ to $2K/T$.
+      \item Second \texttt{\_\_syncthreads()}: stop fast threads from overwriting $A_s, B_s$ while others still read them.
+    \end{itemize}
+
+    \vspace{0.4em}
+    \textbf{(3) Write-back.} One guarded global store per thread.
+    }
+  \end{column}
+\end{columns}
+\end{frame}
+
+\begin{frame}{Triton: A Higher-Level GPU Language}
+  \begin{itemize}
+    \item \textbf{Triton} \cite{tillet2019triton} is a \textbf{Python-embedded DSL} for writing GPU kernels.
+    \item You import \texttt{triton} and \texttt{triton.language as tl}, decorate a normal Python function with \texttt{@triton.jit}, and Triton compiles it to PTX/SASS at the first call.
+    \item Originally from OpenAI; now widely used: PyTorch's \texttt{torch.compile} emits Triton kernels, FlashAttention has Triton implementations, etc.
+    \item Goal: \emph{CUDA-like control with much less boilerplate}. You still pick block sizes and reason about memory, but you do not manage threads, shared memory, or synchronization by hand.
   \end{itemize}
 
-  \vspace{0.4em}
-  \centering
-  % --- Vector layout ---
-  \begin{tikzpicture}[
-    font=\scriptsize,
-    cell/.style={draw=fagray!70, minimum width=6mm, minimum height=6mm, inner sep=0pt, font=\scriptsize},
-  ]
-    \node[anchor=east, font=\small] at (-0.15, 0.8) {logical:};
-    \foreach \i/\v in {0/1, 1/2, 2/3, 3/5, 4/8, 5/13, 6/21} {
-      \node[cell, fill=fablue!15] (l\i) at (\i*0.7, 0.8) {$\v$};
-    }
-    \foreach \i in {0,...,6} {
-      \node[font=\tiny, fagray, above=-1pt of l\i] {[\i]};
-    }
-    \node[anchor=east, font=\small] at (-0.15, -0.8) {memory:};
-    \foreach \i/\v in {0/1, 1/2, 2/3, 3/5, 4/8, 5/13, 6/21} {
-      \node[cell, fill=fagreen!15] (p\i) at (\i*0.7, -0.8) {$\v$};
-    }
-    \foreach \i/\addr in {0/100, 1/104, 2/108, 3/112, 4/116, 5/120, 6/124} {
-      \node[font=\tiny, fagray, below=-1pt of p\i] {\addr};
-    }
-    \node[anchor=west, font=\small] at (5.4, 0.4) {1D vector:\; shape $= [7]$};
-    \node[anchor=west, font=\small] at (5.4, -0.4) {\hphantom{1D vector:\;} stride $= [1]$};
-  \end{tikzpicture}
-
   \vspace{0.5em}
-  % --- Matrix layout (row-major) ---
-  \begin{tikzpicture}[
-    font=\scriptsize,
-    cell/.style={draw=fagray!70, minimum width=6mm, minimum height=6mm, inner sep=0pt, font=\scriptsize},
-  ]
-    \node[anchor=south, font=\small] at (0.7, 1.55) {logical $(2{\times}3)$};
-    \foreach \j/\v in {0/1, 1/2, 2/3} {
-      \node[cell, fill=fablue!25] (m0\j) at (\j*0.7, 0.85) {$\v$};
-    }
-    \foreach \j/\v in {0/5, 1/8, 2/13} {
-      \node[cell, fill=fasram!35] (m1\j) at (\j*0.7, 0.15) {$\v$};
-    }
-    \node[font=\tiny, fagray, left=2pt of m00] {row 0};
-    \node[font=\tiny, fagray, left=2pt of m10] {row 1};
+  \begin{center}
+  {\small
+  \begin{tabular}{lll}
+    \toprule
+    \textbf{Concept} & \textbf{CUDA} & \textbf{Triton} \\
+    \midrule
+    Parallelism unit & Thread & Program (block-level) \\
+    Memory access & Per-element load/store & Block load/store with masks \\
+    Shared memory & Manual management & Automatic \\
+    Synchronization & \texttt{\_\_syncthreads()} & Implicit \\
+    Indexing & Scalar \texttt{threadIdx} arithmetic & Vectorized \texttt{tl.arange} \\
+    \bottomrule
+  \end{tabular}
+  }
+  \end{center}
+\end{frame}
 
-    \node[anchor=south, font=\small] at (5.5, 1.55) {memory (row-major)};
-    \foreach \i/\v/\c in {0/1/fablue!25, 1/2/fablue!25, 2/3/fablue!25, 3/5/fasram!35, 4/8/fasram!35, 5/13/fasram!35} {
-      \node[cell, fill=\c] (p\i) at (3.4 + \i*0.7, 0.5) {$\v$};
-    }
-    \foreach \i/\addr in {0/62, 1/66, 2/70, 3/74, 4/78, 5/82} {
-      \node[font=\tiny, fagray, below=-1pt of p\i] {\addr};
-    }
-    \draw[decorate, decoration={brace, amplitude=2pt}, fagray]
-      (p0.north west) -- node[above=2pt, font=\tiny] {row 0} (p2.north east);
-    \draw[decorate, decoration={brace, amplitude=2pt}, fagray]
-      (p3.north west) -- node[above=2pt, font=\tiny] {row 1} (p5.north east);
+\begin{frame}{Triton: Core API}
+  Most Triton kernels are built from a small set of block-level operations.
 
-    \node[anchor=west, font=\small] at (8.0, 0.85) {2D matrix:\; shape $= [2,3]$};
-    \node[anchor=west, font=\small] at (8.0, 0.30) {\hphantom{2D matrix:\;} stride $= [3,1]$};
-    \node[anchor=west, font=\tiny, fagray, align=left] at (8.0, -0.30)
-      {next row $\to +3$, next col $\to +1$};
-  \end{tikzpicture}
+  \vspace{0.3em}
+  \begin{center}
+  {\scriptsize
+  \begin{tabular}{lll}
+    \toprule
+    \textbf{Operation} & \textbf{Signature} & \textbf{Purpose} \\
+    \midrule
+    \multicolumn{3}{l}{\textit{Indexing \& launch}} \\
+    \texttt{program\_id} & \texttt{tl.program\_id(axis)} & ID of current program along an axis \\
+    \texttt{arange} & \texttt{tl.arange(start, end)} & Compile-time index vector $[\text{start}, \text{end})$ \\
+    \texttt{constexpr} & \texttt{BLOCK: tl.constexpr} & Compile-time constant (enables specialization) \\
+    \midrule
+    \multicolumn{3}{l}{\textit{Memory}} \\
+    \texttt{load} & \texttt{tl.load(ptr, mask, other)} & Block load with bounds mask \\
+    \texttt{store} & \texttt{tl.store(ptr, val, mask)} & Block store with bounds mask \\
+    \midrule
+    \multicolumn{3}{l}{\textit{Compute}} \\
+    \texttt{dot} & \texttt{tl.dot(a, b)} & Block matmul (uses tensor cores) \\
+    \texttt{sum, max, min} & \texttt{tl.sum(x, axis)} & Block-level reductions \\
+    \texttt{exp, log, sqrt} & \texttt{tl.exp(x)} & Elementwise math, vectorized \\
+    \texttt{where} & \texttt{tl.where(cond, a, b)} & Elementwise select \\
+    \midrule
+    \multicolumn{3}{l}{\textit{Shapes}} \\
+    \texttt{reshape} & \texttt{tl.reshape(x, shape)} & Reshape a block tensor \\
+    \texttt{broadcast\_to} & \texttt{tl.broadcast\_to(x, shp)} & Explicit broadcast (NumPy-style auto bcast also works) \\
+    \bottomrule
+  \end{tabular}
+  }
+  \end{center}
+
+  \vspace{0.3em}
+  {\small
+  \begin{itemize}
+    \item \textbf{Block tensors:} small multidimensional arrays of compile-time fixed shape. They live in registers (not HBM); the user manipulates them as a single object, while the compiler implicitly spreads elements across the threads of the program.
+    \item \textbf{NumPy-like semantics:} \texttt{tl.arange(0, BLOCK)} produces an index vector; broadcasting follows NumPy rules (e.g.\ \texttt{(BLOCK\_M, 1) * (1, BLOCK\_N) $\to$ (BLOCK\_M, BLOCK\_N)}); reductions \texttt{tl.sum}, \texttt{tl.max}, \texttt{tl.dot} act on whole blocks.
+    \item \textbf{Pointers as block tensors:} \texttt{x\_ptr + tl.arange(0, BLOCK)} is itself a block tensor of pointers; \texttt{tl.load} on it fetches the whole block in one instruction.
+    \item \textbf{Masks:} a boolean block tensor passed to \texttt{tl.load} / \texttt{tl.store} guards out-of-bounds elements; the compiler emits predicated loads.
+    \item Triton handles vectorization, memory coalescing, and shared-memory staging behind the scenes; \texttt{tl.constexpr} parameters drive autotuning over \texttt{BLOCK\_SIZE}, \texttt{num\_warps}, \texttt{num\_stages}.
+  \end{itemize}
+  }
+\end{frame}
+
+\begin{frame}[fragile]{Triton Example: Vector Addition}
+\begin{columns}[T]
+  \begin{column}{0.55\textwidth}
+\begin{lstlisting}[basicstyle=\ttfamily\scriptsize]
+@triton.jit
+def add_kernel(x_ptr, y_ptr, output_ptr,
+               n_elements,
+               BLOCK_SIZE: tl.constexpr):
+    pid = tl.program_id(0)
+    block_start = pid * BLOCK_SIZE
+    offsets = block_start + tl.arange(0, BLOCK_SIZE)
+    mask = offsets < n_elements
+    x = tl.load(x_ptr + offsets, mask=mask)
+    y = tl.load(y_ptr + offsets, mask=mask)
+    tl.store(output_ptr + offsets, x + y, mask=mask)
+
+# Launch
+grid = lambda meta:
+    (triton.cdiv(n, meta['BLOCK_SIZE']),)
+add_kernel[grid](x, y, output, n,
+                 BLOCK_SIZE=256)
+\end{lstlisting}
+  \end{column}
+  \begin{column}{0.45\textwidth}
+    \centering
+    \begin{tikzpicture}[font=\tiny]
+      \def\bw{1.0}
+      \def\bh{0.5}
+      \foreach \i/\fc in {0/gray!15, 1/fablue!50, 2/gray!15, 3/gray!15} {
+        \fill[\fc] (\i*\bw, 0) rectangle ({(\i+1)*\bw}, \bh);
+        \draw[thick] (\i*\bw, 0) rectangle ({(\i+1)*\bw}, \bh);
+        \node[font=\tiny] at ({(\i+0.5)*\bw}, 0.5*\bh) {\texttt{pid=\i}};
+      }
+      % BLOCK_SIZE brace above block 1
+      \draw[decorate, decoration={brace, amplitude=3pt}]
+        (\bw, \bh + 0.05) -- (2*\bw, \bh + 0.05)
+        node[midway, above=1pt, font=\tiny] {\texttt{BLOCK\_SIZE}};
+      % n elements brace below
+      \draw[decorate, decoration={brace, amplitude=3pt, mirror}]
+        (0, -0.05) -- (4*\bw, -0.05)
+        node[midway, below=1pt, font=\tiny] {$n$ elements};
+      \node[left, font=\scriptsize] at (0, 0.5*\bh) {$x$};
+    \end{tikzpicture}
+
+    \vspace{0.6em}
+    {\scriptsize
+    \begin{itemize}\itemsep0.2em
+      \item Vector partitioned into blocks of \texttt{BLOCK\_SIZE}; one Triton program per block.
+      \item \texttt{pid = tl.program\_id(0)} identifies the current block.
+      \item \texttt{offsets = pid*BLOCK\_SIZE + tl.arange(0, BLOCK\_SIZE)} is a length-\texttt{BLOCK\_SIZE} vector of element indices.
+      \item Boolean \texttt{mask = offsets < n\_elements} disables out-of-range lanes in the tail block.
+      \item \texttt{tl.load}/\texttt{tl.store} do masked block-level memory access.
+    \end{itemize}
+    }
+  \end{column}
+\end{columns}
+\end{frame}
+
+\begin{frame}[fragile]{Triton Example: Matrix Addition}
+\begin{columns}[T]
+  \begin{column}{0.5\textwidth}
+\begin{lstlisting}[basicstyle=\ttfamily\scriptsize]
+@triton.jit
+def mat_add_kernel(A, B, C, M, N,
+                   BLOCK_M: tl.constexpr,
+                   BLOCK_N: tl.constexpr):
+    pid_m = tl.program_id(0)
+    pid_n = tl.program_id(1)
+    offs_m = pid_m*BLOCK_M + tl.arange(0, BLOCK_M)
+    offs_n = pid_n*BLOCK_N + tl.arange(0, BLOCK_N)
+    mask = (offs_m[:, None] < M) \
+         & (offs_n[None, :] < N)
+    ptrs = offs_m[:, None]*N + offs_n[None, :]
+    a = tl.load(A + ptrs, mask=mask)
+    b = tl.load(B + ptrs, mask=mask)
+    tl.store(C + ptrs, a + b, mask=mask)
+
+# 2D grid launch
+grid = lambda meta: (triton.cdiv(M, meta['BLOCK_M']),
+                     triton.cdiv(N, meta['BLOCK_N']))
+\end{lstlisting}
+
+  \vspace{0.3em}
+  {\scriptsize
+  Concrete example: $M{=}N{=}8$, $\texttt{B\_M}{=}\texttt{B\_N}{=}4$, $(\texttt{pid\_m},\texttt{pid\_n}){=}(1,1)$, so
+  $\texttt{offs\_m} = \texttt{offs\_n} = [4,5,6,7]$.
+  }
+  \end{column}
+  \begin{column}{0.5\textwidth}
+    \centering
+    % Macro view: 3x3 grid of program-blocks
+    \begin{tikzpicture}[font=\tiny]
+      \def\bw{0.5}
+      \def\bh{0.4}
+      \foreach \i in {0,1,2} {
+        \foreach \j in {0,1,2} {
+          \fill[gray!15] ({\i*\bw}, {(2-\j)*\bh}) rectangle ({(\i+1)*\bw}, {(3-\j)*\bh});
+          \draw[thick] ({\i*\bw}, {(2-\j)*\bh}) rectangle ({(\i+1)*\bw}, {(3-\j)*\bh});
+        }
+      }
+      \fill[fablue!50] (\bw, \bh) rectangle (2*\bw, 2*\bh);
+      \draw[thick] (\bw, \bh) rectangle (2*\bw, 2*\bh);
+      \node[font=\tiny] at (1.5*\bw, 1.5*\bh) {(1,1)};
+      \draw[decorate, decoration={brace, amplitude=2pt}]
+        (-0.08, \bh) -- (-0.08, 2*\bh)
+        node[midway, left=1pt, font=\tiny] {\texttt{B\_M}};
+      \draw[decorate, decoration={brace, amplitude=2pt}]
+        (\bw, 3*\bh + 0.04) -- (2*\bw, 3*\bh + 0.04)
+        node[midway, above=1pt, font=\tiny] {\texttt{B\_N}};
+      \draw[decorate, decoration={brace, amplitude=2pt}]
+        (3*\bw + 0.08, 3*\bh) -- (3*\bw + 0.08, 0)
+        node[midway, right=1pt, font=\tiny] {$M$};
+      \draw[decorate, decoration={brace, amplitude=2pt, mirror}]
+        (0, -0.08) -- (3*\bw, -0.08)
+        node[midway, below=1pt, font=\tiny] {$N$};
+    \end{tikzpicture}
+
+    \vspace{0.6em}
+    % Micro view: offs_m, offs_n, ptrs block for (1,1)
+    \begin{tikzpicture}[font=\tiny]
+      \def\cw{0.55}
+      \def\ch{0.42}
+      \def\gap{0.12}
+
+      % offs_n row at top
+      \begin{scope}[shift={(0, 4*\ch + \gap)}]
+        \foreach \v/\i in {4/0, 5/1, 6/2, 7/3} {
+          \fill[fablue!25] ({\i*\cw}, 0) rectangle ({(\i+1)*\cw}, \ch);
+          \draw[thick] ({\i*\cw}, 0) rectangle ({(\i+1)*\cw}, \ch);
+          \node at ({(\i+0.5)*\cw}, 0.5*\ch) {\v};
+        }
+        \node[left, fablue!80!black, font=\tiny] at (-0.05, 0.5*\ch) {\texttt{offs\_n}};
+      \end{scope}
+
+      % offs_m column on left
+      \begin{scope}[shift={(-\cw - \gap, 0)}]
+        \foreach \v/\j in {4/0, 5/1, 6/2, 7/3} {
+          \fill[fared!25] (0, {(3-\j)*\ch}) rectangle (\cw, {(4-\j)*\ch});
+          \draw[thick] (0, {(3-\j)*\ch}) rectangle (\cw, {(4-\j)*\ch});
+          \node at (0.5*\cw, {(3.5-\j)*\ch}) {\v};
+        }
+        \node[above, fared!80!black, font=\tiny] at (0.5*\cw, 4*\ch + 0.04) {\texttt{offs\_m}};
+      \end{scope}
+
+      % 4x4 ptrs block: ptrs[j][i] = offs_m[j]*N + offs_n[i] with N=8
+      \foreach \i/\n in {0/4, 1/5, 2/6, 3/7} {
+        \foreach \j/\m in {0/4, 1/5, 2/6, 3/7} {
+          \pgfmathtruncatemacro{\ptr}{\m * 8 + \n}
+          \fill[purple!15] ({\i*\cw}, {(3-\j)*\ch}) rectangle ({(\i+1)*\cw}, {(4-\j)*\ch});
+          \draw[thick] ({\i*\cw}, {(3-\j)*\ch}) rectangle ({(\i+1)*\cw}, {(4-\j)*\ch});
+          \node at ({(\i+0.5)*\cw}, {(3.5-\j)*\ch}) {\ptr};
+        }
+      }
+      \node[right, purple!80!black, font=\tiny] at (4*\cw + 0.05, 2*\ch) {\texttt{ptrs}};
+    \end{tikzpicture}
+
+    \vspace{0.4em}
+    {\scriptsize
+    Broadcasting: $\texttt{ptrs}_{ji} = \texttt{offs\_m}_j \cdot N + \texttt{offs\_n}_i$.}
+  \end{column}
+\end{columns}
 \end{frame}
 
 \begin{frame}{Transpose via Strides}
