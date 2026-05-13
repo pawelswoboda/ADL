@@ -76,7 +76,7 @@
       \begin{tikzpicture}[
           font=\sffamily,
           seg/.style={draw=baredge, line width=0.7pt, fill=barblue},
-          brace/.style={decorate, decoration={brace, amplitude=10pt, raise=3pt}, line width=0.9pt},
+          brace/.style={decorate, decoration={brace, amplitude=6pt, raise=0pt, mirror}, line width=0.9pt},
           lab/.style={font=\sffamily\bfseries, anchor=west},
         ]
         \def\barx{0}
@@ -592,7 +592,7 @@
         \caption{\small FlashAttention-2 Forward}
         \KwIn{$Q, K, V \in \mathbb{R}^{T \times d}$ in HBM; block sizes $B_r, B_c$}
         \KwOut{$O \in \mathbb{R}^{T \times d}$, $L \in \mathbb{R}^{T}$}
-        Divide $Q$ into $T_r$ blocks, $K, V$ into $T_c$ blocks\;
+        Split $Q$ into $T_r$ row-blocks $Q_i \!\in\! \mathbb{R}^{B_r \times d}$; $K, V$ into $T_c$ row-blocks $K_j, V_j \!\in\! \mathbb{R}^{B_c \times d}$. Output $O$ likewise has row-blocks $O_i \!\in\! \mathbb{R}^{B_r \times d}$\;
         \For{$i = 1, \ldots, T_r$}{
           \textcolor{loadcol}{Load $Q_i$ from HBM to SRAM}\;
           $O_i \gets 0$, $\ell_i \gets 0$, $m_i \gets -\infty$\;
@@ -623,70 +623,70 @@
     \end{column}
     \begin{column}{0.43\textwidth}
       \centering
+      \resizebox{\linewidth}{!}{%
       \begin{tikzpicture}[
-        mat/.style={draw, thick, minimum width=5mm, minimum height=5mm,
-                    inner sep=0pt, font=\tiny\bfseries,
-                    text depth=.5ex, text height=1.5ex},
-        sram/.style={draw, thick, rounded corners=3pt, dashed,
-                     fill=fasram!15, inner sep=4pt},
-        hbm/.style={draw, thick, rounded corners=3pt,
-                    fill=fahbm!15, inner sep=4pt},
-        arr/.style={-Stealth, thick, gray!60},
-        lbl/.style={font=\tiny},
+        font=\sffamily\scriptsize,
+        qblk/.style={draw, thick, minimum width=13mm, minimum height=5.5mm, inner sep=0pt, fill=blue!12, text height=1.4ex, text depth=.4ex, anchor=center},
+        qcur/.style={draw, very thick, minimum width=13mm, minimum height=5.5mm, inner sep=0pt, fill=blue!55, text=white, font=\scriptsize\bfseries, text height=1.4ex, text depth=.4ex, anchor=center},
+        kblk/.style={draw, thick, minimum width=22mm, minimum height=5.5mm, inner sep=0pt, fill=fagreen!25, text height=1.4ex, text depth=.4ex, anchor=center},
+        kcur/.style={draw, very thick, minimum width=22mm, minimum height=5.5mm, inner sep=0pt, fill=fagreen!60, text=white, font=\scriptsize\bfseries, text height=1.4ex, text depth=.4ex, anchor=center},
+        oblk/.style={draw, thick, minimum width=13mm, minimum height=5.5mm, inner sep=0pt, fill=pink!25, text height=1.4ex, text depth=.4ex, anchor=center},
+        ocur/.style={draw, very thick, minimum width=13mm, minimum height=5.5mm, inner sep=0pt, fill=pink!70, font=\scriptsize\bfseries, text height=1.4ex, text depth=.4ex, anchor=center},
+        arr/.style={-Stealth, line width=1pt},
       ]
-        % HBM region
-        \node[hbm, minimum width=3.2cm, minimum height=1.2cm] (hbmbox) at (0, 2.8) {};
-        \node[lbl, anchor=north west] at (hbmbox.north west) {HBM};
+        \def\dy{0.55}
+        \def\xQ{0}
+        \def\xK{2.45}
+        \def\xO{5.0}
 
-        % Q, K, V in HBM - as block rows
-        \foreach \i/\c in {1/blue!20, 2/blue!35, 3/blue!50} {
-          \node[mat, fill=\c, minimum width=3.5mm] (Q\i) at (-1.1+\i*0.35, 2.65) {};
-        }
-        \node[lbl, above=1pt] at (Q2.north) {$Q$};
+        % Column headers
+        \node[font=\bfseries] at (\xQ, 0.6) {$Q$};
+        \node[font=\bfseries] at (\xK, 0.6) {$K,\ V$};
+        \node[font=\bfseries] at (\xO, 0.6) {$O$};
 
-        \foreach \i/\c in {1/green!20, 2/green!35, 3/green!50, 4/green!65} {
-          \node[mat, fill=\c, minimum width=3.5mm] (K\i) at (-0.05+\i*0.35, 2.65) {};
-        }
-        \node[lbl, above=1pt] at ($(K2.north)!0.5!(K3.north)$) {$K,V$};
+        % Q column (touching row-blocks, evenly spaced)
+        \node[qblk] (Q1) at (\xQ, 0) {$Q_1$};
+        \node[qblk] (Q2) at (\xQ, -\dy) {$Q_2$};
+        \node[qcur] (Qi) at (\xQ, -2*\dy) {$Q_i$};
+        \node[qblk] (Q4) at (\xQ, -3*\dy) {$Q_{T_r-1}$};
+        \node[qblk] (Q5) at (\xQ, -4*\dy) {$Q_{T_r}$};
 
-        % SRAM region (extended right, slightly taller)
-        \node[sram, minimum width=3.8cm, minimum height=1.8cm] (srambox) at (0.3, 0.5) {};
-        \node[lbl, anchor=north west] at (srambox.north west) {SRAM};
+        % K, V column (each block represents the K_j, V_j pair)
+        \node[kblk] (K1) at (\xK, 0) {$K_1,\, V_1$};
+        \node[kblk] (K2) at (\xK, -\dy) {$K_2,\, V_2$};
+        \node[kcur] (Kj) at (\xK, -2*\dy) {$K_j,\, V_j$};
+        \node[kblk] (K4) at (\xK, -3*\dy) {$K_{T_c-1},\, V_{T_c-1}$};
+        \node[kblk] (K5) at (\xK, -4*\dy) {$K_{T_c},\, V_{T_c}$};
 
-        % Q_i block in SRAM (stays)
-        \node[mat, fill=blue!35, minimum width=8mm, minimum height=6mm]
-          (Qi) at (-0.9, 0.45) {$\mathstrut Q_i$};
-        \node[lbl, anchor=base] at (-0.9, -0.05) {stays};
+        % O column
+        \node[oblk] (O1) at (\xO, 0) {$O_1$};
+        \node[oblk] (O2) at (\xO, -\dy) {$O_2$};
+        \node[ocur] (Oi) at (\xO, -2*\dy) {$O_i$};
+        \node[oblk] (O4) at (\xO, -3*\dy) {$O_{T_r-1}$};
+        \node[oblk] (O5) at (\xO, -4*\dy) {$O_{T_r}$};
 
-        % K_j, V_j block in SRAM (streamed)
-        \node[mat, fill=green!40, minimum width=8mm, minimum height=6mm]
-          (KVj) at (0.15, 0.45) {$\mathstrut K_j\!,V_j$};
-        \node[lbl, anchor=base] at (0.15, -0.05) {streamed};
+        % Outer-loop arrow, well to the left of Q (no overlap)
+        \draw[arr, blue!70!black] ([xshift=-8mm] Q1.west) -- ([xshift=-8mm] Q5.west);
+        \node[blue!70!black, font=\scriptsize\bfseries, rotate=90]
+          at ([xshift=-12mm] $(Q1)!0.5!(Q5)$) {outer $i$};
 
-        % O_i, m_i, l_i accumulators
-        \node[mat, fill=pink!40, minimum width=8mm, minimum height=6mm]
-          (Oi) at (1.35, 0.45) {$\mathstrut O_i, m_i, \ell_i$};
-        \node[lbl, anchor=base] at (1.35, -0.05) {accum.};
+        % Inner-loop arrow in the gap between K,V column and O column
+        \draw[arr, fagreen!70!black] ([xshift=5mm] K1.east) -- ([xshift=5mm] K5.east);
+        \node[fagreen!70!black, font=\scriptsize\bfseries, rotate=-90]
+          at ([xshift=9mm] $(K1)!0.5!(K5)$) {inner $j$};
 
-        % Arrows: HBM -> SRAM
-        \draw[arr, loadcol] (Q2.south) -- (Qi.north)
-          node[midway, left, lbl] {once};
-        \draw[arr, loadcol] (K2.south) -- (KVj.north)
-          node[midway, right, lbl] {loop};
+        % Bottom captions
+        \node[anchor=north, align=center, font=\scriptsize] at ($(Q5)+(0,-0.5)$)
+          {$Q_i \!\in\! \mathbb{R}^{B_r\times d}$\\loaded once per $i$};
+        \node[anchor=north, align=center, font=\scriptsize] at ($(K5)+(0,-0.5)$)
+          {$K_j, V_j \!\in\! \mathbb{R}^{B_c\times d}$\\streamed across $j$};
+        \node[anchor=north, align=center, font=\scriptsize] at ($(O5)+(0,-0.5)$)
+          {$O_i \!\in\! \mathbb{R}^{B_r\times d}$\\written once per $i$};
+      \end{tikzpicture}}
 
-        % Arrow: SRAM -> HBM (write back)
-        \draw[arr, storecol] (Oi.north) -- (Oi.north |- hbmbox.south)
-          node[midway, right, lbl] {once};
-
-        % Legend
-        \node[lbl, loadcol, anchor=west] at (-1.4, -0.7) {$\blacksquare$ Load};
-        \node[lbl, compcol, anchor=west] at (-0.3, -0.7) {$\blacksquare$ Compute};
-        \node[lbl, storecol, anchor=west] at (0.85, -0.7) {$\blacksquare$ Store};
-      \end{tikzpicture}
-
-      \vspace{0.3em}
-      {\small
-      \textbf{Key:} $Q_i$ loaded once, $K_j, V_j$ streamed. No $T \times T$ matrix materialized. $O(T)$ extra memory.
+      \vspace{0.4em}
+      {\scriptsize
+      For each outer $i$: load $Q_i$, loop over all $K_j, V_j$ in SRAM, write back $O_i$. No $T\!\times\!T$ matrix ever materialized.
       }
     \end{column}
   \end{columns}
@@ -1752,181 +1752,198 @@ grid = lambda meta: (triton.cdiv(M, meta['BLOCK_M']),
   \end{itemize}
 \end{frame}
 
+\begin{frame}[fragile]{Transpose in Triton}
+  Triton offers two ways to obtain a transposed tile, with very different cost:
+
+  \textbf{(1) \texttt{tl.trans} -- explicit, moves data in registers / shared memory}
+\begin{lstlisting}
+X  = tl.load(X_ptr)                                # tile of shape [M, N]
+XT = tl.trans(X)                                   # [N, M], physically rearranged
+\end{lstlisting}
+  Use when only a small tile already in registers needs to be flipped (e.g.\ \texttt{tl.trans(V\_block)} inside the FA backward to form $dP = dO\,V^\top$).
+
+  \textbf{(2) Swap shape and strides in \texttt{tl.make\_block\_ptr} -- free}
+\begin{lstlisting}
+# Standard: load K as a [BLOCK_KV, HEAD_DIM] tile
+K_ptr = tl.make_block_ptr(base=K, shape=(SEQ_LEN, HEAD_DIM),
+                          strides=(stride_seq, stride_dim),
+                          block_shape=(BLOCK_KV, HEAD_DIM), ...)
+
+# Transposed: swap shape *and* strides -> tile loads as [HEAD_DIM, BLOCK_KV]
+K_T_ptr = tl.make_block_ptr(base=K, shape=(HEAD_DIM, SEQ_LEN),
+                            strides=(stride_dim, stride_seq),     # <-- swapped
+                            block_shape=(HEAD_DIM, BLOCK_KV), ...)
+K_T = tl.load(K_T_ptr)                             # equivalent to K^T, zero extra cost
+\end{lstlisting}
+  No data is moved: the block pointer simply walks the same physical memory along a different axis. This is exactly how Flash Attention's forward kernel gets $K^\top$ so that \texttt{tl.dot(Q\_block, K\_T)} computes $Q_i K_j^\top$ directly.
+
+  \vspace{0.2em}
+  {\footnotesize \textbf{Note:} A PyTorch-side \texttt{K.transpose(-2, -1)} before launching the kernel is also free (same stride trick) -- the kernel just sees pre-swapped strides.}
+\end{frame}
+
 % -----------------------------------------------------------------------
 \subsection{Triton Implementation}
 
-\begin{frame}[fragile]{Forward Pass: Inner Loop}
-
-\begin{lstlisting}
-@triton.jit
-def _attn_fwd_inner(O_block, l_i, m_i, Q_block, K_block_ptr, V_block_ptr,
-                     block_index_q, softmax_scale, BLOCK_SIZE_Q: tl.constexpr,
-                     BLOCK_SIZE_KV: tl.constexpr, STAGE: tl.constexpr,
-                     offs_q: tl.constexpr, offs_kv: tl.constexpr,
-                     SEQ_LEN: tl.constexpr):
-    if STAGE == 1:       # Left of diagonal (causal)
-        lo, hi = 0, block_index_q * BLOCK_SIZE_Q
-    elif STAGE == 2:     # Diagonal block (causal)
-        lo, hi = block_index_q * BLOCK_SIZE_Q, (block_index_q + 1) * BLOCK_SIZE_Q
-    else:                # Non-causal: full range
-        lo, hi = 0, SEQ_LEN
-    K_block_ptr = tl.advance(K_block_ptr, (0, lo))
-    V_block_ptr = tl.advance(V_block_ptr, (lo, 0))
-    for start_kv in range(lo, hi, BLOCK_SIZE_KV):
-        K_block = tl.load(K_block_ptr)
-        QK_block = tl.dot(Q_block, K_block)
-        # ... apply mask for STAGE==2, scale, compute new max ...
-        m_ij = tl.maximum(m_i, tl.max(QK_block, 1) * softmax_scale)
-        QK_block = QK_block * softmax_scale - m_ij[:, None]
-        P_block = tl.math.exp(QK_block)
-        l_ij = tl.sum(P_block, 1)
-        alpha = tl.math.exp(m_i - m_ij)   # correction factor
-        l_i = l_i * alpha + l_ij
-        V_block = tl.load(V_block_ptr)
-        O_block = O_block * alpha[:, None] # rescale previous output
-        O_block = tl.dot(P_block.to(tl.float16), V_block, O_block)
-        m_i = m_ij
-        V_block_ptr = tl.advance(V_block_ptr, (BLOCK_SIZE_KV, 0))
-        K_block_ptr = tl.advance(K_block_ptr, (0, BLOCK_SIZE_KV))
-    return O_block, l_i, m_i
-\end{lstlisting}
-\end{frame}
-
-\begin{frame}[fragile]{Forward Pass: Main Kernel}
+\begin{frame}[fragile]{Forward Kernel: Setup}
+  Full \texttt{\_attn\_fwd} structure. Steps 1--3 construct the state that the
+  inner loop (next slide) consumes; step 5 is the epilogue.
 
 \begin{lstlisting}
 @triton.jit
 def _attn_fwd(Q, K, V, softmax_scale, M, O,
-              stride_Q_batch, stride_Q_head, stride_Q_seq, stride_Q_dim,
-              stride_K_batch, stride_K_head, stride_K_seq, stride_K_dim,
-              stride_V_batch, stride_V_head, stride_V_seq, stride_V_dim,
-              stride_O_batch, stride_O_head, stride_O_seq, stride_O_dim,
-              BATCH_SIZE, NUM_HEADS: tl.constexpr,
-              SEQ_LEN: tl.constexpr, HEAD_DIM: tl.constexpr,
-              BLOCK_SIZE_Q: tl.constexpr, BLOCK_SIZE_KV: tl.constexpr,
-              STAGE: tl.constexpr):
-    block_index_q = tl.program_id(0)     # which Q block
-    index_batch_head = tl.program_id(1)  # which batch x head
-    # Set up block pointers for Q, K, V, O using tl.make_block_ptr
-    # K is loaded transposed by swapping strides!
-    Q_block = tl.load(Q_block_ptr)  # stays in SRAM
-    m_i = tl.zeros([BLOCK_SIZE_Q], dtype=tl.float32) - float("inf")
-    l_i = tl.zeros([BLOCK_SIZE_Q], dtype=tl.float32) + 1.0
-    O_block = tl.zeros([BLOCK_SIZE_Q, HEAD_DIM], dtype=tl.float32)
-    # Call _attn_fwd_inner for each stage
-    # Epilogue: store logsumexp and normalized output
-    m_i += tl.math.log(l_i)    # L = m + log(l) for backward
-    O_block = O_block / l_i[:, None]
-    tl.store(m_ptrs, m_i)
+              stride_qb, stride_qh, stride_qs, stride_qd,             # strides of Q (K, V, O analogous)
+              stride_kb, stride_kh, stride_ks, stride_kd,
+              ..., NUM_HEADS, SEQ_LEN: tl.constexpr, HEAD_DIM: tl.constexpr,
+              BLOCK_SIZE_Q: tl.constexpr, BLOCK_SIZE_KV: tl.constexpr, STAGE: tl.constexpr):
+
+    # === 1. Which Q-block, which (batch, head) does this program own? ===
+    block_index_q    = tl.program_id(0)
+    index_batch_head = tl.program_id(1)
+    qkv_offset       = index_batch_head * stride_qh                   # base offset for this (batch, head)
+
+    # === 2. Block pointers.  Q and O are standard; K uses *swapped* strides. ===
+    Q_block_ptr = tl.make_block_ptr(
+        base=Q + qkv_offset, shape=(SEQ_LEN, HEAD_DIM),
+        strides=(stride_qs, stride_qd),
+        offsets=(block_index_q * BLOCK_SIZE_Q, 0),
+        block_shape=(BLOCK_SIZE_Q, HEAD_DIM), order=(1, 0))
+
+    # K viewed as [HEAD_DIM, SEQ_LEN]: shape AND strides swapped
+    #   -> each tl.load yields K_j^T  (free transpose, no data movement)
+    K_block_ptr = tl.make_block_ptr(
+        base=K + qkv_offset, shape=(HEAD_DIM, SEQ_LEN),
+        strides=(stride_kd, stride_ks),                               # <-- swapped vs. Q
+        offsets=(0, 0),
+        block_shape=(HEAD_DIM, BLOCK_SIZE_KV), order=(0, 1))
+
+    V_block_ptr = tl.make_block_ptr(base=V + qkv_offset, ...,         # standard [BLOCK_KV, HEAD_DIM]
+                                    block_shape=(BLOCK_SIZE_KV, HEAD_DIM))
+    O_block_ptr = tl.make_block_ptr(base=O + qkv_offset, ...,         # standard [BLOCK_Q,  HEAD_DIM]
+                                    block_shape=(BLOCK_SIZE_Q,  HEAD_DIM))
+
+    # === 3. Load Q_i once into SRAM; init running state per row of Q_i ===
+    Q_block = tl.load(Q_block_ptr)                                    # [BLOCK_Q, HEAD_DIM]
+    m_i     = tl.zeros([BLOCK_SIZE_Q], tl.float32) - float("inf")     # running max
+    l_i     = tl.zeros([BLOCK_SIZE_Q], tl.float32) + 1.0              # running sum
+    O_block = tl.zeros([BLOCK_SIZE_Q, HEAD_DIM], tl.float32)          # output accumulator
+
+    # === 4. Stream K, V blocks through SRAM and accumulate (see next slide) ===
+    # Causal: call inner twice (STAGE=1 left of diag, STAGE=2 diag).  Non-causal: once.
+    O_block, l_i, m_i = _attn_fwd_inner(O_block, l_i, m_i, Q_block,
+                                         K_block_ptr, V_block_ptr,
+                                         block_index_q, softmax_scale, STAGE, ...)
+
+    # === 5. Epilogue: normalize O_i once; save L = m + log(l) for backward ===
+    O_block = O_block / l_i[:, None]                                  # Trick 1
+    m_i    += tl.math.log(l_i)                                        # Trick 2
     tl.store(O_block_ptr, O_block.to(O.type.element_ty))
+    tl.store(M + index_batch_head * SEQ_LEN + offs_q, m_i)            # save log-sum-exp L
 \end{lstlisting}
 
-  \vspace{0.3em}
-  \textbf{Grid layout:} \texttt{(ceil(SEQ\_LEN / BLOCK\_Q),\; BATCH $\times$ HEADS,\; 1)}
-
-  Each program processes one $Q$-block for one head of one batch element.
+  \vspace{-0.3em}
+  {\footnotesize Grid: \texttt{(ceil(SEQ\_LEN / BLOCK\_Q),\, BATCH$\cdot$HEADS,\, 1)} -- one program per $Q$-block per head.}
 \end{frame}
 
-\begin{frame}[fragile]{Backward Pass: Inner Loop}
+\begin{frame}[fragile]{Forward: Streaming-Softmax Inner Loop}
+  Body of \texttt{\_attn\_fwd\_inner}, invoked from \texttt{\_attn\_fwd} above. Each
+  iteration streams one $K_j, V_j$ block from HBM; $Q_i$ and the running state
+  $(m_i, \ell_i, O_i)$ stay resident in SRAM.
 
 \begin{lstlisting}
-@triton.jit
-def _attn_bwd_inner(dQ_block, Q_block, K_block_ptr, V_block_ptr,
-                     softmax_scale, L_i, D_i, dO_block,
-                     BLOCK_SIZE_Q: tl.constexpr,
-                     BLOCK_SIZE_KV: tl.constexpr,
-                     SEQ_LEN: tl.constexpr):
-    lo, hi = 0, SEQ_LEN
-    K_block_ptr = tl.advance(K_block_ptr, (0, lo))
-    V_block_ptr = tl.advance(V_block_ptr, (lo, 0))
-    for start_kv in range(lo, hi, BLOCK_SIZE_KV):
-        K_block = tl.load(K_block_ptr)
-        V_block = tl.load(V_block_ptr)
-        # Recompute P from Q, K and saved logsumexp L
-        QK_block = tl.dot(Q_block, K_block)
-        P_block = tl.math.exp(QK_block * softmax_scale - L_i[:, None])
-        # dS = P * (dO @ V^T - D)
-        dP_block = tl.dot(dO_block, tl.trans(V_block))
-        dS_block = P_block * (dP_block - D_i[:, None])
-        # Accumulate dQ
-        dQ_block += tl.dot(dS_block.to(tl.float16), tl.trans(K_block))
-        K_block_ptr = tl.advance(K_block_ptr, (0, BLOCK_SIZE_KV))
-        V_block_ptr = tl.advance(V_block_ptr, (BLOCK_SIZE_KV, 0))
-    return dQ_block
+# Stage selects which K, V range to scan (causal skips blocks fully right of diagonal)
+if   STAGE == 1: lo, hi = 0, block_index_q * BLOCK_SIZE_Q                                # left of diag
+elif STAGE == 2: lo, hi = block_index_q * BLOCK_SIZE_Q, (block_index_q+1)*BLOCK_SIZE_Q   # diagonal
+else:            lo, hi = 0, SEQ_LEN                                                     # non-causal
+
+K_block_ptr = tl.advance(K_block_ptr, (0, lo))                # K viewed as [HEAD_DIM, SEQ]
+V_block_ptr = tl.advance(V_block_ptr, (lo, 0))                # V is        [SEQ, HEAD_DIM]
+
+for start_kv in range(lo, hi, BLOCK_SIZE_KV):
+    K_block  = tl.load(K_block_ptr)                           # K_j^T  [HEAD_DIM, BLOCK_KV]
+    QK_block = tl.dot(Q_block, K_block)                       # S_ij = Q_i K_j^T  [BLOCK_Q, BLOCK_KV]
+
+    # --- Online softmax: extend running max  m_i -> m_ij ---
+    m_ij     = tl.maximum(m_i, tl.max(QK_block, 1) * softmax_scale)
+    QK_block = QK_block * softmax_scale - m_ij[:, None]       # numerically safe shift
+    P_block  = tl.math.exp(QK_block)                          # tilde P_ij
+    l_ij     = tl.sum(P_block, 1)                             # rowsum(tilde P_ij)
+
+    # --- Correction: rescale prior accumulators by alpha = exp(m_i - m_ij) ---
+    alpha   = tl.math.exp(m_i - m_ij)
+    l_i     = l_i * alpha + l_ij                              # l_i  <- alpha*l_i + rowsum
+    O_block = O_block * alpha[:, None]                        # O_i  <- diag(alpha) O_i
+
+    # --- Accumulate output: O_i += tilde P_ij V_j  (fused MAC into tl.dot) ---
+    V_block = tl.load(V_block_ptr)                            # V_j   [BLOCK_KV, HEAD_DIM]
+    O_block = tl.dot(P_block.to(tl.float16), V_block, O_block)
+
+    m_i = m_ij
+    K_block_ptr = tl.advance(K_block_ptr, (0, BLOCK_SIZE_KV))
+    V_block_ptr = tl.advance(V_block_ptr, (BLOCK_SIZE_KV, 0))
 \end{lstlisting}
 \end{frame}
 
-\begin{frame}[fragile]{Backward Pass: Main Kernel}
+\begin{frame}[fragile]{Backward: Two-Phase Kernel}
+  Two grid launches share the math but invert the outer loop. $P_{ij}$ is
+  \emph{recomputed} from $Q,K$ and the saved log-sum-exp $L_i$;
+  $D_i = \mathrm{rowsum}(dO_i \odot O_i)$ replaces materializing $dP$.
 
+  \textbf{Phase 1 (outer loop over $Q$-blocks $\to$ accumulate $dQ_i$):}
 \begin{lstlisting}
-@triton.jit
-def _attn_bwd(Q, K, V, softmax_scale, dO, dQ, dK, dV, M,
-              SEQ_LEN: tl.constexpr, HEAD_DIM: tl.constexpr,
-              BLOCK_SIZE_Q: tl.constexpr, BLOCK_SIZE_KV: tl.constexpr,
-              ... ):  # stride arguments omitted
-    # Phase 1: compute dQ (outer loop over Q blocks)
-    block_index_q = tl.program_id(0)
-    Q_block = tl.load(Q_block_ptr)
-    dO_block = tl.load(dO_block_ptr)
-    L_i = tl.load(M + offs_q)                 # saved logsumexp
-    D_i = tl.sum(dO_block * tl.load(O_ptr), 1) # D = rowsum(dO * O)
-    dQ_block = tl.zeros([BLOCK_SIZE_Q, HEAD_DIM], dtype=tl.float32)
-    dQ_block = _attn_bwd_inner(dQ_block, Q_block, K_ptr, V_ptr,
-                                softmax_scale, L_i, D_i, dO_block, ...)
-    tl.store(dQ_block_ptr, dQ_block.to(tl.float16))
-    # Phase 2: compute dK, dV (outer loop over KV blocks)
-    block_index_kv = tl.program_id(0)
-    K_block = tl.load(K_block_ptr)
-    V_block = tl.load(V_block_ptr)
-    dK_block = tl.zeros([BLOCK_SIZE_KV, HEAD_DIM], dtype=tl.float32)
-    dV_block = tl.zeros([BLOCK_SIZE_KV, HEAD_DIM], dtype=tl.float32)
-    for start_q in range(0, SEQ_LEN, BLOCK_SIZE_Q):
-        Q_block = tl.load(Q_block_ptr)  # stream Q blocks
-        dO_block = tl.load(dO_block_ptr)
-        L_i = tl.load(M + offs_q)
-        D_i = ...  # precomputed or recomputed
-        QK_block = tl.dot(tl.trans(K_block), Q_block) # K^T @ Q
-        P_block = tl.math.exp(QK_block * softmax_scale - L_i[None, :])
-        dV_block += tl.dot(P_block, dO_block)         # P^T @ dO
-        dP_block = tl.dot(V_block, tl.trans(dO_block)) # V @ dO^T
-        dS_block = P_block * (dP_block - D_i[None, :])
-        dK_block += tl.dot(dS_block, Q_block)          # dS^T @ Q
-    tl.store(dK_block_ptr, dK_block.to(tl.float16))
-    tl.store(dV_block_ptr, dV_block.to(tl.float16))
+Q_block, dO_block = tl.load(Q_block_ptr), tl.load(dO_block_ptr)        # Q_i, dO_i
+L_i = tl.load(M + offs_q)                                              # saved logsumexp
+D_i = tl.sum(dO_block * tl.load(O_ptr), 1)                             # D_i = rowsum(dO * O)
+dQ_block = tl.zeros([BLOCK_SIZE_Q, HEAD_DIM], tl.float32)
+for start_kv in range(0, SEQ_LEN, BLOCK_SIZE_KV):
+    K_block, V_block = tl.load(K_block_ptr), tl.load(V_block_ptr)
+    P_block  = tl.math.exp(tl.dot(Q_block, K_block) * softmax_scale - L_i[:, None])  # recompute
+    dP_block = tl.dot(dO_block, tl.trans(V_block))                     # dP = dO V^T
+    dS_block = P_block * (dP_block - D_i[:, None])                     # dS = P * (dP - D)
+    dQ_block += tl.dot(dS_block.to(tl.float16), tl.trans(K_block))     # dQ_i += dS K
+tl.store(dQ_block_ptr, dQ_block.to(tl.float16))
+\end{lstlisting}
+
+  \textbf{Phase 2 (outer loop over $K,V$-blocks $\to$ accumulate $dK_j, dV_j$):}
+\begin{lstlisting}
+K_block, V_block = tl.load(K_block_ptr), tl.load(V_block_ptr)          # K_j, V_j stay resident
+dK_block = tl.zeros([BLOCK_SIZE_KV, HEAD_DIM], tl.float32)
+dV_block = tl.zeros([BLOCK_SIZE_KV, HEAD_DIM], tl.float32)
+for start_q in range(0, SEQ_LEN, BLOCK_SIZE_Q):
+    Q_block, dO_block = tl.load(Q_block_ptr), tl.load(dO_block_ptr)    # stream Q_i, dO_i
+    L_i, D_i = tl.load(M + offs_q), tl.load(D_ptr + offs_q)
+    # P now has rows=KV, cols=Q  (transposed view of phase 1)
+    P_block  = tl.math.exp(tl.dot(K_block, tl.trans(Q_block)) * softmax_scale - L_i[None, :])
+    dV_block += tl.dot(P_block, dO_block)                              # dV_j += P_ij^T dO_i
+    dP_block  = tl.dot(V_block, tl.trans(dO_block))
+    dS_block  = P_block * (dP_block - D_i[None, :])
+    dK_block += tl.dot(dS_block, Q_block)                              # dK_j += dS_ij^T Q_i
 \end{lstlisting}
 \end{frame}
 
-\begin{frame}[fragile]{PyTorch Integration}
+\begin{frame}[fragile]{PyTorch Autograd Wrapper}
+  Glues the Triton kernels into PyTorch so attention is a normal differentiable op.
 
 \begin{lstlisting}
 class TritonAttention(torch.autograd.Function):
     @staticmethod
     def forward(ctx, Q, K, V, causal, softmax_scale):
-        BATCH_SIZE, NUM_HEADS, SEQ_LEN, HEAD_DIM = Q.shape
+        BATCH, HEADS, SEQ_LEN, HEAD_DIM = Q.shape
         O = torch.empty_like(Q)
-        M = torch.empty((BATCH_SIZE, NUM_HEADS, SEQ_LEN),
-                        device=Q.device, dtype=torch.float32)
-        stage = 3 if causal else 1
-        grid = lambda args: (triton.cdiv(SEQ_LEN, args["BLOCK_SIZE_Q"]),
-                             BATCH_SIZE * NUM_HEADS, 1)
-        _attn_fwd[grid](Q=Q, K=K, V=V, softmax_scale=softmax_scale,
-            M=M, O=O, ..., STAGE=stage)  # strides omitted
-        ctx.save_for_backward(Q, K, V, O, M)
+        # M holds the per-row log-sum-exp L (fp32 -- needed by backward)
+        M = torch.empty((BATCH, HEADS, SEQ_LEN), device=Q.device, dtype=torch.float32)
+        grid = lambda a: (triton.cdiv(SEQ_LEN, a["BLOCK_SIZE_Q"]), BATCH*HEADS, 1)
+        _attn_fwd[grid](Q, K, V, softmax_scale, M, O, ...,
+                         STAGE=3 if causal else 1)         # STAGE selects causal vs. non-causal
+        ctx.save_for_backward(Q, K, V, O, M)               # only fp16/bf16 tensors needed
         ctx.softmax_scale = softmax_scale
-        ctx.causal = causal
         return O
 
     @staticmethod
     def backward(ctx, dO):
-        Q, K, V, O, M = ctx.saved_tensors
-        dQ = torch.empty_like(Q)
-        dK = torch.empty_like(K)
-        dV = torch.empty_like(V)
-        grid = lambda args: (triton.cdiv(SEQ_LEN, args["BLOCK_SIZE_Q"]),
-                             BATCH_SIZE * NUM_HEADS, 1)
-        _attn_bwd[grid](Q=Q, K=K, V=V, softmax_scale=ctx.softmax_scale,
-            dO=dO, dQ=dQ, dK=dK, dV=dV, M=M, ...)
-        return dQ, dK, dV, None, None
+        Q, K, V, O, M = ctx.saved_tensors                  # M = log-sum-exp L
+        dQ, dK, dV = torch.empty_like(Q), torch.empty_like(K), torch.empty_like(V)
+        _attn_bwd[grid](Q, K, V, ctx.softmax_scale, dO, dQ, dK, dV, M, ...)
+        return dQ, dK, dV, None, None                      # None for causal, softmax_scale
 \end{lstlisting}
 \end{frame}
 
@@ -1934,17 +1951,31 @@ class TritonAttention(torch.autograd.Function):
 
   \begin{columns}
     \begin{column}{0.55\textwidth}
-      In \textbf{causal} (autoregressive) attention, token $i$ can only attend to tokens $j \leq i$.
-
-      \vspace{0.5em}
-      Flash Attention handles this efficiently:
-      \begin{enumerate}
-        \item \textbf{Stage 1}: Blocks fully left of the diagonal $\to$ no masking needed
-        \item \textbf{Stage 2}: The diagonal block $\to$ apply causal mask
-      \end{enumerate}
+      \textbf{Causal (autoregressive) attention:}
+      \begin{itemize}\itemsep1pt
+        \item Token $i$ may attend only to tokens $j \leq i$
+        \item Standard implementation computes full $S$, then masks the upper triangle: roughly half the work is wasted
+        \item Flash Attention skips blocks fully above the diagonal entirely
+      \end{itemize}
 
       \vspace{0.3em}
-      Blocks fully \emph{right} of the diagonal are skipped entirely, saving computation.
+      \textbf{Three block categories per $Q_i$ row:}
+      \begin{description}\itemsep1pt
+        \item[Stage 1 (left of diag.)] All entries valid $\to$ no mask, fastest path
+        \item[Stage 2 (on diag.)] Apply causal mask: $S_{i,j} \!\gets\! -\infty$ where $j > i$
+        \item[Skipped (right of diag.)] Inner-loop bound \texttt{hi=block\_index\_q*BLOCK\_Q} stops short
+      \end{description}
+
+      \vspace{0.3em}
+      \textbf{Consequences:}
+      \begin{itemize}\itemsep1pt
+        \item Causal FA is $\sim\!2\times$ faster than non-causal at long context
+        \item Only one masked block per $Q$-row $\to$ small overhead
+        \item Kernel runs the inner loop \emph{twice} (Stage 1, then Stage 2)
+      \end{itemize}
+
+      \vspace{0.3em}
+      \textbf{Non-causal:} single inner-loop pass over the full sequence; no mask, no skipping.
     \end{column}
     \begin{column}{0.42\textwidth}
       \begin{center}
@@ -1968,9 +1999,6 @@ class TritonAttention(torch.autograd.Function):
       \end{center}
     \end{column}
   \end{columns}
-
-  \vspace{0.3em}
-  For non-causal attention, all blocks are processed in a single stage.
 \end{frame}
 
 \begin{frame}{Flash Attention: Summary}
