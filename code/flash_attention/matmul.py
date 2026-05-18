@@ -6,6 +6,9 @@
 # the loop, `tl.dot` performs a block-level matmul of one (BLOCK_M, BLOCK_K)
 # x (BLOCK_K, BLOCK_N) chunk and accumulates into an fp32 register tile.
 #
+# Uses `tl.make_block_ptr` + `tl.advance` for indexing -- the same idiom used
+# in the Flash Attention kernels below, so the two examples share style.
+#
 # Compared with the CUDA version:
 #   * The CUDA `naive` kernel (one thread per output element) has no real
 #     equivalent in Triton: the natural Triton kernel is already tiled.
@@ -35,26 +38,35 @@ def matmul_kernel(A, B, C, M, N, K,
                   BLOCK_K: tl.constexpr):
     pid_m = tl.program_id(0)
     pid_n = tl.program_id(1)
-    offs_m = pid_m * BLOCK_M + tl.arange(0, BLOCK_M)
-    offs_n = pid_n * BLOCK_N + tl.arange(0, BLOCK_N)
-    offs_k = tl.arange(0, BLOCK_K)
 
-    a_ptrs = A + offs_m[:, None] * stride_am + offs_k[None, :] * stride_ak
-    b_ptrs = B + offs_k[:, None] * stride_bk + offs_n[None, :] * stride_bn
+    # Block-pointer style: each tile carries its own base/shape/strides/offset.
+    # `tl.advance` then walks the pointer along the K axis without re-computing
+    # 2D pointer matrices, and `boundary_check` replaces manual masks.
+    A_ptr = tl.make_block_ptr(
+        base=A, shape=(M, K), strides=(stride_am, stride_ak),
+        offsets=(pid_m * BLOCK_M, 0),
+        block_shape=(BLOCK_M, BLOCK_K), order=(1, 0),
+    )
+    B_ptr = tl.make_block_ptr(
+        base=B, shape=(K, N), strides=(stride_bk, stride_bn),
+        offsets=(0, pid_n * BLOCK_N),
+        block_shape=(BLOCK_K, BLOCK_N), order=(1, 0),
+    )
+    C_ptr = tl.make_block_ptr(
+        base=C, shape=(M, N), strides=(stride_cm, stride_cn),
+        offsets=(pid_m * BLOCK_M, pid_n * BLOCK_N),
+        block_shape=(BLOCK_M, BLOCK_N), order=(1, 0),
+    )
 
     acc = tl.zeros((BLOCK_M, BLOCK_N), dtype=tl.float32)
     for kt in range(0, K, BLOCK_K):
-        a_mask = (offs_m[:, None] < M) & ((kt + offs_k)[None, :] < K)
-        b_mask = ((kt + offs_k)[:, None] < K) & (offs_n[None, :] < N)
-        a = tl.load(a_ptrs, mask=a_mask, other=0.0)
-        b = tl.load(b_ptrs, mask=b_mask, other=0.0)
+        a = tl.load(A_ptr, boundary_check=(0, 1), padding_option="zero")
+        b = tl.load(B_ptr, boundary_check=(0, 1), padding_option="zero")
         acc += tl.dot(a, b)
-        a_ptrs += BLOCK_K * stride_ak
-        b_ptrs += BLOCK_K * stride_bk
+        A_ptr = tl.advance(A_ptr, (0, BLOCK_K))  # walk A right along K
+        B_ptr = tl.advance(B_ptr, (BLOCK_K, 0))  # walk B down along K
 
-    c_mask = (offs_m[:, None] < M) & (offs_n[None, :] < N)
-    c_ptrs = C + offs_m[:, None] * stride_cm + offs_n[None, :] * stride_cn
-    tl.store(c_ptrs, acc.to(C.dtype.element_ty), mask=c_mask)
+    tl.store(C_ptr, acc.to(C.dtype.element_ty), boundary_check=(0, 1))
 
 
 def matmul(a, b, BLOCK_M=64, BLOCK_N=64, BLOCK_K=32):

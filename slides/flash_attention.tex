@@ -1512,6 +1512,8 @@ __global__ void cuda_matmul_tiled(float *C, float *A, float *B,
     \multicolumn{3}{l}{\textit{Memory}} \\
     \texttt{load} & \texttt{tl.load(ptr, mask, other)} & Block load with bounds mask \\
     \texttt{store} & \texttt{tl.store(ptr, val, mask)} & Block store with bounds mask \\
+    \texttt{make\_block\_ptr} & \texttt{tl.make\_block\_ptr(base, shape, strides, ...)} & Structured 2D block view (base + strides + offset) \\
+    \texttt{advance} & \texttt{tl.advance(block\_ptr, offsets)} & Move a block pointer; no data movement \\
     \midrule
     \multicolumn{3}{l}{\textit{Compute}} \\
     \texttt{dot} & \texttt{tl.dot(a, b)} & Block matmul (uses tensor cores) \\
@@ -1702,6 +1704,157 @@ grid = lambda meta: (triton.cdiv(M, meta['BLOCK_M']),
 \end{columns}
 \end{frame}
 
+\begin{frame}[fragile]{Triton: Block Pointers (\texttt{tl.make\_block\_ptr})}
+  Manual pointer arithmetic (\texttt{A + offs\_m[:, None]*N + offs\_n[None, :]}):
+  \begin{itemize}\itemsep1pt
+    \item Verbose and error-prone for tensors of rank $> 2$
+    \item Requires a fresh boolean mask per \texttt{tl.load} / \texttt{tl.store}
+    \item Mixes indexing logic with the actual math
+  \end{itemize}
+  \textbf{Block pointers} package base, shape, strides, and current tile offset into one object.
+
+\begin{columns}[T]
+  \begin{column}{0.55\textwidth}
+\begin{lstlisting}[basicstyle=\ttfamily\scriptsize]
+@triton.jit
+def mat_add_kernel(A, B, C, M, N,
+                   stride_am, stride_an,
+                   BLOCK_M: tl.constexpr,
+                   BLOCK_N: tl.constexpr):
+    pid_m = tl.program_id(0)
+    pid_n = tl.program_id(1)
+    A_ptr = tl.make_block_ptr(
+        base=A, shape=(M, N),
+        strides=(stride_am, stride_an),
+        offsets=(pid_m*BLOCK_M, pid_n*BLOCK_N),
+        block_shape=(BLOCK_M, BLOCK_N),
+        order=(1, 0))
+    B_ptr = tl.make_block_ptr(base=B, ...)  # same shape/strides
+    C_ptr = tl.make_block_ptr(base=C, ...)
+    a = tl.load(A_ptr, boundary_check=(0, 1))  # OOB auto-masked
+    b = tl.load(B_ptr, boundary_check=(0, 1))
+    tl.store(C_ptr, a + b, boundary_check=(0, 1))
+\end{lstlisting}
+  \end{column}
+  \begin{column}{0.43\textwidth}
+    {\scriptsize
+    \textbf{Arguments:}
+    \begin{description}\itemsep1pt
+      \item[\texttt{base}] Pointer to start of full tensor
+      \item[\texttt{shape}] Total extent (for bounds checks)
+      \item[\texttt{strides}] Per-axis stride in elements; \textbf{swap = free transpose}
+      \item[\texttt{offsets}] Where the tile starts inside the tensor
+      \item[\texttt{block\_shape}] Tile size (compile-time constants)
+      \item[\texttt{order}] Storage-order hint for vectorization
+    \end{description}
+
+    \vspace{0.4em}
+    \textbf{Stepping through the tensor:}
+    \begin{itemize}\itemsep1pt
+      \item \texttt{tl.advance(ptr, (di, dj))} moves the pointer by \texttt{(di, dj)} elements; cheap, no data moved.
+      \item Useful in inner loops that stream successive blocks (e.g.\ FA inner loop walking $K_j, V_j$).
+    \end{itemize}
+
+    \vspace{0.4em}
+    \textbf{Why Flash Attention uses them:}
+    \begin{itemize}\itemsep1pt
+      \item Clean separation of indexing vs.\ math
+      \item Loading $K^\top$ for free: just swap the last two \texttt{strides} and the last two entries of \texttt{shape}/\texttt{block\_shape} (see Setup slide).
+    \end{itemize}
+    }
+  \end{column}
+\end{columns}
+\end{frame}
+
+\begin{frame}[fragile]{Triton Example: Tiled Matrix Multiplication}
+  Compute $C = A B$ with $A \in \mathbb{R}^{M\times K}$, $B \in \mathbb{R}^{K\times N}$.
+  One program owns one $\textsc{BLOCK\_M}\times\textsc{BLOCK\_N}$ tile of $C$ and
+  walks the $K$ dimension in $\textsc{BLOCK\_K}$ chunks using block pointers + \texttt{tl.advance}.
+
+\begin{columns}[T]
+  \begin{column}{0.58\textwidth}
+\begin{lstlisting}[basicstyle=\ttfamily\scriptsize]
+@triton.jit
+def matmul_kernel(A, B, C, M, N, K,
+                  stride_am, stride_ak, stride_bk, stride_bn,
+                  stride_cm, stride_cn,
+                  BLOCK_M: tl.constexpr, BLOCK_N: tl.constexpr,
+                  BLOCK_K: tl.constexpr):
+    pid_m = tl.program_id(0)
+    pid_n = tl.program_id(1)
+
+    A_ptr = tl.make_block_ptr(                  # tile of A: [BLOCK_M, BLOCK_K]
+        base=A, shape=(M, K), strides=(stride_am, stride_ak),
+        offsets=(pid_m*BLOCK_M, 0),
+        block_shape=(BLOCK_M, BLOCK_K), order=(1, 0))
+    B_ptr = tl.make_block_ptr(                  # tile of B: [BLOCK_K, BLOCK_N]
+        base=B, shape=(K, N), strides=(stride_bk, stride_bn),
+        offsets=(0, pid_n*BLOCK_N),
+        block_shape=(BLOCK_K, BLOCK_N), order=(1, 0))
+    C_ptr = tl.make_block_ptr(                  # output tile of C: [BLOCK_M, BLOCK_N]
+        base=C, shape=(M, N), strides=(stride_cm, stride_cn),
+        offsets=(pid_m*BLOCK_M, pid_n*BLOCK_N),
+        block_shape=(BLOCK_M, BLOCK_N), order=(1, 0))
+
+    acc = tl.zeros((BLOCK_M, BLOCK_N), dtype=tl.float32)        # fp32 register accumulator
+    for kt in range(0, K, BLOCK_K):
+        a = tl.load(A_ptr, boundary_check=(0, 1), padding_option="zero")
+        b = tl.load(B_ptr, boundary_check=(0, 1), padding_option="zero")
+        acc += tl.dot(a, b)                                     # block matmul on tensor cores
+        A_ptr = tl.advance(A_ptr, (0, BLOCK_K))                 # walk A right
+        B_ptr = tl.advance(B_ptr, (BLOCK_K, 0))                 # walk B down
+
+    tl.store(C_ptr, acc.to(C.dtype.element_ty), boundary_check=(0, 1))
+\end{lstlisting}
+  \end{column}
+  \begin{column}{0.40\textwidth}
+    \centering
+    \begin{tikzpicture}[font=\tiny, scale=0.85]
+      % A matrix  (left)
+      \draw[thick] (0, 0) rectangle (1.6, 1.2);
+      \node[font=\scriptsize] at (0.8, 1.4) {$A$};
+      \foreach \i in {0,1,2,3} {
+        \draw[fagray!50] (\i*0.4, 0) -- (\i*0.4, 1.2);
+      }
+      \fill[fablue!40] (0, 0.4) rectangle (0.4, 0.8);
+      \node[font=\tiny] at (0.2, 0.6) {A};
+
+      % B matrix (top right)
+      \draw[thick] (2.0, 1.6) rectangle (3.6, 2.8);
+      \node[font=\scriptsize] at (2.8, 3.0) {$B$};
+      \foreach \j in {0,1,2,3} {
+        \draw[fagray!50] (2.0, 1.6 + \j*0.3) -- (3.6, 1.6 + \j*0.3);
+      }
+      \fill[fagreen!40] (2.4, 2.5) rectangle (2.8, 2.8);
+      \node[font=\tiny] at (2.6, 2.65) {B};
+
+      % C output (bottom right)
+      \draw[thick] (2.0, 0) rectangle (3.6, 1.2);
+      \node[font=\scriptsize] at (2.8, 1.4) {$C$};
+      \fill[fared!40] (2.4, 0.4) rectangle (2.8, 0.8);
+      \node[font=\tiny] at (2.6, 0.6) {acc};
+
+      % K-loop arrows
+      \draw[->, fablue, thick] (0.45, 0.6) -- (1.55, 0.6);
+      \node[fablue, font=\tiny] at (1.0, 0.78) {\texttt{tl.advance}};
+      \draw[->, fagreen!70!black, thick] (2.6, 2.45) -- (2.6, 1.65);
+      \node[fagreen!70!black, font=\tiny, rotate=90] at (2.45, 2.05) {\texttt{tl.advance}};
+    \end{tikzpicture}
+
+    \vspace{0.4em}
+    {\scriptsize
+    \begin{itemize}\itemsep1pt
+      \item \textbf{Block pointers} hold the current tile location; \texttt{tl.advance} walks them along the $K$ axis.
+      \item \texttt{boundary\_check}: out-of-bounds lanes auto-padded with zero; no manual masks.
+      \item \textbf{Tiled accumulator} stays in registers (fp32); only the final tile is written.
+      \item \textbf{Load-once, compute-many}: each $A, B$ chunk feeds $\textsc{BLOCK\_M}\cdot\textsc{BLOCK\_N}$ outputs.
+      \item Same pattern Flash Attention applies to $Q,K,V$ tiles in the attention matmul.
+    \end{itemize}
+    }
+  \end{column}
+\end{columns}
+\end{frame}
+
 \begin{frame}{Transpose via Strides}
 
   \textbf{Key trick:} Transposing a tensor only swaps its \emph{shape} and \emph{strides}. The physical memory is untouched, so the operation costs nothing.
@@ -1801,25 +1954,22 @@ def _attn_fwd(Q, K, V, softmax_scale, M, O,
     index_batch_head = tl.program_id(1)
     qkv_offset       = index_batch_head * stride_qh                   # base offset for this (batch, head)
 
-    # === 2. Block pointers.  Q and O are standard; K uses *swapped* strides. ===
+    # === 2. Block pointers (see overview).  Q, V, O standard; K uses *swapped* strides. ===
     Q_block_ptr = tl.make_block_ptr(
         base=Q + qkv_offset, shape=(SEQ_LEN, HEAD_DIM),
         strides=(stride_qs, stride_qd),
         offsets=(block_index_q * BLOCK_SIZE_Q, 0),
         block_shape=(BLOCK_SIZE_Q, HEAD_DIM), order=(1, 0))
 
-    # K viewed as [HEAD_DIM, SEQ_LEN]: shape AND strides swapped
-    #   -> each tl.load yields K_j^T  (free transpose, no data movement)
+    # K viewed as [HEAD_DIM, SEQ_LEN] -> each tl.load yields K_j^T (free transpose)
     K_block_ptr = tl.make_block_ptr(
         base=K + qkv_offset, shape=(HEAD_DIM, SEQ_LEN),
         strides=(stride_kd, stride_ks),                               # <-- swapped vs. Q
         offsets=(0, 0),
         block_shape=(HEAD_DIM, BLOCK_SIZE_KV), order=(0, 1))
 
-    V_block_ptr = tl.make_block_ptr(base=V + qkv_offset, ...,         # standard [BLOCK_KV, HEAD_DIM]
-                                    block_shape=(BLOCK_SIZE_KV, HEAD_DIM))
-    O_block_ptr = tl.make_block_ptr(base=O + qkv_offset, ...,         # standard [BLOCK_Q,  HEAD_DIM]
-                                    block_shape=(BLOCK_SIZE_Q,  HEAD_DIM))
+    V_block_ptr = tl.make_block_ptr(base=V + qkv_offset, ...,  block_shape=(BLOCK_SIZE_KV, HEAD_DIM))
+    O_block_ptr = tl.make_block_ptr(base=O + qkv_offset, ...,  block_shape=(BLOCK_SIZE_Q,  HEAD_DIM))
 
     # === 3. Load Q_i once into SRAM; init running state per row of Q_i ===
     Q_block = tl.load(Q_block_ptr)                                    # [BLOCK_Q, HEAD_DIM]
