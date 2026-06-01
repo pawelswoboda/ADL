@@ -6,6 +6,20 @@
 \definecolor{mambared}{RGB}{180, 40, 40}
 \definecolor{mambagray}{RGB}{90, 90, 90}
 
+% Vector cell colors (for Mamba-1 block diagram)
+\definecolor{cellpinkA}{HTML}{FDE7EE}
+\definecolor{cellpinkB}{HTML}{F4A6BD}
+\definecolor{cellpinkC}{HTML}{FACBD9}
+\definecolor{cellpinkD}{HTML}{EC5A87}
+\definecolor{cellblueA}{HTML}{E6EEF8}
+\definecolor{cellblueB}{HTML}{9EBBE2}
+\definecolor{cellblueC}{HTML}{C3D4EC}
+\definecolor{cellblueD}{HTML}{6F9BD2}
+\definecolor{cellpurpA}{HTML}{EAE2F3}
+\definecolor{cellpurpB}{HTML}{B8A3D6}
+\definecolor{cellpurpC}{HTML}{D5C6E5}
+\definecolor{cellpurpD}{HTML}{8E72B6}
+
 \lstset{
   language=Python,
   basicstyle=\tiny\ttfamily,
@@ -21,6 +35,24 @@
 
 % -----------------------------------------------------------------------
 \subsection{State Space Models and Mamba}
+
+% -----------------------------------------------------------------------
+\begin{frame}{State Space Models and Mamba: Reading}
+
+  Recommended companion reading for this section:
+  \begin{itemize}
+    \item Albert Gu's PhD thesis and the original Mamba paper for the discrete SSM derivations.
+    \item Tri Dao's two-part blog post on Mamba-2 / State Space Duality (this is the most accessible derivation of the SSD theory used in these slides):
+      \begin{itemize}
+        \item \textbf{Part~I --- The Model:}\\
+          \url{https://tridao.me/blog/2024/mamba2-part1-model/}
+        \item \textbf{Part~II --- The Theory:}\\
+          \url{https://tridao.me/blog/2024/mamba2-part2-theory/}
+      \end{itemize}
+    \item Maarten Grootendorst's \emph{A Visual Guide to Mamba and State Space Models}:\\
+      \url{https://newsletter.maartengrootendorst.com/p/a-visual-guide-to-mamba-and-state}
+  \end{itemize}
+\end{frame}
 
 % =======================================================================
 \subsubsection{State Space Models}
@@ -216,10 +248,11 @@
     \end{column}
   \end{columns}
 
-  Then $x_k$ leaves the integral. With the substitution $u = t_k + \Delta - s$ (so $\mathrm{d}u = -\mathrm{d}s$, $u\colon \Delta \to 0$):
+  Then $x_k$ leaves the integral. Substitute $u = t_k + \Delta - s$ ($\mathrm{d}u = -\mathrm{d}s$, $u\colon \Delta \to 0$) and use the antiderivative $\bar{A}^{-1} e^{\bar{A} u}$ (valid for invertible $\bar{A}$, since $\tfrac{\mathrm{d}}{\mathrm{d}u}\bigl(\bar{A}^{-1} e^{\bar{A} u}\bigr) = e^{\bar{A} u}$):
   \[
     \int_{t_k}^{t_k+\Delta} e^{\bar{A}(t_k+\Delta-s)}\,\mathrm{d}s
     \;=\; \int_0^{\Delta} e^{\bar{A} u}\,\mathrm{d}u
+    \;=\; \bigl[\bar{A}^{-1} e^{\bar{A} u}\bigr]_0^{\Delta}
     \;=\; \bar{A}^{-1}\bigl(e^{\bar{A}\Delta} - I\bigr).
   \]
 
@@ -492,63 +525,65 @@
 % -----------------------------------------------------------------------
 \begin{frame}{$\Delta_t$ as an Input-Dependent Gate}
 
-  $\Delta_t$ is the second selective knob. The recurrence
-  \[
-    h_t \;=\; \underbrace{A_t}_{\text{state retention}}\, h_{t-1} \;+\; \underbrace{B_t}_{\text{input injection}}\, x_t
-  \]
-  has both coefficients derived from $\Delta_t$ via ZOH:
-  \[
-    A_t = e^{\bar{A}\Delta_t}, \qquad B_t = \bar{A}^{-1}\bigl(e^{\bar{A}\Delta_t} - I\bigr)\bar{B}.
-  \]
-  Both are driven by the \emph{same} scalar $\Delta_t$ (per channel). Examine the two limits:
+  \begin{itemize}
+    \item $\Delta_t$: second input-dependent parameter governing selectivity.
+    \item Recurrence:
+      \[
+        h_t \;=\; \underbrace{A_t}_{\text{state retention}}\, h_{t-1} \;+\; \underbrace{B_t}_{\text{input injection}}\, x_t
+      \]
+    \item Both coefficients determined by $\Delta_t$ via the zero-order hold:
+      \[
+        A_t = e^{\bar{A}\Delta_t}, \qquad B_t = \bar{A}^{-1}\bigl(e^{\bar{A}\Delta_t} - I\bigr)\bar{B}.
+      \]
+    \item Both depend on the \emph{same} scalar $\Delta_t$ (per channel).
+  \end{itemize}
+
+  Two asymptotic regimes:
 
   \begin{itemize}
-    \item \textbf{Small $\Delta_t \to 0$} (``skip this token''):
+    \item \textbf{$\Delta_t \to 0$:}
       \begin{itemize}
-        \item $A_t = e^{\bar{A}\Delta_t} \approx I$ \hfill (state kept)
-        \item $B_t \approx \Delta_t\,\bar{B} \to 0$ \hfill (input blocked)
-        \item $\Rightarrow h_t \approx h_{t-1}$: state carried forward unchanged, $x_t$ contributes nothing.
+        \item $A_t \approx I$ \hfill (state preserved)
+        \item $B_t \approx \Delta_t\,\bar{B} \to 0$ \hfill (input suppressed)
+        \item $\Rightarrow h_t \approx h_{t-1}$: state propagated unchanged, $x_t$ negligible.
       \end{itemize}
-    \item \textbf{Large $\Delta_t$} (``remember this token''):
+    \item \textbf{$\Delta_t \to \infty$:}
       \begin{itemize}
-        \item $A_t = e^{\bar{A}\Delta_t} \to 0$ \hfill (state decays)
-        \item $B_t \to -\bar{A}^{-1}\bar{B}$ \hfill (input saturates)
-        \item $\Rightarrow h_t \approx -\bar{A}^{-1}\bar{B}\, x_t$: previous state wiped, $h_t$ is a function of $x_t$ alone.
+        \item $A_t \to 0$ \hfill (state attenuated)
+        \item $B_t \to -\bar{A}^{-1}\bar{B}$ \hfill (input fully integrated)
+        \item $\Rightarrow h_t \approx -\bar{A}^{-1}\bar{B}\, x_t$: prior state overwritten, $h_t$ depends only on $x_t$.
       \end{itemize}
-    \item So $\Delta_t$ is a learned, input-dependent \textbf{write/forget gate}: the model decides, per position, whether the token is worth writing into the state. This is the selection mechanism.
+    \item $\Delta_t$ thus acts as a learned, input-dependent \textbf{write/forget gate} controlling the contribution of $x_t$ to the latent state: the selection mechanism.
   \end{itemize}
 \end{frame}
 
 % -----------------------------------------------------------------------
 \begin{frame}{The Parallel Scan}
 
-  With input-dependent parameters, the convolutional mode is gone. We need to evaluate
-  \[
-    h_t = A_t\, h_{t-1} + B_t\, x_t, \qquad t = 0, \ldots, T{-}1
-  \]
-  for the full sequence. Naively this is sequential ($T$ steps). Can we do better?
-
   \begin{itemize}
-    \item Each step is an \textbf{affine map}: $h \mapsto A_t h + b_t$ \quad (with $b_t = B_t x_t$).
-    \item Composition of affine maps is again affine, and \textbf{associative}.
-    \item Any associative operation over a sequence can be computed via a \textbf{parallel prefix scan} (generalized prefix-sum).
-  \end{itemize}
-
-  \vspace{0.3em}
-  \begin{center}
-    \begin{tabular}{lcc}
-      \toprule
-      & \textbf{Sequential (RNN)} & \textbf{Parallel scan} \\
-      \midrule
-      Depth (parallel steps) & $T$ & $O(\log T)$ \\
-      Total work             & $O(T)$ & $O(T)$--$O(T\log T)$ \\
-      \bottomrule
-    \end{tabular}
-  \end{center}
-
-  \begin{itemize}
-    \item Losing the convolutional mode does \emph{not} force us back to slow sequential inference.
-    \item Next: how the parallel prefix scan works.
+    \item Input-dependent parameters preclude the convolutional mode. Evaluate
+      \[
+        h_t = A_t\, h_{t-1} + B_t\, x_t, \qquad t = 0, \ldots, T{-}1.
+      \]
+    \item Naive evaluation: sequential, $T$ steps.
+    \item Key observations:
+      \begin{itemize}
+        \item Each step is an \textbf{affine map} $h \mapsto A_t h + b_t$ with $b_t = B_t x_t$.
+        \item Composition of affine maps is affine and \textbf{associative}.
+        \item Associative operations admit a \textbf{parallel prefix scan} (generalised prefix-sum).
+      \end{itemize}
+    \item Complexity:
+      \begin{center}
+        \begin{tabular}{lcc}
+          \toprule
+          & \textbf{Sequential (RNN)} & \textbf{Parallel scan} \\
+          \midrule
+          Depth      & $T$    & $O(\log T)$ \\
+          Total work & $O(T)$ & $O(T)$--$O(T\log T)$ \\
+          \bottomrule
+        \end{tabular}
+      \end{center}
+    \item Loss of the convolutional mode does not entail sequential inference.
   \end{itemize}
 \end{frame}
 
@@ -722,7 +757,8 @@
 
   \begin{itemize}
     \item Only the colored cells participate at each level; gray cells are untouched.
-    \item Total additions: $4 + 2 + 1 = T{-}1$. After up-sweep, only position 7 (the root) holds a complete prefix sum.
+    \item Total additions: $4 + 2 + 1 = T{-}1$.
+    \item After up-sweep, every position $2^k$ holds the prefix sum $x_{1:2^k}$ (here positions $2, 4, 8$); the remaining positions still hold partial subtree sums. The down-sweep fills in all other prefixes.
   \end{itemize}
 \end{frame}
 
@@ -730,8 +766,7 @@
 \begin{frame}{Blelloch Scan: Down-Sweep}
 
   \begin{itemize}
-    \item \textbf{Phase 2 (down-sweep)}: propagate prefix sums top-down.
-    \item Set root to $0$. At each level, for each pair at distance stride: left gets parent, right gets parent $+$ old left.
+    \item \textbf{Phase 2 (down-sweep)}: propagate top-down. Set root to $0$; at each level, left $\gets$ parent, right $\gets$ parent $+$ old left.
   \end{itemize}
 
   \begin{center}
@@ -827,8 +862,8 @@
   \end{center}
 
   \begin{itemize}
-    \item Leaves hold the \textbf{exclusive prefix sums}: position $i$ gets $\sum_{k=1}^{i-1} x_k$. Adding $x_i$ gives the inclusive prefix sum.
-    \item Work: $T{-}1$ ops. Both phases together: $2(T{-}1) = O(T)$ total, $2\log_2 T$ depth.
+    \item Leaves hold \textbf{exclusive prefix sums} ($\sum_{k<i} x_k$); add $x_i$ for inclusive.
+    \item Both phases: $2(T{-}1) = O(T)$ work, $2\log_2 T$ depth.
   \end{itemize}
 
   \begin{center}
@@ -914,247 +949,190 @@
 \end{frame}
 
 % -----------------------------------------------------------------------
-\begin{frame}{But the Selective Scan is Memory-Bound}
-
-  On paper the parallel scan looks cheap: $O(T)$ work, $O(\log T)$ depth. In practice, the bottleneck on modern GPUs is \alert{memory bandwidth}, not arithmetic.
-
-  \begin{itemize}
-    \item GPUs have a small, very fast \textbf{on-chip memory} (SRAM) and a large, much slower \textbf{off-chip memory} (HBM). The bandwidth gap is $\sim$6$\times$.
-    \item The hidden state $h_t \in \R^N$ per channel is \emph{much} larger than the scalar input $x_t$. The full state tensor across all channels can hold $10^4$--$10^5$ numbers per token.
-    \item A naive implementation runs discretization, scan and output projection as \emph{separate} GPU kernels. Each kernel writes the full $h_t$ tensor to off-chip memory and the next kernel reads it back.
-    \item These repeated round-trips to slow off-chip memory dominate wall-clock time. The scan becomes \emph{memory-bound}, not compute-bound.
-  \end{itemize}
-
-  \begin{alertblock}{Takeaway}
-    Arithmetic cost is fine; the cost that matters is \textbf{off-chip memory round-trips per step}. We need an implementation that keeps the intermediate state in fast on-chip memory.
-  \end{alertblock}
-\end{frame}
-
-% -----------------------------------------------------------------------
-\begin{frame}{Hardware-Aware Selective Scan}
-
-  \begin{center}
-    \begin{tikzpicture}[
-      box/.style={draw, rounded corners, minimum width=2.8cm, minimum height=0.7cm, align=center, font=\small},
-      arr/.style={-Stealth, thick},
-      scale=0.9, every node/.style={scale=0.9},
-    ]
-      % HBM
-      \node[box, fill=mambablue!15] (hbm_in) at (0,3.5) {HBM: $(\bar{A}, \bar{B}, C, \Delta, x)$};
-      \node[box, fill=mambablue!15] (hbm_out) at (0,-0.5) {HBM: output $y$};
-
-      % SRAM
-      \draw[dashed, mambagray, rounded corners] (-3.5,0.3) rectangle (3.5,2.9);
-      \node[font=\scriptsize, mambagray] at (2.6,2.7) {GPU SRAM};
-
-      \node[box, fill=mambagreen!20] (disc) at (0,2.3) {Discretize: $A_t, B_t$};
-      \node[box, fill=mambagreen!20] (scan) at (0,1.2) {Sequential scan: $h_t = A_t h_{t-1} + B_t x_t$};
-
-      \draw[arr] (hbm_in) -- (disc) node[midway, right, font=\tiny] {load once};
-      \draw[arr] (disc) -- (scan);
-      \draw[arr] (scan) -- (hbm_out) node[midway, right, font=\tiny] {store once};
-    \end{tikzpicture}
-  \end{center}
-
-  \begin{itemize}
-    \item Discretization + scan + output projection all happen \textbf{in SRAM}
-    \item Intermediate states $h_t$ never written to HBM. Only the final output $y$
-    \item Recomputation in backward pass instead of storing activations
-  \end{itemize}
-\end{frame}
-
-% -----------------------------------------------------------------------
 \begin{frame}{Mamba-1 Block~\cite{gu2024mamba}}
-  \begin{columns}[T]
-    \begin{column}{0.64\textwidth}
+  \begin{columns}[T,onlytextwidth]
+    \begin{column}{0.52\textwidth}
       \begin{center}
       \begin{tikzpicture}[
-        op/.style={draw, thick, rounded corners=1pt, fill=white,
-                   minimum height=0.45cm, minimum width=2.1cm,
+        op/.style={draw, thick, rounded corners=2pt, fill=gray!8,
+                   minimum height=0.42cm, minimum width=1.35cm,
                    font=\tiny, align=center, inner sep=2pt},
-        ssmbox/.style={draw, thick, rounded corners=1pt, fill=black!80, text=white,
-                       minimum height=0.55cm, minimum width=2.1cm,
-                       font=\tiny, align=center, inner sep=2pt},
-        silu/.style={draw, thick, rounded corners=1pt, fill=white,
-                     minimum height=0.4cm, minimum width=1.0cm, font=\tiny},
-        mul/.style={draw, thick, circle, fill=white, inner sep=0pt,
-                    minimum size=0.42cm, font=\tiny},
-        dim/.style={font=\tiny, mambagray},
+        ssm/.style={draw, thick, rounded corners=3pt, fill=gray!8,
+                    minimum height=0.55cm, minimum width=1.85cm,
+                    font=\tiny\bfseries, align=center},
+        silu/.style={draw, fill=black, text=white, rounded corners=3pt,
+                     minimum height=0.30cm, minimum width=0.75cm,
+                     font=\tiny, inner sep=1pt},
+        mul/.style={draw, fill=black, text=white, rounded corners=3pt,
+                    minimum height=0.30cm, minimum width=0.38cm,
+                    font=\tiny, inner sep=1pt},
+        cell/.style={draw=black!75, line width=0.3pt, minimum width=0.20cm,
+                     minimum height=0.20cm, inner sep=0pt},
         arr/.style={-Stealth, semithick},
-        cellB/.style={fill=cyan!40, draw=cyan!60!black, thin},
-        cellO/.style={fill=orange!55, draw=orange!70!black, thin},
-        scale=0.72, every node/.style={scale=0.72},
+        scale=0.55, every node/.style={scale=0.55},
       ]
-        \def\cw{0.28}
-        \def\ch{0.32}
+        \def\cellsz{0.21}
+        \def\xL{-1.20}
+        \def\xR{ 1.20}
+        \def\xC{ 0.00}
 
-        % stream centers
-        \def\Hx{-1.0}   % hidden_states stream x
-        \def\Rx{5.2}    % residual stream x
-        \def\Lb{-2.0}   % left (conv) branch x
-        \def\Rb{1.9}    % right (gate) branch x
-
-        % ===================== Top inputs =====================
-        \node[font=\scriptsize] at (\Hx, 9.3) {hidden\_states};
-        \foreach \i in {0,1,2,3,4} {
-          \draw[cellB] (\Hx-0.7+\i*\cw, 8.55) rectangle (\Hx-0.7+\cw+\i*\cw, 8.55+\ch);
+        % ====== Input vector (top) ======
+        \foreach \i/\c in {0/cellpinkA, 1/cellpinkB, 2/cellpinkC, 3/cellpinkD} {
+          \node[cell, fill=\c] at (\xC-0.33+\i*\cellsz, 7.5) {};
         }
-        \node[dim, anchor=west] at (\Hx+0.85, 8.72) {$[L,\,d_{\text{model}}]$};
+        \node[font=\scriptsize\bfseries, anchor=east] at (\xC-0.50, 7.5) {Input};
 
-        \node[font=\scriptsize] at (\Rx, 9.3) {residual};
-        \foreach \i in {0,1,2,3,4} {
-          \draw[cellO] (\Rx-0.7+\i*\cw, 8.55) rectangle (\Rx-0.7+\cw+\i*\cw, 8.55+\ch);
+        % ====== Residual takeoff: right then down ======
+        \draw[semithick] (\xC+0.40, 7.5) -- (2.95, 7.5) -- (2.95, -2.85);
+
+        % ====== Dashed block boundary ======
+        \draw[dashed, thick, black!55, rounded corners=4pt]
+          (-2.40, -2.05) rectangle (2.60, 6.95);
+
+        % ====== Input arrow into block, split into 2 branches ======
+        \draw[arr] (\xC, 7.35) -- (\xC, 6.65);
+        \draw[semithick] (\xL, 6.65) -- (\xR, 6.65);
+        \draw[arr] (\xL, 6.65) -- (\xL, 6.30);
+        \draw[arr] (\xR, 6.65) -- (\xR, 6.30);
+
+        % ====== LEFT BRANCH: projection ======
+        \draw[thick, fill=gray!3]
+          (\xL-0.40, 6.30) -- (\xL+0.40, 6.30) --
+          (\xL+0.85, 5.75) -- (\xL-0.85, 5.75) -- cycle;
+        \node[font=\tiny\bfseries] at (\xL, 6.02) {Projection};
+
+        \foreach \i/\c in {0/cellpinkB, 1/cellpinkA, 2/cellpinkC, 3/cellpinkA, 4/cellpinkD, 5/cellpinkB, 6/cellpinkA} {
+          \node[cell, fill=\c] at (\xL-0.66+\i*\cellsz, 5.58) {};
         }
-        \node[dim, anchor=west] at (\Rx+0.85, 8.72) {$[L,\,d_{\text{model}}]$};
+        \draw[arr] (\xL, 5.45) -- (\xL, 5.10);
 
-        % ===================== Block border =====================
-        \draw[very thick, rounded corners=10pt, black!65, densely dashed]
-          (-3.8, -1.25) rectangle (7.3, 8.2);
+        \node[op, minimum width=1.30cm] (conv) at (\xL, 4.88) {Convolution};
+        \draw[arr] (conv.south) -- (\xL, 4.25);
 
-        % ===================== RMS Norm =====================
-        \node[op] (norm) at (\Hx, 7.55) {RMS Norm};
-        \draw[arr] (\Hx, 8.55) -- (norm.north);
+        \node[silu] (siluL) at (\xL, 4.07) {SiLU};
+        \draw[arr] (siluL.south) -- (\xL, 3.55);
+        \fill (\xL, 3.55) circle (0.8pt);
 
-        \foreach \i in {0,1,2,3,4} {
-          \draw[cellB] (\Hx-0.7+\i*\cw, 6.75) rectangle (\Hx-0.7+\cw+\i*\cw, 6.75+\ch);
+        \node[font=\tiny, blue!70!black, anchor=west] at (\xL-0.60, 3.15) {$x$};
+
+        \node[op, minimum width=0.85cm, minimum height=0.36cm, font=\tiny]
+          (linear) at (\xL+0.85, 3.00) {Linear};
+        \draw[arr] (\xL, 3.55) -- (\xL+0.85, 3.55) -- (linear.north);
+
+        % ====== RIGHT BRANCH: projection ======
+        \draw[thick, fill=gray!3]
+          (\xR-0.40, 6.30) -- (\xR+0.40, 6.30) --
+          (\xR+0.85, 5.75) -- (\xR-0.85, 5.75) -- cycle;
+        \node[font=\tiny\bfseries] at (\xR, 6.02) {Projection};
+
+        \foreach \i/\c in {0/cellpinkB, 1/cellpinkA, 2/cellpinkD, 3/cellpinkA, 4/cellpinkB, 5/cellpinkC, 6/cellpinkA} {
+          \node[cell, fill=\c] at (\xR-0.66+\i*\cellsz, 5.58) {};
         }
-        \node[dim, anchor=west] at (\Hx+0.85, 6.92) {$[L,\,d_{\text{model}}]$};
-        \draw[arr] (norm.south) -- (\Hx, 7.10);
+        \draw[arr] (\xR, 5.45) -- (\xR, 4.25);
 
-        % ===================== Input Projection =====================
-        \node[op] (inproj) at (\Hx, 6.15) {Input Projection};
-        \node[dim, anchor=east] at (-2.4, 6.15) {\textit{in\_proj}};
-        \draw[arr] (\Hx, 6.75) -- (inproj.north);
+        \node[silu] (siluR) at (\xR, 4.07) {SiLU};
+        \draw[arr] (siluR.south) -- (\xR, 0.65) -- (\xL+0.32, 0.65);
 
-        % cells after in_proj: 2 * d_inner (two clusters of 5 cells each)
-        \foreach \i in {0,1,2,3,4} {
-          \draw[cellB] (\Lb-0.7+\i*\cw, 5.25) rectangle (\Lb-0.7+\cw+\i*\cw, 5.25+\ch);
+        % ====== Linear outputs: Δ, B, C ======
+        \draw[arr] (linear.south) -- (\xL+0.85, 2.40);
+        \node[font=\tiny, orange!80!black] at (\xL+0.60, 2.25) {$\Delta$};
+        \node[font=\tiny, blue!70!black]   at (\xL+0.85, 2.25) {$B$};
+        \node[font=\tiny, teal]            at (\xL+1.10, 2.25) {$C$};
+
+        % ====== Selective SSM ======
+        \node[ssm] (ssm) at (\xL+0.25, 1.55) {Selective SSM};
+        \draw[arr] (\xL, 3.45) -- (\xL, 1.85);
+        \draw[arr] (\xL+0.60, 2.10) -- (\xL+0.60, 1.85);
+        \draw[arr] (\xL+0.85, 2.10) -- (\xL+0.85, 1.85);
+        \draw[arr] (\xL+1.10, 2.10) -- (\xL+1.10, 1.85);
+        \draw[arr] (ssm.south) -- (\xL+0.25, 0.85);
+
+        % ====== Multiply ======
+        \node[mul] (mult) at (\xL+0.25, 0.65) {$\times$};
+        \draw[arr] (mult.south) -- (\xL+0.25, -0.05);
+
+        % ====== Blue large vector ======
+        \foreach \i/\c in {0/cellblueB, 1/cellblueA, 2/cellblueC, 3/cellblueA, 4/cellblueD, 5/cellblueC, 6/cellblueA} {
+          \node[cell, fill=\c] at (\xL+0.25-0.66+\i*\cellsz, -0.22) {};
         }
-        \foreach \i in {0,1,2,3,4} {
-          \draw[cellB] (\Rb-0.7+\i*\cw, 5.25) rectangle (\Rb-0.7+\cw+\i*\cw, 5.25+\ch);
+        \draw[arr] (\xL+0.25, -0.35) -- (\xL+0.25, -0.85);
+
+        % ====== Output projection (contracting) ======
+        \draw[thick, fill=gray!3]
+          (\xL+0.25-0.85, -0.85) -- (\xL+0.25+0.85, -0.85) --
+          (\xL+0.25+0.40, -1.45) -- (\xL+0.25-0.40, -1.45) -- cycle;
+        \node[font=\tiny\bfseries] at (\xL+0.25, -1.15) {Projection};
+
+        % ====== Small blue vec ======
+        \foreach \i/\c in {0/cellblueA, 1/cellblueC, 2/cellblueB, 3/cellblueD} {
+          \node[cell, fill=\c] at (\xL+0.25-0.33+\i*\cellsz, -1.75) {};
         }
-        \node[dim, anchor=west] at (3.35, 5.42) {$[L,\,2\,d_{\text{inner}}]$};
 
-        % split arrows
-        \draw[arr] (inproj.south) -- (\Hx, 5.85) -| (\Lb, 5.60);
-        \draw[arr] (\Hx, 5.85) -| (\Rb, 5.60);
+        % ====== Arrow out of box to + (centered at xC) ======
+        \draw[arr] (\xL+0.25, -1.88) -- (\xL+0.25, -2.85) -- (\xC-0.20, -2.85);
 
-        % ===================== Convolution =====================
-        \node[op, minimum width=1.8cm] (conv) at (\Lb, 4.55) {Convolution};
-        \draw[arr] (\Lb, 5.25) -- (conv.north);
+        % ====== + (residual), Normalize, Output (centered, same x as Input) ======
+        \node[mul] (resadd) at (\xC, -2.85) {$+$};
+        \draw[arr] (\xL+0.25, -2.85) -- (resadd.west);
+        \draw[arr] (2.95, -2.85) -- (resadd.east);
 
-        \foreach \i in {0,1,2,3,4} {
-          \draw[cellB] (\Lb-0.7+\i*\cw, 3.70) rectangle (\Lb-0.7+\cw+\i*\cw, 3.70+\ch);
+        \node[op, minimum width=1.30cm] (norm) at (\xC, -3.65) {Normalize};
+        \draw[arr] (resadd.south) -- (norm.north);
+
+        \foreach \i/\c in {0/cellpurpA, 1/cellpurpC, 2/cellpurpB, 3/cellpurpD} {
+          \node[cell, fill=\c] at (\xC-0.33+\i*\cellsz, -4.30) {};
         }
-        \node[dim, anchor=east] at (-3.0, 3.87) {$[L,\,d_{\text{inner}}]$};
-        \draw[arr] (conv.south) -- (\Lb, 4.05);
-
-        % ===================== SiLU left / right =====================
-        \node[silu] (siluL) at (\Lb, 3.20) {SiLU};
-        \draw[arr] (\Lb, 3.70) -- (siluL.north);
-
-        \node[silu] (siluR) at (\Rb, 3.20) {SiLU};
-        \draw[arr] (\Rb, 5.25) -- (siluR.north);
-
-        % ===================== Selective SSM =====================
-        \node[ssmbox] (ssm) at (\Lb, 2.20) {Selective SSM};
-        \draw[arr] (siluL.south) -- (ssm.north);
-        \node[dim, anchor=east] at (-3.0, 2.20) {\textit{mamba\_inner\_fn}};
-
-        \foreach \i in {0,1,2,3,4} {
-          \draw[cellB] (\Lb-0.7+\i*\cw, 1.25) rectangle (\Lb-0.7+\cw+\i*\cw, 1.25+\ch);
-        }
-        \draw[arr] (ssm.south) -- (\Lb, 1.60);
-        \node[dim, anchor=east] at (-3.0, 1.42) {$[L,\,d_{\text{inner}}]$};
-
-        % ===================== Multiply =====================
-        \node[mul] (mult) at (-0.05, 0.60) {$\times$};
-        \draw[arr] (\Lb, 1.25) |- (mult.west);
-        \draw[arr] (\Rb, 2.95) |- (mult.east);
-
-        \foreach \i in {0,1,2,3,4} {
-          \draw[cellB] (-0.05-0.7+\i*\cw, -0.25) rectangle (-0.05-0.7+\cw+\i*\cw, -0.25+\ch);
-        }
-        \draw[arr] (mult.south) -- (-0.05, 0.10);
-
-        % ===================== Output Projection =====================
-        \node[op] (outproj) at (-0.05, -0.90) {Output Projection};
-        \draw[arr] (-0.05, -0.25) -- (outproj.north);
-        \node[dim, anchor=west] at (2.2, -0.90) {\textit{out\_proj}};
-
-        % ===================== Outputs =====================
-        \draw[arr] (outproj.south) -- (-0.05, -1.90);
-        \foreach \i in {0,1,2,3,4} {
-          \draw[cellB] (-0.05-0.7+\i*\cw, -2.25) rectangle (-0.05-0.7+\cw+\i*\cw, -2.25+\ch);
-        }
-        \node[dim, anchor=west] at (-0.05+0.85, -2.08) {$[L,\,d_{\text{model}}]$};
-        \node[font=\scriptsize] at (-0.05, -2.75) {hidden\_states};
-
-        % residual pass-through (straight down on right side)
-        \draw[arr] (\Rx, 8.55) -- (\Rx, -1.90);
-        \foreach \i in {0,1,2,3,4} {
-          \draw[cellO] (\Rx-0.7+\i*\cw, -2.25) rectangle (\Rx-0.7+\cw+\i*\cw, -2.25+\ch);
-        }
-        \node[dim, anchor=west] at (\Rx+0.85, -2.08) {$[L,\,d_{\text{model}}]$};
-        \node[font=\scriptsize] at (\Rx, -2.75) {residual};
+        \draw[arr] (norm.south) -- (\xC, -4.15);
+        \node[font=\scriptsize\bfseries, anchor=east] at (\xC-0.50, -4.30) {Output};
 
       \end{tikzpicture}
       \end{center}
     \end{column}
-    \begin{column}{0.34\textwidth}
-      \textbf{Key design choices:}
+    \begin{column}{0.48\textwidth}
+      \small
+      \textbf{Dimensions:}
+      \begin{itemize}
+        \item $L$: sequence length
+        \item $D = d_{\text{model}}$: model dimension
+        \item $E = d_{\text{inner}}$: expanded dimension, $E/D = 2$
+        \item $N$: SSM state size
+        \item Typical: $D{=}2048$, $E{=}4096$, $N{=}16$
+      \end{itemize}
+
+      \vspace{0.3em}
+      \textbf{Causal Conv1D:}
+      \begin{itemize}
+        \item Depthwise (\texttt{groups}$=E$): each of the $E$ channels has its own kernel, no cross-channel mixing
+        \item Kernel size $4$, left-padded by $3$: $y_t$ depends only on $x_{t-3:t}$
+        \item Cheap local context; SSM handles long-range
+      \end{itemize}
+
+      \vspace{0.3em}
+      \textbf{Selective SSM:}
       \begin{itemize}
         \item $\bar{A}$ diagonal: $N$ decay rates per channel
-        \item $P\!=\!1$: each of the $E$ channels runs its own SSM
-        \item $B_t, C_t \in \R^N$ shared across channels; $\Delta_t \in \R^E$ per-channel
-        \item Expansion $E/D = 2$
-        \item Conv1d: causal depthwise, kernel $4$
+        \item Each of the $E$ channels runs its own SSM ($P{=}1$)
+        \item $B_t,C_t\!\in\!\R^N$ shared, $\Delta_t\!\in\!\R^E$ per-channel
       \end{itemize}
 
       \vspace{0.3em}
-      \textbf{Typical values:}
-      \begin{itemize}
-        \item $D = 2048$
-        \item $E = 2D = 4096$
-        \item $N = 16$
-      \end{itemize}
-
-      \vspace{0.3em}
-      \textbf{Color code:}
-      \begin{itemize}
-        \item \textcolor{cyan!70!black}{Blue cells}: hidden states
-        \item \textcolor{orange!80!black}{Orange cells}: residual stream
-        \item \textcolor{black!80}{\textbf{Dark box}}: Selective SSM (fused kernel)
-      \end{itemize}
+      \textcolor{mambared!85!black}{Red}: residual path.
     \end{column}
   \end{columns}
 \end{frame}
 
 % -----------------------------------------------------------------------
-\begin{frame}{Mamba-1: Results}
+\begin{frame}{Selective Scan Leaves Tensor Cores Idle}
 
-  \textbf{Language modeling} (trained on the Pile, Chinchilla scaling~\cite{hoffmann2022chinchilla}):
   \begin{itemize}
-    \item Matches Transformer quality at all scales (125M to 1.4B parameters)
-    \item \textbf{5$\times$ higher throughput} than Transformer at inference (long sequences)
-    \item Linear scaling in sequence length vs.\ quadratic for attention
+    \item On paper the scan is cheap: $O(T)$ work, $O(\log T)$ depth.
+    \item Mamba-1 already fuses discretization, scan and projection into one kernel that keeps $h_t$ in SRAM, avoiding HBM round-trips.
+    \item \alert{Real bottleneck:} modern GPUs/TPUs draw most of their FLOPs from \textbf{tensor cores}, specialized matmul units. The scan is built from custom element-wise and associative-scan ops that bypass them.
+    \item Even a perfectly engineered scan runs on the small general-purpose ALUs, leaving the bulk of GPU throughput unused.
   \end{itemize}
 
-  \vspace{0.5em}
-  \textbf{Long-range benchmarks:}
-  \begin{itemize}
-    \item State-of-the-art on Long Range Arena, speech, genomics
-    \item Scales to sequences of 1M+ tokens at inference
-  \end{itemize}
-
-  \vspace{0.5em}
-  \begin{alertblock}{Remaining issues}
-    \begin{itemize}
-      \item Training uses a \textbf{sequential scan}, no matrix multiplications
-      \item GPUs/TPUs are optimized for matmuls, not sequential operations
-      \item Despite kernel fusion, training throughput is \alert{lower than Transformers}
-      \item Each channel has an independent SSM ($P = 1$), limited parameter sharing
-    \end{itemize}
+  \begin{alertblock}{Takeaway}
+    To make SSMs as fast as attention in training, the computation must be reformulated as \textbf{matrix multiplications}. This motivates Mamba-2.
   \end{alertblock}
 \end{frame}
 
@@ -1162,7 +1140,7 @@
 \subsubsection{Mamba-2: State Space Duality}
 
 % -----------------------------------------------------------------------
-\begin{frame}{Two Problems with Mamba-1}
+\begin{frame}{From Mamba-1 to Mamba-2: Two Open Problems}
 
   \begin{columns}
     \begin{column}{0.48\textwidth}
@@ -1284,7 +1262,7 @@
         \node[hbox, fill=mambared!15, minimum width=4.5cm] (inp) at (0, 5.2) {Input $X \in \R^{T \times D}$};
 
         % Split
-        \node[font=\tiny, mambagray] at (0, 4.6) {split into $H$ heads};
+        \node[font=\tiny, mambagray, anchor=east] at (-2.3, 4.6) {split into $H$ heads};
 
         % Heads
         \def\hw{1.0}
@@ -1320,44 +1298,57 @@
         \draw[-Stealth, thin] (sH) -- (oH);
 
         % Concat
-        \node[font=\tiny, mambagray] at (0, 0.55) {concatenate};
+        \node[font=\tiny, mambagray, anchor=east] at (-2.3, 0.55) {concatenate};
         \node[hbox, fill=violet!15, minimum width=4.5cm] (out) at (0, 0.0) {Output $Y \in \R^{T \times D}$};
 
         \draw[-Stealth, thin] (o1.south) -- (out.north);
         \draw[-Stealth, thin] (o2.south) -- (out.north);
         \draw[-Stealth, thin] (oH.south) -- (out.north);
 
-        % Annotation: shared within head
-        \draw[decorate, decoration={brace, mirror, amplitude=4pt}, mambagray]
+        % Annotation: shared within head (brace points left, toward the label)
+        \draw[decorate, decoration={brace, amplitude=4pt}, mambagray]
           (-2.5, 2.0) -- (-2.5, 4.15);
-        \node[font=\tiny, mambagray, rotate=90, anchor=south] at (-2.8, 3.1) {same $(a,B,C)$};
+        \node[font=\tiny, mambagray, rotate=90, anchor=south] at (-2.95, 3.1) {same $(a,B,C)$};
       \end{tikzpicture}
     \end{column}
   \end{columns}
 \end{frame}
 
 % -----------------------------------------------------------------------
-\begin{frame}{Unrolling the SSM: The Attention Mode}
+\begin{frame}{Unrolling the SSM: From Recurrence to Matmul}
 
-  With scalar $A_t = a_t$, unroll the recurrence over the full sequence. Define:
+  \textbf{Starting point} (scalar $A_t = a_t$, $h_0 = 0$, per-channel $x_t, y_t \in \R$):
   \[
-    a_{i:j}^\times \;=\; a_i \cdot a_{i-1} \cdots a_{j+1}
-    \qquad \text{(cumulative product of decays)}
+    h_t = a_t\, h_{t-1} + B_t\, x_t, \qquad y_t = C_t^\top h_t
   \]
 
-  The output at time $i$ becomes:
+  \textbf{Step 1: unroll $h_i$ by repeated substitution.}
+  \begin{align*}
+    h_i &= a_i\, h_{i-1} + B_i\, x_i \\[1pt]
+        &= a_i\, a_{i-1}\, h_{i-2} + a_i\, B_{i-1}\, x_{i-1} + B_i\, x_i \\[1pt]
+        &= a_i\, a_{i-1}\, a_{i-2}\, h_{i-3}
+            + a_i\, a_{i-1}\, B_{i-2}\, x_{i-2}
+            + a_i\, B_{i-1}\, x_{i-1}
+            + B_i\, x_i \\[1pt]
+        &= \cdots
+         = \sum_{j=1}^{i} \underbrace{(a_i\, a_{i-1} \cdots a_{j+1})}_{\displaystyle =\, a_{i:j}^\times}\, B_j\, x_j,
+        \qquad a_{i:i}^\times \!\equiv\! 1
+  \end{align*}
+
+  \textbf{Step 2: substitute into $y_i = C_i^\top h_i$.}
   \[
-    y_i = \sum_{j \le i} C_i^\top \left(a_{i:j}^\times\right) B_j\, x_j
+    y_i \;=\; \sum_{j=1}^{i}\, a_{i:j}^\times \cdot (C_i^\top B_j)\, \cdot\, x_j
   \]
 
-  Stacking all $y_i$ gives a matrix equation $Y = M X$ where:
+  \textbf{Step 3: matrix form $Y = M X$.} Each entry factors as decay $\times$ inner product, so $M$ is the elementwise (Hadamard) product of two $T{\times}T$ matrices:
   \[
-    M = L \circ C B^\top \in \R^{(T,T)}
-  \]
-
-  $L$ is the lower-triangular \textbf{decay matrix}:
-  \[
-    L_{ij} = \begin{cases} a_{i:j}^\times & i \ge j \\ 0 & i < j \end{cases}
+    \boxed{\;M \;=\;
+      \underbrace{L}_{\text{decay mask}}
+      \;\circ\;
+      \underbrace{CB^\top}_{\text{inner products}}
+      \;\in\; \R^{T \times T}\;}
+    \;\;\text{with}\;\;
+    L_{ij} = [\,i \ge j\,]\, a_{i:j}^\times,\;\; (CB^\top)_{ij} = C_i^\top B_j.
   \]
 \end{frame}
 
@@ -1396,88 +1387,135 @@
 \end{frame}
 
 % -----------------------------------------------------------------------
-\begin{frame}{State Space Duality: Same Model, Two Views}
+\begin{frame}{$M$ as a Semiseparable Matrix Transformation}
 
-  \begin{center}
-    \large
-    $(A^{(T)},\; B^{(T,N)},\; C^{(T,N)},\; X^{(T,P)}) \;\mapsto\; Y^{(T,P)}$
-  \end{center}
+  Per the unrolling, $Y = M X$ along the sequence, with lower-triangular entries
+  \[
+    M_{ij} = C_i^{\top}\, A_{i:j}^{\times}\, B_j \qquad (i \ge j),
+    \qquad A_{i:j}^{\times} = A_i A_{i-1} \cdots A_{j+1}
+  \]
+  (the $A$ in the middle makes the rank factorization below transparent).
 
-  \vspace{0.5em}
-  \begin{columns}
-    \begin{column}{0.48\textwidth}
-      \textbf{SSM (Linear) Mode}
-      \[h_t = a_t h_{t-1} + B_t x_t,\quad y_t = C_t^\top h_t\]
-      \begin{itemize}
-        \item Constant-size state $\mathtt{N}$
-        \item $O(T)$ computation
-        \item No matmuls $\to$ slow on hardware
-        \item Efficient at \emph{inference}
-      \end{itemize}
-    \end{column}
-    \begin{column}{0.48\textwidth}
-      \textbf{Attention (Quadratic) Mode}
-      \[Y = (L \circ CB^\top)\, X\]
-      \begin{itemize}
-        \item Materializes $T \times T$ matrix
-        \item $O(T^2 N)$ computation
-        \item Pure matmuls $\to$ fast on hardware
-        \item Efficient at \emph{training} (small $T$)
-      \end{itemize}
-    \end{column}
-  \end{columns}
+  \[
+    \scriptsize
+    M \;=\; \left[\;\begin{array}{ccccc}
+      C_0^{\top}\! B_0 & & & & \\[3pt]
+      C_1^{\top}\! A_{1:0}^{\times}\, B_0 & C_1^{\top}\! B_1 & & & \\[3pt]
+      C_2^{\top}\! A_{2:0}^{\times}\, B_0 & C_2^{\top}\! A_{2:1}^{\times}\, B_1 & C_2^{\top}\! B_2 & & \\[3pt]
+      \vdots & \vdots & \ddots & \ddots & \\[3pt]
+      C_{T\text{-}1}^{\top}\! A_{T\text{-}1:0}^{\times}\, B_0 & \cdots & \cdots & C_{T\text{-}1}^{\top}\! A_{T\text{-}1:T\text{-}2}^{\times}\, B_{T\text{-}2} & C_{T\text{-}1}^{\top}\! B_{T\text{-}1}
+    \end{array}\;\right]
+  \]
 
-  \vspace{0.5em}
-  \begin{block}{The duality}
-    These are \textbf{mathematically identical}. The same model can be computed either way.
-  \end{block}
-\end{frame}
-
-% -----------------------------------------------------------------------
-\begin{frame}{SSD vs.\ Standard Attention: Two Differences}
-
-  \begin{center}
-  \begin{tabular}{lcc}
-    \toprule
-    & \textbf{Standard Attention} & \textbf{SSD} \\
-    \midrule
-    Sequence mixing matrix & $(L_{\text{causal}} \circ \text{softmax}(QK^\top))\,V$ & $(L \circ CB^\top)\,X$ \\
-    Softmax & \checkmark & \texttimes \\
-    Multiplicative mask $L$ & causal only ($a_t=1$) & \checkmark (input-dependent $a_t$) \\
-    \midrule
-    State size at inference & $O(T)$ (KV cache) & $O(N)$ \textbf{(constant!)} \\
-    Training complexity & $O(T^2 N)$ & $O(T N^2)$ \\
-    \bottomrule
-  \end{tabular}
-  \end{center}
-
-  \vspace{0.5em}
-  \begin{itemize}
-    \item Removing softmax: state stays \emph{constant} size, inference is $O(1)$ per step
-    \item The decay mask $L$ is what distinguishes SSD from linear attention and encodes \emph{selectivity}
+  \vspace{0.4em}
+  \begin{itemize}\small
+    \item \textbf{Semiseparable property:} every submatrix entirely on-and-below the diagonal has rank $\le N$, where $N$ is the \emph{SSM state dimension} (size of $h_t \in \R^N$; e.g.\ $16$ in Mamba-1, $64$--$256$ in Mamba-2).
+    \item Take an off-diagonal block $M_{I,J}$ with $\min I > \max J$, and pick any split $k$ with $\max J < k \le \min I$. Since $A_t$ is scalar, $A_{i:j}^{\times} = A_{i:k}^{\times}\, A_{k:j}^{\times}$, so each entry rewrites as an inner product of two $N$-vectors:
+      \[
+        M_{ij} \;=\; C_i^{\top}\, A_{i:j}^{\times}\, B_j
+              \;=\; \bigl(A_{i:k}^{\times}\, C_i\bigr)^{\!\top}\, \bigl(A_{k:j}^{\times}\, B_j\bigr),
+        \qquad C_i, B_j \in \R^{N}.
+      \]
+      Stacking over $i \in I$ (as rows) and $j \in J$ (as columns) gives the rank-$N$ factorization
+      \[
+        M_{I,J} \;=\;
+        \underbrace{\bigl[\, A_{i:k}^{\times}\, C_i^{\top}\, \bigr]_{i \in I}}_{|I|\, \times\, N}
+        \;\cdot\;
+        \underbrace{\bigl[\, A_{k:j}^{\times}\, B_j\, \bigr]_{j \in J}}_{N\, \times\, |J|}.
+      \]
+    \item This is what the chunked algorithm exploits: each off-diagonal chunk-block is summarized by a single state vector of size $N$.
   \end{itemize}
 \end{frame}
 
 % -----------------------------------------------------------------------
-\begin{frame}{Efficiency Comparison}
+\begin{frame}{Visualizing the Rank-$N$ Factorization of $M_{I,J}$}
+
+  Write $I = \{i_1, \ldots, i_p\}$ (rows) and $J = \{j_1, \ldots, j_q\}$ (columns), with $\min I > \max J$, and pick a split index $k \in (\max J,\, \min I]$. Each $C_i, B_j \in \R^{N}$:
+
+  \vspace{0.4em}
+  \begin{center}
+  \begin{tikzpicture}[braceLab/.style={font=\small}]
+
+    \node (eq) {$M_{I,J} \;=\;$};
+
+    %% --- LEFT matrix: |I| x N (rows are row vectors A_{i:k}^x C_i^T) ---
+    \node[right=4pt of eq, inner sep=2pt] (ML) {$\begin{bmatrix}
+      = & A_{i_1:k}^{\times}\, C_{i_1}^{\top} & = \\[3pt]
+      = & A_{i_2:k}^{\times}\, C_{i_2}^{\top} & = \\[3pt]
+        & \vdots                              &   \\[2pt]
+      = & A_{i_p:k}^{\times}\, C_{i_p}^{\top} & =
+    \end{bmatrix}$};
+
+    %% Left-side brace (height = |I|), tip pointing left
+    \draw[decorate, decoration={brace, mirror, amplitude=4pt}, black!55]
+      ([xshift=-3pt]ML.north west) -- ([xshift=-3pt]ML.south west)
+      node[midway, left=5pt, braceLab] {$|I|$};
+    %% Bottom brace (width = N), tip pointing down
+    \draw[decorate, decoration={brace, mirror, amplitude=4pt}, black!55]
+      ([yshift=-3pt]ML.south west) -- ([yshift=-3pt]ML.south east)
+      node[midway, below=5pt, braceLab] {$N$};
+
+    %% --- "·" ---
+    \node[right=22pt of ML] (dot) {$\cdot$};
+
+    %% --- RIGHT matrix: N x |J| (columns are column vectors A_{k:j}^x B_j) ---
+    \node[right=22pt of dot, inner sep=2pt] (MR) {$\begin{bmatrix}
+      \rule[-2pt]{0.4pt}{8pt} & \rule[-2pt]{0.4pt}{8pt} &        & \rule[-2pt]{0.4pt}{8pt} \\
+      A_{k:j_1}^{\times}\, B_{j_1} & A_{k:j_2}^{\times}\, B_{j_2} & \cdots & A_{k:j_q}^{\times}\, B_{j_q} \\
+      \rule[-2pt]{0.4pt}{8pt} & \rule[-2pt]{0.4pt}{8pt} &        & \rule[-2pt]{0.4pt}{8pt}
+    \end{bmatrix}$};
+
+    %% Right-side brace (height = N), tip pointing right
+    \draw[decorate, decoration={brace, amplitude=4pt}, black!55]
+      ([xshift=3pt]MR.north east) -- ([xshift=3pt]MR.south east)
+      node[midway, right=5pt, braceLab] {$N$};
+    %% Bottom brace (width = |J|), tip pointing down
+    \draw[decorate, decoration={brace, mirror, amplitude=4pt}, black!55]
+      ([yshift=-3pt]MR.south west) -- ([yshift=-3pt]MR.south east)
+      node[midway, below=5pt, braceLab] {$|J|$};
+  \end{tikzpicture}
+  \end{center}
+
+  \vspace{0.6em}
+  \begin{itemize}\small
+    \item Each \emph{row} of the left factor is a $1 \times N$ row vector (a scaled $C_i^{\top}$).
+    \item Each \emph{column} of the right factor is an $N \times 1$ column vector (a scaled $B_j$).
+    \item Their shared inner dimension is $N$, so $\mathrm{rank}(M_{I,J}) \le N$ regardless of how large $|I|$ and $|J|$ are.
+  \end{itemize}
+\end{frame}
+
+% -----------------------------------------------------------------------
+\begin{frame}{SSD vs.\ Attention vs.\ SSM}
 
   \begin{center}
-  \begin{tabular}{lcccc}
+  \small
+  \begin{tabular}{lccc}
     \toprule
     & \textbf{Attention} & \textbf{SSM} & \textbf{SSD} \\
     \midrule
-    State size      & $T$           & $N$         & $\bm{N}$    \\
-    Training FLOPs  & $T^2 N$       & $TN^2$      & $\bm{TN^2}$ \\
-    Inference FLOPs & $TN$          & $N^2$       & $\bm{N^2}$  \\
-    Naive memory    & $T^2$         & $TN^2$      & $\bm{TN}$   \\
-    Matrix multiplications & \checkmark & \texttimes & \checkmark \\
+    Sequence mixing & $(L_{\text{causal}} \circ \text{softmax}(QK^\top))\,V$
+                    & $h_t = a_t h_{t-1} + B_t x_t$
+                    & $(L \circ CB^\top)\,X$ \\
+    Softmax              & \checkmark              & \texttimes              & \texttimes \\
+    Decay mask $L$       & causal only ($a_t{=}1$) & input-dep.\ $a_t$       & input-dep.\ $a_t$ \\
+    Matmul-based         & \checkmark              & \texttimes              & \checkmark \\
+    \midrule
+    State size (infer.)  & $T$ (KV cache)          & $N$                     & $\bm{N}$ \textbf{(const.!)} \\
+    Training FLOPs       & $T^2 N$                 & $TN^2$                  & $\bm{TN^2}$ \\
+    Inference FLOPs      & $TN$                    & $N^2$                   & $\bm{N^2}$ \\
+    Naive memory         & $T^2$                   & $TN^2$                  & $\bm{TN}$ \\
     \bottomrule
   \end{tabular}
   \end{center}
 
-  \vspace{0.5em}
+  \vspace{0.4em}
+  \begin{itemize}\itemsep1pt
+    \item Removing softmax: state stays \emph{constant} size, inference is $O(1)$ per step.
+    \item The input-dependent decay mask $L$ is what distinguishes SSD from linear attention and encodes \emph{selectivity}.
+  \end{itemize}
+
   \begin{alertblock}{The best of both worlds}
-    SSD achieves \textbf{constant inference state} (like SSMs) and \textbf{matrix multiply-based training} (like attention) simultaneously.
+    SSD achieves \textbf{constant inference state} (like SSMs) and \textbf{matmul-based training} (like attention) simultaneously.
   \end{alertblock}
 \end{frame}
 
@@ -1487,128 +1525,788 @@
 % -----------------------------------------------------------------------
 \begin{frame}{The Chunked SSD Algorithm}
 
-  Neither pure mode is ideal for training on long sequences. The solution: \textbf{chunk the sequence}.
+  \textbf{Neither pure mode is ideal for long-sequence training:}
+  \begin{itemize}\itemsep1pt
+    \item \emph{Linear / SSM recurrence mode} ($h_t = a_t h_{t-1} + B_t x_t$): $O(TN^2)$ FLOPs, but sequential and no matmuls (idles tensor cores).
+    \item \emph{Quadratic / attention mode} ($Y = (L \circ CB^\top) X$): pure matmul, but $O(T^2 N)$ FLOPs and $O(T^2)$ memory.
+  \end{itemize}
 
-  \vspace{0.5em}
-  Split $T$ tokens into $Q = T / C$ chunks of size $C$:
+  \vspace{0.4em}
+  \textbf{Solution: chunk the sequence.}
+  \begin{itemize}\itemsep1pt
+    \item Split $T$ tokens into $Q = T / C$ chunks of size $C$.
+    \item \emph{Inside} a chunk: use the quadratic mode (cheap because $C$ is small).
+    \item \emph{Across} chunks: use the linear mode (only $Q$ summary states pass, not $T$).
+  \end{itemize}
 
-  \begin{enumerate}
-    \item \textbf{Intra-chunk} (quadratic/attention mode):
+  \vspace{0.4em}
+  \textbf{Three steps:}
+  \begin{itemize}\itemsep1pt
+    \item \textbf{Intra-chunk} (quadratic mode):
       \begin{itemize}
-        \item Within each chunk, compute $Y_{\text{intra}} = (L \circ CB^\top) X$ via matmul
-        \item Cost: $O(C^2 \cdot P)$ per chunk, parallelizable across batch and heads
+        \item Compute $Y_{\text{intra}} = (L \circ CB^\top) X$ within each chunk via matmul.
+        \item Cost: $O(C^2 \cdot P)$ per chunk, parallel over batch, heads, and chunks.
       \end{itemize}
-    \item \textbf{Inter-chunk} (SSM/linear mode):
+    \item \textbf{Inter-chunk} (linear mode):
       \begin{itemize}
-        \item Compute a \emph{summary state} $h$ at the end of each chunk
-        \item Pass states across chunk boundaries sequentially ($Q$ steps, not $T$)
-        \item For each chunk, add the contribution of all past states: $Y_{\text{inter}}$
+        \item Compute a \emph{summary state} $h_k^{\text{end}}$ at the end of each chunk.
+        \item Pass states across chunk boundaries sequentially ($Q$ steps, not $T$).
+        \item For each chunk, add the contribution of all past states: $Y_{\text{inter}}$.
       \end{itemize}
-    \item \textbf{Combine:} $Y = Y_{\text{intra}} + Y_{\text{inter}} + D \odot X$
-  \end{enumerate}
+    \item \textbf{Combine:} $Y = Y_{\text{intra}} + Y_{\text{inter}} + D \odot X$.
+  \end{itemize}
 
   \vspace{0.3em}
-  Overall cost: $O\!\left(\frac{T}{C} \cdot C^2 N\right) = O(TCN)$, optimal for $C = \sqrt{T}$.
+  Overall cost: $O\!\left(\tfrac{T}{C} \cdot C^2 N\right) = O(TCN)$.
 \end{frame}
 
 % -----------------------------------------------------------------------
-\begin{frame}{Chunked Algorithm: Diagram}
-
+\begin{frame}{Chunked SSD: Block Decomposition (Matrix $M$)}
+  \vspace{-0.6em}
   \begin{center}
+  \resizebox{!}{0.88\textheight}{%
   \begin{tikzpicture}[
-    chunk/.style={draw=mambablue, fill=mambablue!15, rounded corners,
-      text width=2.2cm, align=center, minimum height=1cm, font=\small},
-    state/.style={draw=mambagreen, fill=mambagreen!15, circle, minimum size=0.7cm, font=\scriptsize},
-    arrow/.style={-Stealth, thick},
+    diagBlock/.style={fill=orange!28, draw=orange!75, semithick},
+    isBlock/.style={fill=mambagreen!30, draw=mambagreen!70, semithick},
+    ssBlock/.style={fill=yellow!45, draw=yellow!70!black, semithick},
+    soBlock/.style={fill=mambablue!30, draw=mambablue!70, semithick},
+    gridLine/.style={black!20, very thin},
+    cellLab/.style={font=\normalsize, inner sep=1pt},
   ]
-    % Chunks
-    \node[chunk] (c1) at (0,0) {Chunk 1\\ {\tiny intra-matmul}};
-    \node[chunk] (c2) at (3.2,0) {Chunk 2\\ {\tiny intra-matmul}};
-    \node[chunk] (c3) at (6.4,0) {Chunk 3\\ {\tiny intra-matmul}};
-    \node[chunk] (c4) at (9.6,0) {Chunk 4\\ {\tiny intra-matmul}};
 
-    % States
-    \node[state] (s0) at (-1.6,-1.8) {$h_0$};
-    \node[state] (s1) at (1.6,-1.8) {$h_1$};
-    \node[state] (s2) at (4.8,-1.8) {$h_2$};
-    \node[state] (s3) at (8.0,-1.8) {$h_3$};
-    \node[state] (s4) at (11.2,-1.8) {$h_4$};
+    %% =================== M matrix with explicit entries ===================
+    \def\cw{1.30}     % sub-cell width
+    \def\chw{3.90}    % chunk width = 3*cw
 
-    % State arrows
-    \draw[arrow, mambagreen] (s0) -- (s1);
-    \draw[arrow, mambagreen] (s1) -- (s2);
-    \draw[arrow, mambagreen] (s2) -- (s3);
-    \draw[arrow, mambagreen] (s3) -- (s4);
+    % --- "M =" label on the left of the matrix ---
+    \node[font=\Huge, anchor=east] at (-0.35, -1.5*\chw) {$M \;=$};
 
-    % Chunk to state
-    \draw[arrow, dashed, mambagray] (c1) -- (s1) node[midway, right, font=\tiny] {summarize};
-    \draw[arrow, dashed, mambagray] (c2) -- (s2);
-    \draw[arrow, dashed, mambagray] (c3) -- (s3);
-    \draw[arrow, dashed, mambagray] (c4) -- (s4);
+    % --- Diagonal chunk (0,0): rows/cols 0-2 ---
+    \begin{scope}[shift={(0,0)}]
+      \draw[diagBlock] (0,0) rectangle (\chw, -\chw);
+      \foreach \k in {1,2} {
+        \draw[gridLine] (\k*\cw, 0) -- (\k*\cw, -\chw);
+        \draw[gridLine] (0, -\k*\cw) -- (\chw, -\k*\cw);
+      }
+      \node[cellLab] at (0.5*\cw, -0.5*\cw) {$C_0^{\!\top}\! B_0$};
+      \node[cellLab] at (0.5*\cw, -1.5*\cw) {$C_1^{\!\top} A_{1\!:\!0} B_0$};
+      \node[cellLab] at (1.5*\cw, -1.5*\cw) {$C_1^{\!\top}\! B_1$};
+      \node[cellLab] at (0.5*\cw, -2.5*\cw) {$C_2^{\!\top} A_{2\!:\!0} B_0$};
+      \node[cellLab] at (1.5*\cw, -2.5*\cw) {$C_2^{\!\top} A_{2\!:\!1} B_1$};
+      \node[cellLab] at (2.5*\cw, -2.5*\cw) {$C_2^{\!\top}\! B_2$};
+    \end{scope}
 
-    % State to chunk (inter contribution)
-    \draw[arrow, dashed, mambared] (s0) -- (c1) node[midway, left, font=\tiny] {};
-    \draw[arrow, dashed, mambared] (s1) -- (c2);
-    \draw[arrow, dashed, mambared] (s2) -- (c3);
-    \draw[arrow, dashed, mambared] (s3) -- (c4);
+    % --- Off-diagonal chunk (1,0): rows 3-5, cols 0-2 ---
+    \begin{scope}[shift={(0, -\chw)}]
+      \draw[soBlock] (0, 0)       rectangle (\cw, -\chw);
+      \draw[ssBlock] (\cw, 0)     rectangle (2*\cw, -\chw);
+      \draw[isBlock] (2*\cw, 0)   rectangle (\chw, -\chw);
+      \foreach \k in {1,2} {
+        \draw[gridLine] (0, -\k*\cw) -- (\chw, -\k*\cw);
+      }
+      % Blue (C^T propagated to end of input chunk)
+      \node[cellLab] at (0.5*\cw, -0.5*\cw) {$C_3^{\!\top} A_{3\!:\!2}$};
+      \node[cellLab] at (0.5*\cw, -1.5*\cw) {$C_4^{\!\top} A_{4\!:\!2}$};
+      \node[cellLab] at (0.5*\cw, -2.5*\cw) {$C_5^{\!\top} A_{5\!:\!2}$};
+      % Yellow (inter-chunk A)
+      \node[cellLab] at (1.5*\cw, -1.5*\cw) {$A_{2\!:\!2}$};
+      % Green (A within input chunk * B)
+      \node[cellLab] at (2.5*\cw, -0.5*\cw) {$A_{2\!:\!0} B_0$};
+      \node[cellLab] at (2.5*\cw, -1.5*\cw) {$A_{2\!:\!1} B_1$};
+      \node[cellLab] at (2.5*\cw, -2.5*\cw) {$A_{2\!:\!2} B_2$};
+    \end{scope}
 
-    % Labels
-    \node[mambablue, font=\scriptsize] at (4.8, 0.9) {Intra: matmul (parallel)};
-    \node[mambagreen, font=\scriptsize] at (4.8,-2.5) {Inter: sequential scan over $Q \ll T$ chunks};
+    % --- Diagonal chunk (1,1): rows/cols 3-5 ---
+    \begin{scope}[shift={(\chw, -\chw)}]
+      \draw[diagBlock] (0,0) rectangle (\chw, -\chw);
+      \foreach \k in {1,2} {
+        \draw[gridLine] (\k*\cw, 0) -- (\k*\cw, -\chw);
+        \draw[gridLine] (0, -\k*\cw) -- (\chw, -\k*\cw);
+      }
+      \node[cellLab] at (0.5*\cw, -0.5*\cw) {$C_3^{\!\top}\! B_3$};
+      \node[cellLab] at (0.5*\cw, -1.5*\cw) {$C_4^{\!\top} A_{4\!:\!3} B_3$};
+      \node[cellLab] at (1.5*\cw, -1.5*\cw) {$C_4^{\!\top}\! B_4$};
+      \node[cellLab] at (0.5*\cw, -2.5*\cw) {$C_5^{\!\top} A_{5\!:\!3} B_3$};
+      \node[cellLab] at (1.5*\cw, -2.5*\cw) {$C_5^{\!\top} A_{5\!:\!4} B_4$};
+      \node[cellLab] at (2.5*\cw, -2.5*\cw) {$C_5^{\!\top}\! B_5$};
+    \end{scope}
+
+    % --- Off-diagonal chunk (2,0): rows 6-8, cols 0-2 ---
+    \begin{scope}[shift={(0, -2*\chw)}]
+      \draw[soBlock] (0, 0)       rectangle (\cw, -\chw);
+      \draw[ssBlock] (\cw, 0)     rectangle (2*\cw, -\chw);
+      \draw[isBlock] (2*\cw, 0)   rectangle (\chw, -\chw);
+      \foreach \k in {1,2} {
+        \draw[gridLine] (0, -\k*\cw) -- (\chw, -\k*\cw);
+      }
+      \node[cellLab] at (0.5*\cw, -0.5*\cw) {$C_6^{\!\top} A_{6\!:\!5}$};
+      \node[cellLab] at (0.5*\cw, -1.5*\cw) {$C_7^{\!\top} A_{7\!:\!5}$};
+      \node[cellLab] at (0.5*\cw, -2.5*\cw) {$C_8^{\!\top} A_{8\!:\!5}$};
+      \node[cellLab] at (1.5*\cw, -1.5*\cw) {$A_{5\!:\!2}$};
+      \node[cellLab] at (2.5*\cw, -0.5*\cw) {$A_{2\!:\!0} B_0$};
+      \node[cellLab] at (2.5*\cw, -1.5*\cw) {$A_{2\!:\!1} B_1$};
+      \node[cellLab] at (2.5*\cw, -2.5*\cw) {$A_{2\!:\!2} B_2$};
+    \end{scope}
+
+    % --- Off-diagonal chunk (2,1): rows 6-8, cols 3-5 ---
+    \begin{scope}[shift={(\chw, -2*\chw)}]
+      \draw[soBlock] (0, 0)       rectangle (\cw, -\chw);
+      \draw[ssBlock] (\cw, 0)     rectangle (2*\cw, -\chw);
+      \draw[isBlock] (2*\cw, 0)   rectangle (\chw, -\chw);
+      \foreach \k in {1,2} {
+        \draw[gridLine] (0, -\k*\cw) -- (\chw, -\k*\cw);
+      }
+      \node[cellLab] at (0.5*\cw, -0.5*\cw) {$C_6^{\!\top} A_{6\!:\!5}$};
+      \node[cellLab] at (0.5*\cw, -1.5*\cw) {$C_7^{\!\top} A_{7\!:\!5}$};
+      \node[cellLab] at (0.5*\cw, -2.5*\cw) {$C_8^{\!\top} A_{8\!:\!5}$};
+      \node[cellLab] at (1.5*\cw, -1.5*\cw) {$A_{5\!:\!5}$};
+      \node[cellLab] at (2.5*\cw, -0.5*\cw) {$A_{5\!:\!3} B_3$};
+      \node[cellLab] at (2.5*\cw, -1.5*\cw) {$A_{5\!:\!4} B_4$};
+      \node[cellLab] at (2.5*\cw, -2.5*\cw) {$A_{5\!:\!5} B_5$};
+    \end{scope}
+
+    % --- Diagonal chunk (2,2): rows/cols 6-8 ---
+    \begin{scope}[shift={(2*\chw, -2*\chw)}]
+      \draw[diagBlock] (0,0) rectangle (\chw, -\chw);
+      \foreach \k in {1,2} {
+        \draw[gridLine] (\k*\cw, 0) -- (\k*\cw, -\chw);
+        \draw[gridLine] (0, -\k*\cw) -- (\chw, -\k*\cw);
+      }
+      \node[cellLab] at (0.5*\cw, -0.5*\cw) {$C_6^{\!\top}\! B_6$};
+      \node[cellLab] at (0.5*\cw, -1.5*\cw) {$C_7^{\!\top} A_{7\!:\!6} B_6$};
+      \node[cellLab] at (1.5*\cw, -1.5*\cw) {$C_7^{\!\top}\! B_7$};
+      \node[cellLab] at (0.5*\cw, -2.5*\cw) {$C_8^{\!\top} A_{8\!:\!6} B_6$};
+      \node[cellLab] at (1.5*\cw, -2.5*\cw) {$C_8^{\!\top} A_{8\!:\!7} B_7$};
+      \node[cellLab] at (2.5*\cw, -2.5*\cw) {$C_8^{\!\top}\! B_8$};
+    \end{scope}
+
+    % Above-diagonal (empty) chunk outlines
+    \foreach \i/\j in {0/1, 0/2, 1/2} {
+      \draw[gray!25, thin] ({\j*\chw}, {-\i*\chw})
+                           rectangle ({(\j+1)*\chw}, {-(\i+1)*\chw});
+    }
+    %% =================== Legend (right of matrix) ===================
+    \begin{scope}[shift={({3*\chw + 0.9}, -0.2)}]
+      \node[font=\Large\bfseries, anchor=south west] at (0, 1.0)
+        {Block types};
+      \def\lh{-1.05}
+      \draw[diagBlock] (0, {0.70+0*\lh}) rectangle (0.65, {0.05+0*\lh});
+      \draw[isBlock]   (0, {0.70+1*\lh}) rectangle (0.65, {0.05+1*\lh});
+      \draw[ssBlock]   (0, {0.70+2*\lh}) rectangle (0.65, {0.05+2*\lh});
+      \draw[soBlock]   (0, {0.70+3*\lh}) rectangle (0.65, {0.05+3*\lh});
+      \node[font=\normalsize, anchor=west] at (0.78, {0.375+0*\lh}) {Diagonal: Input $\to$ Output};
+      \node[font=\normalsize, anchor=west] at (0.78, {0.375+1*\lh}) {Low-rank: Input $\to$ State};
+      \node[font=\normalsize, anchor=west] at (0.78, {0.375+2*\lh}) {Low-rank: State $\to$ State};
+      \node[font=\normalsize, anchor=west] at (0.78, {0.375+3*\lh}) {Low-rank: State $\to$ Output};
+    \end{scope}
+
+  \end{tikzpicture}
+  }
+  \end{center}
+\end{frame}
+
+% -----------------------------------------------------------------------
+\begin{frame}{Chunked SSD: Conceptual Walkthrough}
+
+  \textbf{Idea.} Cut the sequence into $Q$ chunks of size $C$, and exploit two facts:
+  \begin{itemize}
+    \item \emph{Inside} a chunk: a small $C{\times}C$ matmul handles all in-chunk dependencies.
+    \item \emph{Across} chunks: each off-diagonal chunk-block of $M$ is rank $N$, so it can be summarized by a single state vector of size $N$. Only $Q \ll T$ such states are needed.
+  \end{itemize}
+
+  \vspace{0.4em}
+  \textbf{The four pieces:}
+  \begin{description}\itemsep1pt
+    \item[\textcolor{orange!75!black}{$\blacksquare$ Diagonal}\ (intra-chunk Input$\to$Output).]
+      For chunk $k$, compute the local SSM output via one small matmul on the $C{\times}C$ diagonal block $(L_k \circ C_k B_k^{\!\top})\,X_k$.
+    \item[\textcolor{mambagreen!70!black}{$\blacksquare$ Input$\to$State}\ (end-of-chunk summary).]
+      For chunk $k$, integrate inputs up to the chunk's right edge to get a single state vector $h_k^{\text{end}}\in\R^{N\times P}$.
+    \item[\textcolor{yellow!60!black}{$\blacksquare$ State$\to$State}\ (inter-chunk recurrence).]
+      Sequentially carry the chunk-final states: $H_{k+1} = a^{(k)}_{\text{cum}}\, H_k + h_k^{\text{end}}$. Only $Q$ steps.
+    \item[\textcolor{mambablue!75!black}{$\blacksquare$ State$\to$Output}\ (spread incoming state).]
+      For chunk $k$, broadcast the incoming state $H_k$ onto the chunk's outputs by another small matmul.
+  \end{description}
+
+  \vspace{0.3em}
+  Then $Y = Y_{\text{intra}} + Y_{\text{inter}}$. Three of the four pieces are \emph{parallel-over-chunks matmuls} that hit tensor cores; only the yellow piece is sequential, and it has only $Q$ steps.
+\end{frame}
+
+% -----------------------------------------------------------------------
+\begin{frame}{Chunked SSD: Algorithm}
+  \begin{center}
+  \footnotesize
+  \begin{algorithm}[H]
+    \caption{Chunked SSD (scalar $A_t = a_t$)}
+    \KwIn{$X \in \R^{T \times P}$, $a \in \R^T$, $B, C \in \R^{T \times N}$; chunk size $C$, $Q = T/C$}
+    \KwOut{$Y \in \R^{T \times P}$}
+    \tcc{$a^\times_{i:j} := a_i\, a_{i-1}\cdots a_{j+1}$;\, $s_k = kC$,\, $e_k = (k{+}1)C - 1$}
+    \BlankLine
+    $\textcolor{orange!75!black}{\blacksquare}\;\; Y_{\text{intra}}^{(k)} \gets (L_k \circ C_k B_k^{\!\top})\, X_k$ \tcp*{\textbf{parallel} over chunks $k$: $Q$ independent $C{\times}C$ matmuls}
+    $\textcolor{mambagreen!70!black}{\blacksquare}\;\; h_k^{\text{end}} \gets \sum_{t \in \text{chunk } k} a^\times_{e_k:t}\, B_t\, X_t$ \tcp*{\textbf{parallel} over $k$: one einsum, $Q$ states $\in \R^{N\times P}$}
+    $\textcolor{yellow!60!black}{\blacksquare}\;\; L^{\!\times}[k,j] \gets a^\times_{e_{k-1}:e_j}\;\,(j < k)$ \tcp*{cross-chunk decay: \textbf{parallel scan} on $\log a$ ($O(\log Q)$ depth)}
+    $\textcolor{yellow!60!black}{\blacksquare}\;\; H \gets L^{\!\times}\, h^{\text{end}}$ \tcp*{inter-chunk recurrence: one $Q{\times}Q$ matmul}
+    $\textcolor{mambablue!75!black}{\blacksquare}\;\; Y_{\text{inter}}^{(k)}[i] \gets \bigl(a^\times_{i:s_k - 1}\, C_i\bigr)^{\!\top}\, H_k$ \tcp*{\textbf{parallel} over $k$: one einsum}
+    \Return $Y \gets Y_{\text{intra}} + Y_{\text{inter}}$\;
+  \end{algorithm}
+  \end{center}
+
+  \vspace{0.4em}
+  \begin{itemize}\itemsep1pt
+    \item \textbf{Parallel over chunks} (independent across $k$): orange, green, blue. Each is a single (ein)sum/matmul that hits tensor cores.
+    \item \textbf{Sequential across chunks}: yellow only. The chunk-to-chunk dependency is the cumulative sum on $\log a$, which runs as a parallel scan in $O(\log Q)$ depth; the apply-to-states step is then a single $Q{\times}Q$ matmul.
+    \item Total cost: $O(TCN + TCP)$.
+  \end{itemize}
+\end{frame}
+
+% -----------------------------------------------------------------------
+\begin{frame}{From $L$ to $L^\times$: Subsampling at Chunk Endpoints}
+
+  Recall $L \in \R^{T \times T}$ with $L[i,j] = a^\times_{i:j}$ for $i \ge j$. $L^\times$ is the $Q{\times}Q$ matrix obtained by reading off $L$ at the chunk-end positions $e_q := (q{+}1)C - 1$:
+  \[
+    L^\times[k, j] \;=\; L\bigl[e_{k-1},\, e_j\bigr] \quad (j < k).
+  \]
+
+  \vspace{0.3em}
+  \begin{center}
+  \begin{tikzpicture}[scale=0.78]
+    \def\cs{0.42}
+
+    %% ============ L matrix (9x9), T=9, C=3, Q=3 ============
+    % Lower triangle gray fill
+    \foreach \r in {0,...,8} {
+      \foreach \c in {0,...,8} {
+        \pgfmathtruncatemacro{\below}{\c <= \r ? 1 : 0}
+        \ifnum\below=1
+          \fill[black!5] ({\c*\cs}, {-\r*\cs}) rectangle ({(\c+1)*\cs}, {-(\r+1)*\cs});
+        \fi
+      }
+    }
+    % Diagonal chunk orange tint (lower triangle within chunk)
+    \foreach \k in {0,1,2} {
+      \foreach \r in {0,1,2} {
+        \foreach \c in {0,1,2} {
+          \pgfmathtruncatemacro{\below}{\c <= \r ? 1 : 0}
+          \ifnum\below=1
+            \fill[orange!22] ({(\k*3+\c)*\cs}, {-(\k*3+\r)*\cs}) rectangle
+                             ({(\k*3+\c+1)*\cs}, {-(\k*3+\r+1)*\cs});
+          \fi
+        }
+      }
+    }
+    % Yellow highlight for chunk-end positions
+    \foreach \row/\col in {2/2, 5/2, 5/5, 8/2, 8/5, 8/8} {
+      \fill[yellow!60] ({\col*\cs}, {-\row*\cs}) rectangle ({(\col+1)*\cs}, {-(\row+1)*\cs});
+    }
+    % Thin grid
+    \foreach \k in {0,...,9} {
+      \draw[black!25, very thin] ({\k*\cs}, 0) -- ({\k*\cs}, {-9*\cs});
+      \draw[black!25, very thin] (0, {-\k*\cs}) -- ({9*\cs}, {-\k*\cs});
+    }
+    % Thick chunk boundaries
+    \foreach \k in {0,3,6,9} {
+      \draw[thick] ({\k*\cs}, 0) -- ({\k*\cs}, {-9*\cs});
+      \draw[thick] (0, {-\k*\cs}) -- ({9*\cs}, {-\k*\cs});
+    }
+    % Chunk-end labels
+    \foreach \k/\name in {0/{e_0}, 1/{e_1}, 2/{e_2}} {
+      \node[font=\scriptsize, anchor=south] at ({(\k*3+2.5)*\cs}, {0.04}) {$\name$};
+      \node[font=\scriptsize, anchor=east]  at ({-0.04}, {-(\k*3+2.5)*\cs}) {$\name$};
+    }
+    % "L =" label below the L matrix
+    \node[font=\large, anchor=north] at ({4.5*\cs}, {-9*\cs - 0.30}) {$L$};
+
+    %% ============ Arrow with single combined label above ============
+    \draw[-Stealth, very thick]
+      ({9.6*\cs}, {-4.5*\cs}) -- ({15.4*\cs}, {-4.5*\cs});
+    \node[font=\scriptsize, anchor=south] at ({12.5*\cs}, {-4.5*\cs+0.10})
+      {sample at $\{e_q\}$};
+
+    %% ============ L^x matrix (3x3), shifted further right; cells 1.4x larger ============
+    \begin{scope}[shift={({16.2*\cs}, {-3.0*\cs})}]
+      \def\cls{0.588}  % L^x cell size = 1.4 * \cs
+      % Yellow cells (lower triangular incl diagonal)
+      \foreach \r in {0,1,2} {
+        \foreach \c in {0,1,2} {
+          \pgfmathtruncatemacro{\below}{\c <= \r ? 1 : 0}
+          \ifnum\below=1
+            \fill[yellow!60] ({\c*\cls}, {-\r*\cls}) rectangle
+                             ({(\c+1)*\cls}, {-(\r+1)*\cls});
+          \fi
+        }
+      }
+      % Values
+      \node at ({0.5*\cls}, {-0.5*\cls}) {\scriptsize $1$};
+      \node at ({0.5*\cls}, {-1.5*\cls}) {\scriptsize $\beta_1$};
+      \node at ({1.5*\cls}, {-1.5*\cls}) {\scriptsize $1$};
+      \node at ({0.5*\cls}, {-2.5*\cls}) {\scriptsize $\beta_1\beta_2$};
+      \node at ({1.5*\cls}, {-2.5*\cls}) {\scriptsize $\beta_2$};
+      \node at ({2.5*\cls}, {-2.5*\cls}) {\scriptsize $1$};
+      % Borders
+      \foreach \k in {0,1,2,3} {
+        \draw[thick] ({\k*\cls}, 0) -- ({\k*\cls}, {-3*\cls});
+        \draw[thick] (0, {-\k*\cls}) -- ({3*\cls}, {-\k*\cls});
+      }
+      % Axis labels
+      \foreach \k/\name in {0/{0}, 1/{1}, 2/{2}} {
+        \node[font=\scriptsize, anchor=south] at ({(\k+0.5)*\cls}, {0.04}) {$j{=}\name$};
+      }
+      \foreach \k/\name in {0/{1}, 1/{2}, 2/{3}} {
+        \node[font=\scriptsize, anchor=east] at ({-0.04}, {-(\k+0.5)*\cls}) {$k{=}\name$};
+      }
+      % "L^x =" label below the small matrix
+      \node[font=\large, anchor=north] at ({1.5*\cls}, {-3*\cls - 0.30}) {$L^\times$};
+    \end{scope}
+
   \end{tikzpicture}
   \end{center}
+
+  \textbf{Efficient computation.}
+  \begin{itemize}\itemsep1pt
+    \item Per-chunk total decay $\beta_q := \prod_{t \in \text{chunk } q} a_t$: one parallel reduction inside each chunk, all chunks in parallel.
+    \item Parallel scan of $\{\beta_q\}$ gives cumulative products $P_q := \beta_0\,\beta_1\cdots\beta_q$ in $O(\log Q)$ depth.
+    \item Pairwise ratio fills the whole matrix: $L^\times[k,j] = P_{k-1}/P_j$, one broadcast over $(k, j)$ pairs.
+  \end{itemize}
+\end{frame}
+
+% -----------------------------------------------------------------------
+\begin{frame}{Equivalence to $Y = MX$: Setup and Intra-Chunk Part}
+
+  \textbf{Goal.} Show the four-step algorithm produces $y_i = (MX)_i$, where
+  $M[i,j] = C_i^{\!\top} a^\times_{i:j}\, B_j$ for $j \le i$.
+
+  \vspace{0.4em}
+  \textbf{Notation.} $k$ = chunk containing the output position $i$; $\ell < k$ ranges over the earlier chunks. Within chunk $m$, token indices run $j \in [s_m, e_m]$.
+
+  \vspace{0.4em}
+  \textbf{Key identity (semigroup property of the scalar accumulator).}
+  For any split point $j \le m \le i$,
+  \[
+    a^\times_{i:j} \;=\; a^\times_{i:m}\;\cdot\;a^\times_{m:j}.
+  \]
+  The entire proof is a single application of this identity at two well-chosen split points.
+
+  \vspace{0.4em}
+  \textbf{Step 1 -- split the sum at the left chunk boundary $s_k$:}
+  \[
+    y_i \;=\; \underbrace{\sum_{j = s_k}^{i} C_i^{\!\top} a^\times_{i:j} B_j X_j}_{\text{same chunk}}
+            \;+\; \underbrace{\sum_{\ell < k}\;\sum_{j \,\in\, \text{chunk}\,\ell} C_i^{\!\top} a^\times_{i:j} B_j X_j}_{\text{earlier chunks (next slide)}}.
+  \]
+
+  \vspace{0.3em}
+  \textbf{Step 2 -- same chunk.} The first sum is the restriction of the SSM to positions $[s_k, e_k]$, which is exactly the matrix $(L_k \circ C_k B_k^{\!\top}) X_k$ evaluated at row $i - s_k$:
+  \[
+    \sum_{j = s_k}^{i} C_i^{\!\top} a^\times_{i:j} B_j X_j
+    \;=\; Y_{\text{intra}}^{(k)}[i]
+    \qquad {\color{orange!75!black}\blacksquare\;\text{(orange line in algorithm).}}
+  \]
+
+  \vspace{0.3em}
+  The remaining work is to rewrite the \emph{earlier chunks} sum as $Y_{\text{inter}}^{(k)}[i]$. That is the next slide.
+\end{frame}
+
+% -----------------------------------------------------------------------
+\begin{frame}{Equivalence to $Y = MX$: Inter-Chunk Part}
+
+  \textbf{Picking up from the previous slide:} the earlier-chunks contribution to $y_i$ is
+  \[
+    \sum_{\ell < k}\;\sum_{j \,\in\, \text{chunk}\,\ell} C_i^{\!\top} a^\times_{i:j} B_j X_j.
+  \]
+
+  \vspace{0.3em}
+  \textbf{Step 3 -- apply the key identity twice} at $m = e_{k-1} = s_k - 1$ and at $m = e_\ell$:
+  \[
+    a^\times_{i:j} \;=\; \underbrace{a^\times_{i:\,e_{k-1}}}_{\text{state}\,\to\,\text{output}}
+                       \;\cdot\; \underbrace{a^\times_{e_{k-1}:\,e_\ell}}_{=\,L^\times[k,\ell]\;(\text{state}\,\to\,\text{state})}
+                       \;\cdot\; \underbrace{a^\times_{e_\ell:\,j}}_{\text{input}\,\to\,\text{state}}
+    \qquad (j \in \text{chunk}\,\ell,\;\ell < k).
+  \]
+  The three factors depend on disjoint variables ($i$ only; $\ell$ only; $j$ and $\ell$), so the triple sum factorises:
+  \[
+    \sum_{\ell<k}\sum_{j\,\in\,\text{chunk}\,\ell}\! C_i^{\!\top} a^\times_{i:j} B_j X_j
+    \;=\; \bigl(a^\times_{i:e_{k-1}}\,C_i\bigr)^{\!\top}\!
+          \underbrace{\sum_{\ell<k} L^\times[k,\ell]\,
+            \underbrace{\Bigl[\sum_{j\,\in\,\text{chunk}\,\ell} a^\times_{e_\ell:j}\,B_j X_j\Bigr]}_{h_\ell^{\text{end}}\;{\color{mambagreen!70!black}\blacksquare}}
+          }_{H_k\;{\color{yellow!60!black}\blacksquare}}
+    \;=\; Y_{\text{inter}}^{(k)}[i]\;{\color{mambablue!75!black}\blacksquare}.
+  \]
+  Each underbrace is exactly one line of the algorithm (matching colour). Adding to Step 2 gives $y_i = Y_{\text{intra}}^{(k)}[i] + Y_{\text{inter}}^{(k)}[i]$. \hfill$\square$
+
+\end{frame}
+
+% -----------------------------------------------------------------------
+\subsubsection{Reference PyTorch Implementation}
+
+% -----------------------------------------------------------------------
+\begin{frame}[fragile]{Reference Implementation: the \texttt{segsum} Helper}
+
+    \begin{itemize}
+        \item Source: \texttt{ssd\_minimal\_discrete} in the official Mamba-2 repo (\texttt{mamba\_ssm/modules/ssd\_minimal.py})
+        \item Pedagogical implementation. True implementation is a Triton kernel.
+    \end{itemize}
+
+  \vspace{0.5em}
+\begin{lstlisting}
+def segsum(x):
+    """exp(segsum(A)) produces a 1-SS matrix."""
+    T = x.size(-1)
+    x_cumsum  = torch.cumsum(x, dim=-1)
+    x_segsum  = x_cumsum[..., :, None] - x_cumsum[..., None, :]
+    mask      = torch.tril(torch.ones(T, T, device=x.device, dtype=bool))
+    x_segsum  = x_segsum.masked_fill(~mask, -torch.inf)
+    return x_segsum
+
+# Call sites inside ssd_minimal_discrete:
+#   within each chunk  -> builds L_k of shape (l, l)
+L           = torch.exp(segsum(A))
+#   across chunks      -> builds L^x of shape (Q+1, Q+1)
+decay_chunk = torch.exp(segsum(F.pad(A_cumsum[..., -1], (1, 0))))
+\end{lstlisting}
+
+  \vspace{0.3em}
+  \textbf{Construction.} The input \texttt{x} is the vector of \emph{log gates} $\log a_t$ along the last axis.
+  \begin{itemize}\itemsep1pt
+    \item \texttt{x\_cumsum[i]}\,$= \sum_{t \le i} \log a_t = \log \alpha_i$. A single \texttt{cumsum} call, $O(\log T)$ parallel depth.
+    \item Pairwise difference \texttt{x\_cumsum[i] - x\_cumsum[j]} equals $\log \alpha_i - \log \alpha_j = \log a^\times_{i:j}$ for $i \ge j$. 
+    \item \texttt{tril(\dots)} retains only $i \ge j$; the strict upper triangle is assigned $-\infty$ so that \texttt{exp(\dots)} maps it to $0$.
+  \end{itemize}
+
+  \vspace{0.2em}
+  \textbf{Numerical stability.} For long sequences with $a_t < 1$, the direct product $\prod_t a_t$ underflows. Working with $\log a_t$ and \texttt{cumsum} keeps intermediate values in a stable range; \texttt{exp} is applied only at the end, where outputs are bounded by $1$.
+\end{frame}
+
+% -----------------------------------------------------------------------
+% The next three slides show the same code body of ssd_minimal_discrete
+% as three adjacent listings (setup / intra-chunk / end-of-chunk). Each
+% slide colours the focused block via backgroundcolor while the other
+% two stay neutral (mambagray!10).
+% -----------------------------------------------------------------------
+\begin{frame}[fragile]{Reference Implementation: Setup and Chunking}
+
+\begin{lstlisting}[aboveskip=0pt,belowskip=0pt,frame=none,backgroundcolor=\color{mambablue!12}]
+def ssd_minimal_discrete(X, A, B, C, block_len, initial_states=None):
+    # X: (B, T, H, P),  A: (B, T, H),  B, C: (B, T, H, N)
+    # Split time axis T = Q * block_len into Q chunks
+    X, A, B, C = [rearrange(x, "b (c l) ... -> b c l ...", l=block_len)
+                  for x in (X, A, B, C)]
+    A         = rearrange(A, "b c l h -> b h c l")
+    A_cumsum  = torch.cumsum(A, dim=-1)
+\end{lstlisting}
+\begin{lstlisting}[aboveskip=0pt,belowskip=0pt,frame=none,backgroundcolor=\color{mambagray!10}]
+
+    # (1) Intra-chunk output  -- ORANGE diagonal blocks
+    L      = torch.exp(segsum(A))
+    Y_diag = torch.einsum("bclhn,bcshn,bhcls,bcshp->bclhp",
+                          C, B, L, X)
+\end{lstlisting}
+\begin{lstlisting}[aboveskip=0pt,belowskip=0pt,frame=none,backgroundcolor=\color{mambagray!10}]
+
+    # (2) End-of-chunk states -- GREEN  (input -> state)
+    decay_states = torch.exp(A_cumsum[..., -1:] - A_cumsum)
+    states       = torch.einsum("bclhn,bhcl,bclhp->bchpn",
+                                B, decay_states, X)
+\end{lstlisting}
+
+  \vspace{0.3em}
+  \textbf{Shape setup} (highlighted region).
+  \begin{itemize}\itemsep1pt
+    \item \texttt{rearrange("b (c l) ... -> b c l ...", l=block\_len)} factorises the time axis $T = Q \cdot C$, exposing the chunk index \texttt{c} and the within-chunk index \texttt{l}. The operation is a view; no data is copied.
+    \item The subsequent \texttt{rearrange} on \texttt{A} moves the head axis next to the batch axis, producing layout \texttt{(B, H, Q, l)}. This makes the per-head, per-chunk operations that follow contiguous in memory.
+    \item \texttt{A\_cumsum[b, h, c, l]}\,$= \sum_{t = s_c}^{s_c + l} \log a_t$. The \texttt{cumsum} is taken along \texttt{l} only, so each chunk carries an independent running log-product; the cross-chunk contribution is reconstructed later via \texttt{decay\_chunk}.
+  \end{itemize}
+\end{frame}
+
+% -----------------------------------------------------------------------
+\begin{frame}[fragile]{Reference Implementation: Intra-Chunk Output}
+
+\begin{lstlisting}[aboveskip=0pt,belowskip=0pt,frame=none,backgroundcolor=\color{mambagray!10}]
+def ssd_minimal_discrete(X, A, B, C, block_len, initial_states=None):
+    # X: (B, T, H, P),  A: (B, T, H),  B, C: (B, T, H, N)
+    # Split time axis T = Q * block_len into Q chunks
+    X, A, B, C = [rearrange(x, "b (c l) ... -> b c l ...", l=block_len)
+                  for x in (X, A, B, C)]
+    A         = rearrange(A, "b c l h -> b h c l")
+    A_cumsum  = torch.cumsum(A, dim=-1)
+\end{lstlisting}
+\begin{lstlisting}[aboveskip=0pt,belowskip=0pt,frame=none,backgroundcolor=\color{orange!18}]
+
+    # (1) Intra-chunk output  -- ORANGE diagonal blocks
+    L      = torch.exp(segsum(A))
+    Y_diag = torch.einsum("bclhn,bcshn,bhcls,bcshp->bclhp",
+                          C, B, L, X)
+\end{lstlisting}
+\begin{lstlisting}[aboveskip=0pt,belowskip=0pt,frame=none,backgroundcolor=\color{mambagray!10}]
+
+    # (2) End-of-chunk states -- GREEN  (input -> state)
+    decay_states = torch.exp(A_cumsum[..., -1:] - A_cumsum)
+    states       = torch.einsum("bclhn,bhcl,bclhp->bchpn",
+                                B, decay_states, X)
+\end{lstlisting}
+
+  \vspace{0.3em}
+  \textbf{(1) Intra-chunk output} (highlighted region).
+  \begin{itemize}\itemsep1pt
+    \item \texttt{L = torch.exp(segsum(A))} produces, for every (batch, head, chunk), the lower-triangular $l \times l$ matrix $L_k$ from the proof, with entries $L_k[i,j] = a^\times_{s_k+i:\,s_k+j}$ for $i \ge j$.
+    \item The einsum \texttt{"bclhn,bcshn,bhcls,bcshp->bclhp"} evaluates $(L_k \circ C_k B_k^{\!\top}) X_k$ for every (batch, head, chunk) simultaneously. The contracted index \texttt{n} produces the score $C_l^{\!\top} B_s$; the contracted index \texttt{s} (key position within the chunk) couples this score with the causal mask $L$ and the input $X$.
+    \item The free indices \texttt{b,c,h,l,p} form the output shape, identical to the input layout.
+  \end{itemize}
+\end{frame}
+
+% -----------------------------------------------------------------------
+\begin{frame}[fragile]{Reference Implementation: End-of-Chunk States}
+
+\begin{lstlisting}[aboveskip=0pt,belowskip=0pt,frame=none,backgroundcolor=\color{mambagray!10}]
+def ssd_minimal_discrete(X, A, B, C, block_len, initial_states=None):
+    # X: (B, T, H, P),  A: (B, T, H),  B, C: (B, T, H, N)
+    # Split time axis T = Q * block_len into Q chunks
+    X, A, B, C = [rearrange(x, "b (c l) ... -> b c l ...", l=block_len)
+                  for x in (X, A, B, C)]
+    A         = rearrange(A, "b c l h -> b h c l")
+    A_cumsum  = torch.cumsum(A, dim=-1)
+\end{lstlisting}
+\begin{lstlisting}[aboveskip=0pt,belowskip=0pt,frame=none,backgroundcolor=\color{orange!15}]
+
+    # (1) Intra-chunk output  -- ORANGE  (input -> output, diagonal blocks)
+    L      = torch.exp(segsum(A))
+    Y_diag = torch.einsum("bclhn,bcshn,bhcls,bcshp->bclhp",
+                          C, B, L, X)
+\end{lstlisting}
+\begin{lstlisting}[aboveskip=0pt,belowskip=0pt,frame=none,backgroundcolor=\color{mambagreen!18}]
+
+    # (2) End-of-chunk states -- GREEN  (input -> state)
+    decay_states = torch.exp(A_cumsum[..., -1:] - A_cumsum)
+    states       = torch.einsum("bclhn,bhcl,bclhp->bchpn",
+                                B, decay_states, X)
+\end{lstlisting}
+
+  \vspace{0.3em}
+  \textbf{(2) End-of-chunk states} (highlighted region).
+  \begin{itemize}\itemsep1pt
+    \item For token $t$ inside chunk $k$, the contribution to $h_k^{\text{end}}$ is weighted by $a^\times_{e_k : t} = \alpha_{e_k}/\alpha_t = \exp(\log\alpha_{e_k} - \log\alpha_t)$.
+    \item \texttt{A\_cumsum} has shape \texttt{(B, H, Q, l)} with \texttt{A\_cumsum[..., t]} $= \log\alpha_t = \sum_{s \le t}\log a_s$ (running within-chunk log-decay).
+%    \item \texttt{A\_cumsum[..., -1:]} selects the last within-chunk position, shape \texttt{(B, H, Q, 1)}: the total chunk log-decay $\log\alpha_{e_k}$. The slice \texttt{-1:} (not \texttt{-1}) keeps the trailing dimension so it broadcasts.
+    \item \texttt{A\_cumsum[..., -1:] - A\_cumsum} broadcasts $(B,H,Q,1) - (B,H,Q,l) \to (B,H,Q,l)$, yielding $\log\alpha_{e_k} - \log\alpha_t$ for every (chunk, token). Taking \texttt{exp} gives \texttt{decay\_states[..., t]} $= a^\times_{e_k : t}$.
+    \item The einsum \texttt{"bclhn,bhcl,bclhp->bchpn"} contracts the within-chunk time axis \texttt{l}, evaluating $h_k^{\text{end}} = \sum_{t \in \text{chunk}\,k} a^\times_{e_k:t}\,B_t\,X_t^{\!\top}$. The result has shape \texttt{(B, Q, H, P, N)}, i.e.\ one state in $\R^{N \times P}$ per (batch, head, chunk).
+  \end{itemize}
+\end{frame}
+
+% -----------------------------------------------------------------------
+\begin{frame}[fragile]{Reference Implementation: Inter-Chunk Recurrence and Output}
+
+\begin{lstlisting}[aboveskip=0pt,belowskip=0pt,frame=none,backgroundcolor=\color{yellow!22}]
+    # (3) Inter-chunk recurrence -- YELLOW  (state -> state)
+    if initial_states is None:
+        initial_states = torch.zeros_like(states[:, :1])
+    states           = torch.cat([initial_states, states], dim=1)
+    decay_chunk      = torch.exp(segsum(F.pad(A_cumsum[..., -1], (1, 0))))
+    new_states       = torch.einsum("bhzc,bchpn->bzhpn", decay_chunk, states)
+    states, final_state = new_states[:, :-1], new_states[:, -1]
+\end{lstlisting}
+\begin{lstlisting}[aboveskip=0pt,belowskip=0pt,frame=none,backgroundcolor=\color{mambablue!15}]
+
+    # (4) State -> output -- BLUE  (state -> output)
+    state_decay_out  = torch.exp(A_cumsum)                       # a^x_{i : s_k - 1}
+    Y_off            = torch.einsum("bclhn,bchpn,bhcl->bclhp",
+                                    C, states, state_decay_out)
+
+    Y = rearrange(Y_diag + Y_off, "b c l h -> b (c l) h")
+    return Y, final_state
+\end{lstlisting}
+
+  \vspace{0.3em}
+  \textbf{(3) Inter-chunk recurrence.}
+  \begin{itemize}\itemsep1pt
+    \item \texttt{A\_cumsum[..., -1]} is one scalar per chunk: the total log-gate, $\sum_{t \in \text{chunk}\,k} \log a_t$. \texttt{F.pad(\dots, (1,0))} prepends a zero, reserving slot $0$ for the initial state.
+    \item \texttt{segsum} of this $(Q{+}1)$-vector constructs the $(Q{+}1) \times (Q{+}1)$ matrix $L^\times$ across chunks: the second application of the 1-SS construction.
+    \item The einsum \texttt{"bhzc,bchpn->bzhpn"} is a $Q{\times}Q$ matmul on the prepended \texttt{states} tensor; the recurrence $H_{k+1} = a^{\text{chunk}}_k H_k + h_k^{\text{end}}$ is evaluated as a single matmul. \texttt{final\_state} is returned so that callers may continue beyond the current window.
+  \end{itemize}
+
+  \vspace{0.2em}
+  \textbf{(4) State $\to$ output.} \texttt{state\_decay\_out = exp(A\_cumsum)} is the within-chunk decay $a^\times_{i : s_k - 1}$ from the inherited state at $s_k - 1$ to position $i$. The einsum evaluates $Y_{\text{inter}}^{(k)}[i] = (a^\times_{i : s_k - 1}\, C_i)^{\!\top}\, H_k$ for every position.
 \end{frame}
 
 % -----------------------------------------------------------------------
 \subsubsection{The Mamba-2 Architecture}
 
 % -----------------------------------------------------------------------
-\begin{frame}{Mamba-2 Architecture Overview}
-
-  \begin{columns}
-    \begin{column}{0.55\textwidth}
-      \textbf{Key architectural change from Mamba-1:}
-      \vspace{0.3em}
-
-      $(A, B, C)$ are produced \emph{in parallel} with input $X$, not sequentially.
-
-      \vspace{0.8em}
-      \textbf{Per-layer computation:}
-      \begin{enumerate}
-        \item Linear projection: $[Z, X, B, C, \Delta] = \text{Linear}(u)$
-        \item Conv1d (causal, depthwise) on $X$
-        \item $A \leftarrow -\exp(\texttt{A\_log})$, $\Delta \leftarrow \text{softplus}(\Delta + \texttt{dt\_bias})$
-        \item SSD block: $Y = \text{SSD}(A \cdot \Delta,\; B,\; C,\; X \cdot \Delta)$
-        \item Output: $\text{out\_proj}(\text{RMSNorm}(Y) \cdot \text{SiLU}(Z))$
-      \end{enumerate}
-    \end{column}
-    \begin{column}{0.42\textwidth}
+\begin{frame}{Mamba-2 Block~\cite{dao2024mamba2}}
+  \begin{columns}[T,onlytextwidth]
+    \begin{column}{0.52\textwidth}
+      \begin{center}
       \begin{tikzpicture}[
-        box/.style={draw, rounded corners, fill=mambablue!10, text width=3.2cm,
-                    align=center, font=\small, minimum height=0.65cm},
-        arr/.style={-Stealth, thick},
+        op/.style={draw, thick, rounded corners=2pt, fill=gray!8,
+                   minimum height=0.42cm, minimum width=1.35cm,
+                   font=\tiny, align=center, inner sep=2pt},
+        ssm/.style={draw, thick, rounded corners=3pt, fill=gray!8,
+                    minimum height=0.55cm, minimum width=2.85cm,
+                    font=\tiny\bfseries, align=center},
+        silu/.style={draw, fill=black, text=white, rounded corners=3pt,
+                     minimum height=0.30cm, minimum width=0.75cm,
+                     font=\tiny, inner sep=1pt},
+        siluwide/.style={draw, fill=black, text=white, rounded corners=3pt,
+                         minimum height=0.30cm, minimum width=2.10cm,
+                         font=\tiny, inner sep=1pt},
+        mul/.style={draw, fill=black, text=white, rounded corners=3pt,
+                    minimum height=0.30cm, minimum width=0.38cm,
+                    font=\tiny, inner sep=1pt},
+        cell/.style={draw=black!75, line width=0.3pt, minimum width=0.20cm,
+                     minimum height=0.20cm, inner sep=0pt},
+        arr/.style={-Stealth, semithick},
+        scale=0.55, every node/.style={scale=0.55},
       ]
-        \node[box] (inp) at (0,5.5) {Input $u \in \R^{d_\text{model}}$};
-        \node[box] (proj) at (0,4.4) {Linear Projection};
-        \node[box, text width=1.4cm] (z)   at (-1.9,3.3) {$Z$};
-        \node[box, text width=1.4cm] (x)   at (0,3.3) {$X, \Delta$};
-        \node[box, text width=1.4cm] (bc)  at (1.9,3.3) {$B, C$};
-        \node[box] (conv) at (0,2.2) {Conv1d + SiLU};
-        \node[box, fill=mambagreen!15] (ssd) at (0,1.1) {SSD Block};
-        \node[box] (norm) at (0,0) {RMSNorm $\cdot$ SiLU$(Z)$};
-        \node[box] (out)  at (0,-1.1) {out\_proj};
+        \def\cellsz{0.21}
+        \def\xX{-1.60}
+        \def\xB{-0.80}
+        \def\xCp{0.00}
+        \def\xD{ 0.80}
+        \def\xZ{ 1.60}
+        \def\xC{ 0.00}
+        \def\xMain{-0.40}
 
-        \draw[arr] (inp) -- (proj);
-        \draw[arr] (proj) -- (z);
-        \draw[arr] (proj) -- (x);
-        \draw[arr] (proj) -- (bc);
-        \draw[arr] (x) -- (conv);
-        \draw[arr] (conv) -- (ssd);
-        \draw[arr] (bc) -- (ssd);
-        \draw[arr] (ssd) -- (norm);
-        \draw[arr] (z) .. controls (-1.9,0.55) and (-1.9,0) .. (norm);
-        \draw[arr] (norm) -- (out);
+        % ====== Input vec ======
+        \foreach \i/\c in {0/cellpinkA, 1/cellpinkB, 2/cellpinkC, 3/cellpinkD} {
+          \node[cell, fill=\c] at (\xC-0.33+\i*\cellsz, 7.50) {};
+        }
+        \node[font=\scriptsize\bfseries, anchor=east] at (\xC-0.50, 7.50) {Input};
+
+        % ====== Residual takeoff ======
+        \draw[semithick] (\xC+0.40, 7.50) -- (2.95, 7.50) -- (2.95, -1.95);
+
+        % ====== Dashed box ======
+        \draw[dashed, thick, black!55, rounded corners=4pt]
+          (-2.40, -1.45) rectangle (2.60, 6.95);
+
+        % ====== Input arrow into block ======
+        \draw[arr] (\xC, 7.35) -- (\xC, 6.65);
+
+        % ====== Linear Projection trapezoid (1 -> 5) ======
+        \draw[thick, fill=gray!3]
+          (\xC-0.40, 6.65) -- (\xC+0.40, 6.65) --
+          (2.00, 6.05) -- (-2.00, 6.05) -- cycle;
+        \node[font=\tiny\bfseries] at (\xC, 6.35) {Linear Projection};
+
+        % ====== Wide pink vec ======
+        \foreach \i in {0,...,12} {
+          \pgfmathtruncatemacro{\colidx}{mod(\i*3+1,5)}
+          \ifnum\colidx=0 \node[cell, fill=cellpinkB] at ({-1.92+\i*0.32}, 5.85) {}; \fi
+          \ifnum\colidx=1 \node[cell, fill=cellpinkA] at ({-1.92+\i*0.32}, 5.85) {}; \fi
+          \ifnum\colidx=2 \node[cell, fill=cellpinkC] at ({-1.92+\i*0.32}, 5.85) {}; \fi
+          \ifnum\colidx=3 \node[cell, fill=cellpinkD] at ({-1.92+\i*0.32}, 5.85) {}; \fi
+          \ifnum\colidx=4 \node[cell, fill=cellpinkB] at ({-1.92+\i*0.32}, 5.85) {}; \fi
+        }
+
+        % ====== Section labels ======
+        \node[font=\tiny] at (\xX, 5.55)  {$X$};
+        \node[font=\tiny] at (\xB, 5.55)  {$B$};
+        \node[font=\tiny] at (\xCp, 5.55) {$C$};
+        \node[font=\tiny] at (\xD, 5.55)  {$\Delta$};
+        \node[font=\tiny] at (\xZ, 5.55)  {$Z$};
+
+        % ====== Arrows from sections ======
+        % X, B, C: down to Conv1D top
+        \draw[arr] (\xX,  5.35) -- (\xX,  5.00);
+        \draw[arr] (\xB,  5.35) -- (\xB,  5.00);
+        \draw[arr] (\xCp, 5.35) -- (\xCp, 5.00);
+        % Δ: bypass Conv/SiLU, straight down to SSD top
+        \draw[arr] (\xD,  5.35) -- (\xD,  3.10);
+        % Z: bypass to SiLU(Z)
+        \draw[arr] (\xZ,  5.35) -- (\xZ,  3.40);
+
+        % ====== Conv1D (over X, B, C) ======
+        \node[op, minimum width=2.15cm, minimum height=0.42cm]
+             (conv) at ({(\xX+\xCp)/2}, 4.78) {Conv1D};
+
+        % Arrows Conv -> SiLU
+        \draw[arr] (\xX,  4.57) -- (\xX,  4.20);
+        \draw[arr] (\xB,  4.57) -- (\xB,  4.20);
+        \draw[arr] (\xCp, 4.57) -- (\xCp, 4.20);
+
+        % ====== SiLU (over X, B, C) ======
+        \node[siluwide] (siluL) at ({(\xX+\xCp)/2}, 4.02) {SiLU};
+
+        % Arrows SiLU L -> SSD
+        \draw[arr] (\xX,  3.85) -- (\xX,  3.10);
+        \draw[arr] (\xB,  3.85) -- (\xB,  3.10);
+        \draw[arr] (\xCp, 3.85) -- (\xCp, 3.10);
+
+        % ====== SiLU (on Z) ======
+        \node[silu] (siluZ) at (\xZ, 3.25) {SiLU};
+
+        % ====== SSD Block ======
+        \node[ssm] (ssd) at (\xMain, 2.82) {SSD Block};
+
+        % SSD output to RMSNorm
+        \draw[arr] (ssd.south) -- (\xMain, 2.10);
+
+        % ====== RMSNorm ======
+        \node[op, minimum width=1.30cm] (norm) at (\xMain, 1.88) {RMSNorm};
+
+        % Norm to Multiply
+        \draw[arr] (norm.south) -- (\xMain, 1.25);
+
+        % ====== Multiply ======
+        \node[mul] (mult) at (\xMain, 1.05) {$\times$};
+        \draw[arr] (siluZ.south) -- (\xZ, 1.05) -- (mult.east);
+
+        % Multiply down to blue vec
+        \draw[arr] (mult.south) -- (\xMain, 0.45);
+
+        % ====== Blue large vec ======
+        \foreach \i/\c in {0/cellblueB, 1/cellblueA, 2/cellblueC, 3/cellblueA, 4/cellblueD, 5/cellblueC, 6/cellblueA} {
+          \node[cell, fill=\c] at (\xMain-0.66+\i*\cellsz, 0.28) {};
+        }
+        \draw[arr] (\xMain, 0.15) -- (\xMain, -0.30);
+
+        % ====== Output projection ======
+        \draw[thick, fill=gray!3]
+          (\xMain-0.85, -0.30) -- (\xMain+0.85, -0.30) --
+          (\xMain+0.40, -0.90) -- (\xMain-0.40, -0.90) -- cycle;
+        \node[font=\tiny\bfseries] at (\xMain, -0.60) {Projection};
+
+        % ====== Small blue vec ======
+        \foreach \i/\c in {0/cellblueA, 1/cellblueC, 2/cellblueB, 3/cellblueD} {
+          \node[cell, fill=\c] at (\xMain-0.33+\i*\cellsz, -1.18) {};
+        }
+
+        % ====== Arrow out of box to + ======
+        \draw[arr] (\xMain, -1.30) -- (\xMain, -1.95) -- (\xC-0.20, -1.95);
+
+        % ====== + (residual) ======
+        \node[mul] (resadd) at (\xC, -1.95) {$+$};
+        \draw[arr] (2.95, -1.95) -- (resadd.east);
+
+        % ====== Output vec ======
+        \foreach \i/\c in {0/cellpurpA, 1/cellpurpC, 2/cellpurpB, 3/cellpurpD} {
+          \node[cell, fill=\c] at (\xC-0.33+\i*\cellsz, -2.75) {};
+        }
+        \draw[arr] (resadd.south) -- (\xC, -2.60);
+        \node[font=\scriptsize\bfseries, anchor=east] at (\xC-0.50, -2.75) {Output};
       \end{tikzpicture}
+      \end{center}
+    \end{column}
+    \begin{column}{0.48\textwidth}
+      \small
+      \textbf{Dimensions:}
+      \begin{itemize}
+        \item $L$: sequence length
+        \item $D = d_{\text{model}}$: model dimension
+        \item $H$: number of heads
+        \item $P$: head dim. ($64$--$128$, vs.\ $1$ in Mamba-1)
+        \item $N$: SSM state size ($64$--$256{+}$, vs.\ $16$)
+      \end{itemize}
+
+      \vspace{0.3em}
+      \textbf{Linear Projection:} a single \texttt{in\_proj} produces $[Z, X, B, C, \Delta]$ \emph{in parallel} (Mamba-1 routes $\Delta, B, C$ through a separate \texttt{Linear} on $\mathrm{SiLU}(\mathrm{Conv}(X))$).
+
+      \vspace{0.3em}
+      \textbf{SSD Block:}
+      \begin{itemize}
+        \item Scalar $A$ (one per head), not diagonal per channel
+        \item Chunked algorithm: matmul-based, hits tensor cores
+        \item \alert{$2$--$8\times$} faster training than Mamba-1
+      \end{itemize}
+
+      \vspace{0.3em}
+      \textbf{Gate:} $Y \gets \mathrm{RMSNorm}(Y_{\text{SSD}}) \odot \mathrm{SiLU}(Z)$ (Mamba-2 keeps the norm \emph{inside} the block).
     \end{column}
   \end{columns}
 \end{frame}
@@ -1636,39 +2334,6 @@
   \end{tabular}
   \end{center}
 
-  \vspace{0.4em}
-  \begin{block}{Note on inference}
-    Mamba-1 may still be preferable for pure inference workloads due to its smaller state dimension. The larger $N$ in Mamba-2 costs more per recurrence step.
-  \end{block}
-\end{frame}
-
-% -----------------------------------------------------------------------
-\begin{frame}{Language Modeling: Scaling Results}
-
-  \begin{columns}
-    \begin{column}{0.55\textwidth}
-      \textbf{Pile dataset (Chinchilla scaling laws~\cite{hoffmann2022chinchilla}):}
-      \begin{itemize}
-        \item Mamba-2 matches or slightly exceeds Mamba-1 at all scales
-        \item Competitive with Transformer++ baseline
-        \item Trained at 2--8$\times$ higher throughput
-      \end{itemize}
-
-      \vspace{0.5em}
-      \textbf{Multi-Query Associative Recall (MQAR):}
-      \begin{itemize}
-        \item Synthetic task requiring long-range memory
-        \item Mamba-2 substantially outperforms Mamba-1
-        \item Advantage holds even at \emph{equal} state size $N$
-        \item Larger $N$ (up to 16$\times$) amplifies the gap
-      \end{itemize}
-    \end{column}
-    \begin{column}{0.42\textwidth}
-      \begin{block}{Why MQAR matters}
-        MQAR tests whether a model can store and retrieve key-value pairs from context. Larger state $N$ directly increases capacity. Mamba-2's jump from $N=16 \to N=256$ is crucial here.
-      \end{block}
-    \end{column}
-  \end{columns}
 \end{frame}
 
 % -----------------------------------------------------------------------
@@ -1686,3 +2351,4 @@
     \cite{gu2022s4} \quad \cite{gu2024mamba} \quad \cite{dao2024mamba2}
   \end{block}
 \end{frame}
+

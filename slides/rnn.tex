@@ -5,38 +5,53 @@
 \subsection{Overview}
 
 % -----------------------------------------------------------------------
-\begin{frame}{Sequence Models: Overview}
-  Many tasks require processing \textbf{ordered sequences} of variable length:
-  \begin{itemize}
-    \item Natural language (words, subwords, characters)
-    \item Time series (sensor data, finance, audio)
-    \item Biological sequences (DNA, protein)
-  \end{itemize}
+\begin{frame}{Two Ways to Process a Sequence}
+  How should a model access the past when predicting $y_t$ from $x_1, \ldots, x_t$?
 
   \vspace{0.5em}
-  \textbf{High-level idea:} Accumulate information in a \textbf{fixed-size state vector} $h_t \in \R^n$ that summarizes everything seen so far.
-  At each time step, update the state by combining it with the new input:
-  \[
-    \boxed{h_t = f_\theta(h_{t-1}, x_t)}
-  \]
+  \begin{columns}[T]
+    \begin{column}{0.48\textwidth}
+      \textbf{Recurrent state} (RNN, LSTM, SSM)
+      \[
+        h_t = f_\theta(h_{t-1}, x_t), \qquad h_t \in \R^n
+      \]
+      \begin{itemize}
+        \item Compress the entire history into a \textbf{fixed-size vector} $h_t$
+        \item Past is accessed \emph{indirectly}, through whatever the state retained
+        \item Per-step cost $\mathcal{O}(n)$, independent of $t$
+        \item Memory $\mathcal{O}(n)$, independent of $T$
+      \end{itemize}
+    \end{column}
+    \begin{column}{0.48\textwidth}
+      \textbf{Attention} (Transformer)
+      \[
+        y_t = \sum_{s \le t} \alpha_{ts}\, v_s, \quad \alpha_{ts} \propto e^{q_t^\top k_s}
+      \]
+      \begin{itemize}
+        \item Keep \textbf{all past tokens} $(k_s, v_s)$ and look them up on demand
+        \item Past is accessed \emph{directly}, with no lossy compression
+        \item Per-step cost $\mathcal{O}(t)$, grows with context
+        \item Memory $\mathcal{O}(T)$, grows with context
+      \end{itemize}
+    \end{column}
+  \end{columns}
 
-  \vspace{0.3em}
-  \begin{block}{Key properties of recurrent state models}
-    \begin{description}
-      \item[Constant memory:] State size is fixed regardless of sequence length $T$
-      \item[Causal by construction:] Output at time $t$ depends only on $x_1, \ldots, x_t$
-      \item[Online / streaming:] Can process inputs one token at a time
-    \end{description}
+  \vspace{0.5em}
+  \begin{block}{The core trade-off}
+    \begin{itemize}
+      \item \textbf{Recurrence:} $\mathcal{O}(1)$ memory and streaming inference, but an \emph{information bottleneck}: the state must decide ahead of time what to keep
+      \item \textbf{Attention:} $\mathcal{O}(T)$ memory and $\mathcal{O}(T)$ per-step cost, but can revisit any past token \emph{exactly}
+    \end{itemize}
   \end{block}
 \end{frame}
 
 % -----------------------------------------------------------------------
 \begin{frame}{The Recurrent State Paradigm}
   \begin{columns}[T]
-    \begin{column}{0.52\textwidth}
+    \begin{column}{0.50\textwidth}
       \begin{center}
       \begin{tikzpicture}[
-        scale=0.75, every node/.style={scale=0.75},
+        scale=0.72, every node/.style={scale=0.72},
         cell/.style={rectangle, draw, fill=blue!15, minimum width=1cm, minimum height=0.7cm, font=\small},
         io/.style={font=\small},
         arr/.style={-{Stealth[length=3pt]}, thick}
@@ -45,7 +60,7 @@
         \foreach \t in {0,1,2,3} {
           \node[cell] (h\t) at (\t*2.0, 0) {$h_{\the\numexpr\t+1}$};
           \node[io] (x\t) at (\t*2.0, -1.3) {$x_{\the\numexpr\t+1}$};
-          \node[io] (y\t) at (\t*2.0, 1.3) {$y_{\the\numexpr\t+1}$};
+          \node[io] (y\t) at (\t*2.0, 1.6) {$y_{\the\numexpr\t+1}$};
           \draw[arr] (x\t) -- (h\t);
           \draw[arr] (h\t) -- (y\t);
         }
@@ -55,24 +70,38 @@
         \draw[arr] (h1) -- (h2);
         \draw[arr] (h2) -- (h3);
         \node[io] at (7.0, 0) {$\cdots$};
+
+        % Backward gradient arrows: thickness shrinks to depict vanishing
+        \draw[red, -{Stealth[length=4pt]}, line width=1.6pt] (h3.south) to[bend left=40] (h2.south);
+        \draw[red, -{Stealth[length=4pt]}, line width=1.0pt] (h2.south) to[bend left=40] (h1.south);
+        \draw[red, -{Stealth[length=4pt]}, line width=0.55pt] (h1.south) to[bend left=40] (h0.south);
+        \draw[red, -{Stealth[length=4pt]}, line width=0.2pt] (h0.south) to[bend left=40] (h_init.south);
+        \node[red, font=\scriptsize] at (3.0, 2.7) {gradient $\frac{\partial \mathcal{L}}{\partial h_t}$ shrinks (or blows up) with $k$};
+        \draw[red, -{Stealth[length=3pt]}, line width=0.4pt] (3.0, 2.5) -- (3.0, 1.0);
       \end{tikzpicture}
       \end{center}
 
-      \vspace{0.3em}
-      The state $h_t$ acts as a \textbf{lossy compression} of the input history $x_1, \ldots, x_t$ into a fixed-dimensional vector.
+      \vspace{0.2em}
+      The state $h_t$ is a \textbf{lossy compression} of $x_1, \ldots, x_t$ into a fixed-dimensional vector.
     \end{column}
-    \begin{column}{0.45\textwidth}
-      \textbf{Central trade-off:}
-      \begin{itemize}
-        \item Fixed state $\Rightarrow$ \textbf{constant cost} per step ($\mathcal{O}(1)$ memory and compute)
-        \item But also an \textbf{information bottleneck}: must decide what to remember and what to forget
-      \end{itemize}
+    \begin{column}{0.48\textwidth}
+      \textbf{Vanishing / exploding gradients}
 
-      \vspace{0.5em}
-      \textbf{Challenges:}
+      Backpropagation through time chains Jacobians of the recurrence:
+      \[
+        \frac{\partial h_t}{\partial h_{t-k}} \,=\, \prod_{i=1}^{k} \underbrace{\frac{\partial h_{t-i+1}}{\partial h_{t-i}}}_{=:\, J_i}
+      \]
+      Let $\sigma$ be a typical spectral radius of $J_i$:
+      \begin{itemize}
+        \item $\sigma < 1$: norm decays as $\sigma^k$ $\Rightarrow$ \textbf{vanishing}, long-range signal lost
+        \item $\sigma > 1$: norm grows as $\sigma^k$ $\Rightarrow$ \textbf{exploding}, unstable updates
+      \end{itemize}
+      The stable regime $\sigma \approx 1$ is a knife-edge: hard to maintain across many steps without architectural help (gating, orthogonal $W$, residual paths).
+
+      \vspace{0.3em}
+      \textbf{Open challenges:}
       \begin{itemize}
         \item How to learn \emph{what} to store in $h_t$?
-        \item How to avoid vanishing gradients during training?
         \item Can we parallelize the sequential computation?
       \end{itemize}
     \end{column}
@@ -343,7 +372,7 @@
         \def\dy{1.8}  % vertical spacing between layers
 
         % --- Layer 1 ---
-        \node[init] (a10) at (-1.2, 0) {$a^{[1]\la 0\ra}$};
+        \node[init] (a10) at (0, 0) {$a^{[1]\la 0\ra}$};
         \foreach \t in {1,2,3} {
           \node[cell] (c1\t) at (\t*\dx, 0) {};
         }
@@ -361,7 +390,7 @@
         }
 
         % --- Layer 2 ---
-        \node[init] (a20) at (-1.2, \dy) {$a^{[2]\la 0\ra}$};
+        \node[init] (a20) at (0, \dy) {$a^{[2]\la 0\ra}$};
         \foreach \t in {1,2,3} {
           \node[cell] (c2\t) at (\t*\dx, \dy) {};
           \draw[arr] (c1\t) -- (c2\t);
@@ -380,7 +409,7 @@
 
         % --- Layer k (top) ---
         \def\ky{2.5*\dy}
-        \node[init] (ak0) at (-1.2, \ky) {$a^{[k]\la 0\ra}$};
+        \node[init] (ak0) at (0, \ky) {$a^{[k]\la 0\ra}$};
         \foreach \t in {1,2,3} {
           \node[cell] (ck\t) at (\t*\dx, \ky) {};
         }
@@ -401,6 +430,12 @@
           \node[yn] (y\t) at (\t*\dx, \ky+1.4) {\yl};
           \draw[arr] (ck\t) -- (y\t);
         }
+
+        % Time and depth axes
+        \draw[->, thick, gray] (-0.6, -2.3) -- (3.5*\dx, -2.3)
+          node[midway, below, font=\normalsize, text=gray] {time};
+        \draw[->, thick, gray] (-1.6, -0.5) -- (-1.6, \ky+0.5)
+          node[midway, left, font=\normalsize, text=gray, rotate=90, anchor=south] {depth};
       \end{tikzpicture}
       \end{center}
     \end{column}
@@ -953,13 +988,16 @@
     \fill[green!10, rounded corners=8pt] (\boxL, \boxB) rectangle (\boxR, \boxT);
     \draw[green!50!black, rounded corners=8pt, thick] (\boxL, \boxB) rectangle (\boxR, \boxT);
     %
-    % === State line (top) — part of combine ===
-    \draw[arr, opacity=\opacComb] (-3, \stateY) -- (-0.1, \stateY);
+    % === State line (top) ===
+    % Left segment up to h_{t-1} bifurcation at x=-0.5 — part of input
+    \draw[line, opacity=\opacIn] (-3, \stateY) -- (-0.5, \stateY);
+    % From bifurcation into zmul — part of combine
+    \draw[arr, opacity=\opacComb] (-0.5, \stateY) -- (-0.1, \stateY);
     \draw[arr, opacity=\opacComb] (0.7, \stateY) -- (4.6, \stateY);
     \draw[arr, opacity=\opacComb] (5.4, \stateY) -- (8, \stateY);
     %
     % === Labels ===
-    \node[font=\Large, above, opacity=\opacComb] at (-2.5, \stateY) {$h_{t-1}$};
+    \node[font=\Large, above, opacity=\opacIn] at (-2.5, \stateY) {$h_{t-1}$};
     \node[font=\Large, above, opacity=\opacComb] at (7.7, \stateY) {$h_t$};
     %
     % === Operations on state line — part of combine ===
@@ -977,7 +1015,7 @@
     %
     % === Input feeding — segmented at bifurcation points ===
     % Vertical h_{t-1} line: from state line down to bus (bifurcation at bus y=0.5)
-    \draw[line, opacity=\opacComb] (-0.5, \stateY) -- (-0.5, 0.5);
+    \draw[line, opacity=\opacIn] (-0.5, \stateY) -- (-0.5, 0.5);
     %
     % x_t node and line (meets vertical at bus y=0.5)
     \node[circle, draw, fill=blue!15, minimum size=1.2cm, font=\Large, opacity=\opacIn] (xt) at (-0.5, -1.5) {$x_t$};
@@ -1004,25 +1042,32 @@
     \draw[arr, opacity=\opacCand] (5.5, 0.5) -- (htilde.south);
     %
     % === Gate connections ===
-    % z_t -> zmul on state line (1-z_t) — part of combine
+    % z_t -> zmul on state line (1-z_t) — used by combine and update
     \draw[arr, opacity=\opacComb] (zt.north) -- (zmul.south);
+    \draw[arr, opacity=\opacZt] (zt.north) -- (zmul.south);
     \node[font=\Large, right, opacity=\opacComb] at (0.6, 6.0) {$1{-}z_t$};
+    \node[font=\Large, right, opacity=\opacZt] at (0.6, 6.0) {$1{-}z_t$};
     %
-    % r_t -> rmul — part of reset
+    % r_t -> rmul — used by reset and candidate (drawn twice; highest opacity wins)
     \draw[arr, opacity=\opacRt] (rt.east) -- (rmul.west);
+    \draw[arr, opacity=\opacCand] (rt.east) -- (rmul.west);
     \node[font=\Large, above, opacity=\opacRt] at (3.0, \gateY) {$r_t$};
+    \node[font=\Large, above, opacity=\opacCand] at (3.0, \gateY) {$r_t$};
     %
     % rmul -> tanh — part of candidate
     \draw[arr, opacity=\opacCand] (rmul.east) -- (htilde.west);
     %
-    % z_t -> ztmul — part of combine
+    % z_t -> ztmul — used by combine and update
     \draw[arr, opacity=\opacComb] (0.3, 4.5) -| ($(ztmul.south) + (-0.15, 0)$);
+    \draw[arr, opacity=\opacZt] (0.3, 4.5) -| ($(ztmul.south) + (-0.15, 0)$);
     \node[font=\Large, above, opacity=\opacComb] at (2.5, 4.5) {$z_t$};
+    \node[font=\Large, above, opacity=\opacZt] at (2.5, 4.5) {$z_t$};
     %
     % tanh -> ztmul — part of combine
     \draw[line, opacity=\opacComb] (htilde.north) -- (5.5, 4.5) -- (5.15, 4.5);
     \draw[arr, opacity=\opacComb] (5.15, 4.5) -- ($(ztmul.south) + (0.15, 0)$);
     \node[font=\Large, above, opacity=\opacComb] at (5.5, 4.5) {$\tilde{h}_t$};
+    \node[font=\Large, above, opacity=\opacCand] at (5.5, 4.5) {$\tilde{h}_t$};
     %
     % ztmul -> + on state line — part of combine
     \draw[arr, opacity=\opacComb] (ztmul.north) -- (addop.south);
@@ -1213,8 +1258,9 @@
     \midrule
     \multicolumn{3}{p{9cm}}{%
       \begin{itemize}
-        \item GRU: fewer parameters $\Rightarrow$ faster training, good for smaller datasets
-        \item LSTM: more expressive, often better on longer sequences and larger datasets
+        \item GRU: fewer parameters $\Rightarrow$ faster training, smaller memory footprint
+        \item LSTM: extra cell state and output gate give more capacity in principle
+        \item Empirically often comparable~\cite{chung2014empirical}; LSTM tends to edge ahead on longer or more complex sequences, GRU on simpler ones~\cite{cahuantzi2021lstmgru}
         \item In practice: try both; performance differences are often task-dependent
       \end{itemize}
     } \\
@@ -1224,7 +1270,7 @@
 
   \vspace{0.3em}
   \begin{block}{Historical note}
-    LSTMs~\cite{hochreiter1997lstm} (1997) and GRUs~\cite{cho2014gru} (2014) were the dominant sequence models before Transformers~\cite{vaswani2017attention} (2017). They remain relevant for streaming/real-time applications due to $\mathcal{O}(1)$ per-step computation.
+    LSTMs (1997) and GRUs (2014) were the dominant sequence models before Transformers (2017). They remain relevant for streaming/real-time applications due to $\mathcal{O}(1)$ per-step computation.
   \end{block}
 \end{frame}
 

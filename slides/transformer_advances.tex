@@ -1019,8 +1019,8 @@
   \end{columns}
 
   \vspace{0.3em}
-  \begin{block}{Adoption}
-    Used in LLaMA 1/2/3, Mistral, Gemma, PaLM. The gating mechanism provides more expressive non-linearity than a simple activation function.
+  \begin{block}{Why gating helps}
+    Both $xW_{\text{gate}}$ and $xW_{\text{up}}$ are learned functions of $x$, so SwiGLU performs a \emph{data-dependent multiplicative interaction} between two features of the input. A plain MLP is strictly additive between projections and cannot express this. Used in LLaMA 1/2/3, Mistral, Gemma, PaLM.
   \end{block}
 \end{frame}
 
