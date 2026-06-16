@@ -392,69 +392,7 @@
   \end{columns}
 
   \vspace{0.4em}
-  {\small Near the optimum, $\mathbb{E}[g_i^2] \approx h_i^2 \cdot \mathrm{Var}[w_i]$, so $\sqrt{\hat{v}_i} \propto h_i$. Adam's rescaling approximates the diagonal preconditioner $H^{-1/2}$, equivalent to changing variables to $\tilde{w}_i = w_i \sqrt{h_i}$ where the Hessian becomes $\approx I$.}
-
-\end{frame}
-
-% -----------------------------------------------------------------------
-\begin{frame}{Adam's Per-Parameter Adaptivity}
-
-  Adam normalizes each gradient coordinate independently:
-  \[
-    \Delta w_i \;\propto\; \frac{\hat{m}_i}{\sqrt{\hat{v}_i} + \epsilon}
-    \qquad \Rightarrow \qquad |\Delta w_i| \approx \pm \eta
-  \]
-
-  \vspace{0.2em}
-  \textbf{Advantages:}
-  \begin{itemize}
-    \item Parameters with sparse/small gradients still get meaningful updates
-    \item Relatively insensitive to gradient scale $\Rightarrow$ less LR tuning
-  \end{itemize}
-
-  \vspace{0.3em}
-  \begin{center}
-  \textbf{Effect of Adam's rescaling:}
-  \vspace{0.2em}
-
-  \begin{tikzpicture}[scale=0.85, >=stealth]
-    % --- Left: original landscape (15° tilt, 4:1 aspect ratio) ---
-    \begin{scope}[shift={(-3.5, 0)}]
-      \draw[->, thin, gray!60] (-2.5, 0) -- (2.5, 0) node[right, font=\tiny] {$w_1$};
-      \draw[->, thin, gray!60] (0, -1.5) -- (0, 1.5) node[above, font=\tiny] {$w_2$};
-      \begin{scope}[rotate=15]
-        \foreach \r in {0.4, 0.8, 1.2, 1.6} {
-          \draw[red!50!black, thin] (0,0) ellipse ({\r*1.4} and {\r*0.35});
-        }
-      \end{scope}
-      \fill[black] (0,0) circle (1.5pt);
-      \node[font=\scriptsize] at (0, -1.9) {before};
-    \end{scope}
-
-    % --- Arrow between ---
-    \draw[->, very thick, blue!60!black] (-0.5, 0) -- (0.5, 0);
-    \node[font=\scriptsize, blue!60!black, anchor=south] at (0, 0.1) {$\frac{w_i}{\sqrt{\hat{v}_i}}$};
-
-    % --- Right: after Adam rescaling (45° tilt, ~2.3:1 aspect ratio) ---
-    % 15° tilt: A_11≈1.02, A_22≈7.65, A_12≈-1.91
-    % After rescaling: B_12≈-0.68 → eigenvalues 1.68, 0.32 at 45°
-    % Aspect ratio sqrt(1.68/0.32) ≈ 2.3:1
-    \begin{scope}[shift={(3.5, 0)}]
-      \draw[->, thin, gray!60] (-2.5, 0) -- (2.5, 0) node[right, font=\tiny] {$\tilde{w}_1$};
-      \draw[->, thin, gray!60] (0, -1.5) -- (0, 1.5) node[above, font=\tiny] {$\tilde{w}_2$};
-      \begin{scope}[rotate=45]
-        \foreach \r in {0.4, 0.8, 1.2, 1.6} {
-          \draw[blue!50!black, thin] (0,0) ellipse ({\r*1.05} and {\r*0.45});
-        }
-      \end{scope}
-      \fill[black] (0,0) circle (1.5pt);
-      \node[font=\scriptsize] at (0, -1.9) {after};
-    \end{scope}
-  \end{tikzpicture}
-
-  \vspace{0.2em}
-  {\scriptsize Axis-aligned rescaling reduces the aspect ratio ($4{:}1 \to 2.3{:}1$) but cannot remove the tilt. Off-diagonal curvature remains.}
-  \end{center}
+  {\small Near the optimum, $\mathbb{E}[g_i^2] \approx h_i^2 \cdot \mathrm{Var}[w_i]$, so $\sqrt{\hat{v}_i} \propto h_i$. Adam's rescaling approximates the diagonal preconditioner $H^{-1/2}$, equivalent to changing variables to $\tilde{w}_i = w_i \sqrt{h_i}$.}
 
 \end{frame}
 
@@ -601,6 +539,68 @@
 \end{frame}
 
 % -----------------------------------------------------------------------
+\begin{frame}{Adam's Per-Parameter Adaptivity}
+
+  Adam normalizes each gradient coordinate independently:
+  \[
+    \Delta w_i \;\propto\; \frac{\hat{m}_i}{\sqrt{\hat{v}_i} + \epsilon}
+    \qquad \Rightarrow \qquad |\Delta w_i| \approx \pm \eta
+  \]
+
+  \vspace{0.2em}
+  \textbf{Advantages:}
+  \begin{itemize}
+    \item Parameters with sparse/small gradients still get meaningful updates
+    \item Relatively insensitive to gradient scale $\Rightarrow$ less LR tuning
+  \end{itemize}
+
+  \vspace{0.3em}
+  \begin{center}
+  \textbf{Effect of Adam's rescaling:}
+  \vspace{0.2em}
+
+  \begin{tikzpicture}[scale=0.85, >=stealth]
+    % --- Left: original landscape (15° tilt, 4:1 aspect ratio) ---
+    \begin{scope}[shift={(-3.5, 0)}]
+      \draw[->, thin, gray!60] (-2.5, 0) -- (2.5, 0) node[right, font=\tiny] {$w_1$};
+      \draw[->, thin, gray!60] (0, -1.5) -- (0, 1.5) node[above, font=\tiny] {$w_2$};
+      \begin{scope}[rotate=15]
+        \foreach \r in {0.4, 0.8, 1.2, 1.6} {
+          \draw[red!50!black, thin] (0,0) ellipse ({\r*1.4} and {\r*0.35});
+        }
+      \end{scope}
+      \fill[black] (0,0) circle (1.5pt);
+      \node[font=\scriptsize] at (0, -1.9) {before};
+    \end{scope}
+
+    % --- Arrow between ---
+    \draw[->, very thick, blue!60!black] (-0.5, 0) -- (0.5, 0);
+    \node[font=\scriptsize, blue!60!black, anchor=south] at (0, 0.1) {$\frac{w_i}{\sqrt{\hat{v}_i}}$};
+
+    % --- Right: after Adam rescaling (45° tilt, ~2.3:1 aspect ratio) ---
+    % 15° tilt: A_11≈1.02, A_22≈7.65, A_12≈-1.91
+    % After rescaling: B_12≈-0.68 → eigenvalues 1.68, 0.32 at 45°
+    % Aspect ratio sqrt(1.68/0.32) ≈ 2.3:1
+    \begin{scope}[shift={(3.5, 0)}]
+      \draw[->, thin, gray!60] (-2.5, 0) -- (2.5, 0) node[right, font=\tiny] {$\tilde{w}_1$};
+      \draw[->, thin, gray!60] (0, -1.5) -- (0, 1.5) node[above, font=\tiny] {$\tilde{w}_2$};
+      \begin{scope}[rotate=45]
+        \foreach \r in {0.4, 0.8, 1.2, 1.6} {
+          \draw[blue!50!black, thin] (0,0) ellipse ({\r*1.05} and {\r*0.45});
+        }
+      \end{scope}
+      \fill[black] (0,0) circle (1.5pt);
+      \node[font=\scriptsize] at (0, -1.9) {after};
+    \end{scope}
+  \end{tikzpicture}
+
+  \vspace{0.2em}
+  {\scriptsize Axis-aligned rescaling reduces the aspect ratio ($4{:}1 \to 2.3{:}1$) but cannot remove the tilt. Off-diagonal curvature remains.}
+  \end{center}
+
+\end{frame}
+
+% -----------------------------------------------------------------------
 \subsection{The Muon Optimizer}
 
 % -----------------------------------------------------------------------
@@ -641,6 +641,7 @@
 
       \vspace{0.3em}
       \begin{center}
+      \scalebox{0.9}{%
       \begin{tikzpicture}[scale=0.38, >=stealth,
           mat/.style={draw, thick, minimum width=1.1cm, minimum height=1.4cm, font=\scriptsize},
           sqmat/.style={draw, thick, minimum width=1.1cm, minimum height=1.1cm, font=\scriptsize}]
@@ -650,14 +651,14 @@
         \node[mat, fill=blue!15] (U1) at (3.6, 0) {$U$};
         \node[sqmat, fill=red!20] (S) at (7.2, 0) {
           \begin{tikzpicture}[scale=0.25]
-            \fill[red!60!black] (0,3) circle (4pt);
-            \fill[red!60!black] (1,2) circle (3pt);
+            \fill[red!60!black] (0,3) circle (8pt);
+            \fill[red!60!black] (1,2) circle (4.5pt);
             \fill[red!60!black] (2,1) circle (2pt);
-            \fill[red!60!black] (3,0) circle (1pt);
+            \fill[red!60!black] (3,0) circle (0.7pt);
           \end{tikzpicture}
         };
-        \node[font=\tiny, red!60!black] at (7.2, -1.3) {$\Sigma$};
-        \node[mat, fill=green!15] (V1) at (10.8, 0) {$V^\top$};
+        \node[font=\tiny, red!60!black] at (7.2, -1.0) {$\Sigma$};
+        \node[mat, fill=green!15, rotate=90] (V1) at (10.8, 0) {$V^\top$};
 
         % --- Arrow ---
         \draw[->, very thick, blue!60!black] (0, -2.2) -- (0, -3.6);
@@ -667,17 +668,18 @@
         \node[mat, fill=blue!10!gray!10] (O) at (0, -5.4) {$U V^\top$};
         \node[font=\scriptsize] at (1.8, -5.4) {$=$};
         \node[mat, fill=blue!15] (U2) at (3.6, -5.4) {$U$};
-        \node[sqmat, fill=green!20] (I) at (7.2, -5.4) {
+        \node[sqmat, fill=orange!20] (I) at (7.2, -5.4) {
           \begin{tikzpicture}[scale=0.25]
-            \fill[green!50!black] (0,3) circle (3pt);
-            \fill[green!50!black] (1,2) circle (3pt);
-            \fill[green!50!black] (2,1) circle (3pt);
-            \fill[green!50!black] (3,0) circle (3pt);
+            \fill[orange!70!black] (0,3) circle (3pt);
+            \fill[orange!70!black] (1,2) circle (3pt);
+            \fill[orange!70!black] (2,1) circle (3pt);
+            \fill[orange!70!black] (3,0) circle (3pt);
           \end{tikzpicture}
         };
-        \node[font=\tiny, green!50!black] at (7.2, -6.7) {$I$};
-        \node[mat, fill=green!15] (V2) at (10.8, -5.4) {$V^\top$};
-      \end{tikzpicture}
+        \node[font=\tiny, orange!70!black] at (7.2, -6.4) {$I$};
+        \node[mat, fill=green!15, rotate=90] (V2) at (10.8, -5.4) {$V^\top$};
+      \end{tikzpicture}%
+      }
       \end{center}
 
       {\scriptsize Directions $U, V$ preserved; all $\sigma_i \to 1$. Rare directions get amplified to the same scale as dominant ones.}
@@ -738,10 +740,13 @@
       \vspace{0.3em}
       \textbf{Connection to steepest descent:}
 
-      Orthogonalized gradient $UV^\top$ is the \emph{steepest descent direction} under the \textbf{spectral norm}~\cite{bernstein2024oldoptimizer}:
+      Ask for the update $D$ that decreases the loss most, while limiting how much it can stretch \emph{any} input direction, i.e.\ bounding its largest singular value (the \textbf{spectral norm} $\|D\|_2 = \sigma_{\max}(D)$)~\cite{bernstein2024oldoptimizer}:
       \[
-        UV^\top = \arg\min_{\|D\|_\text{op} \leq 1} \langle G, D \rangle
+        \arg\min_{\|D\|_2 \leq 1} \langle G, D \rangle \;=\; -\,U V^\top.
       \]
+
+      \vspace{0.2em}
+      {\scriptsize So orthogonalizing the gradient is exactly steepest descent in the spectral norm: every direction is moved by the same step size.}
     \end{column}
   \end{columns}
 \end{frame}

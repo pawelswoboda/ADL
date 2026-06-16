@@ -1232,89 +1232,6 @@
 \end{frame}
 
 % -----------------------------------------------------------------------
-\begin{frame}{Multihead SSMs}
-
-  \begin{columns}[T]
-    \begin{column}{0.52\textwidth}
-      For real language models, inputs have $D$ channels. We split them into $H$ heads of size $P = D/H$:
-      \[
-        Y^{(T,P)} = \mathsf{SSM}\!\left(a^{(T)},\, B^{(T,N)},\, C^{(T,N)}\right)\!\left(X^{(T,P)}\right)
-      \]
-
-      \begin{itemize}
-        \item Head dim $P \in \{64, 128\}$ (vs.\ $P=1$ in Mamba-1).
-        \item \textbf{Within a head}: same $(a_t, B_t, C_t)$ for all $P$ channels.
-        \item \textbf{Across heads}: independent $(a, B, C)$.
-      \end{itemize}
-
-      \begin{block}{Key advantage over Mamba-1}
-        Larger state: $N = 16$ (Mamba-1) $\to$ $N \in [64, 256]$ (Mamba-2), while training faster.
-      \end{block}
-    \end{column}
-    \begin{column}{0.46\textwidth}
-      \centering
-      \begin{tikzpicture}[
-        scale=0.75, every node/.style={scale=0.75},
-        hbox/.style={draw, rounded corners=3pt, minimum height=0.55cm, inner sep=2pt,
-                     font=\tiny, align=center},
-      ]
-        % Input tensor
-        \node[hbox, fill=mambared!15, minimum width=4.5cm] (inp) at (0, 5.2) {Input $X \in \R^{T \times D}$};
-
-        % Split
-        \node[font=\tiny, mambagray, anchor=east] at (-2.3, 4.6) {split into $H$ heads};
-
-        % Heads
-        \def\hw{1.0}
-        \def\hgap{0.15}
-        \node[hbox, fill=mambablue!20, minimum width=\hw cm] (h1) at (-1.8, 3.8) {Head 1\\[-1pt]$T \!\times\! P$};
-        \node[hbox, fill=mambablue!20, minimum width=\hw cm] (h2) at (-0.6, 3.8) {Head 2\\[-1pt]$T \!\times\! P$};
-        \node[font=\tiny] at (0.35, 3.8) {$\cdots$};
-        \node[hbox, fill=mambablue!20, minimum width=\hw cm] (hH) at (1.3, 3.8) {Head $H$\\[-1pt]$T \!\times\! P$};
-
-        % Arrows from input to heads
-        \draw[-Stealth, thin] (inp.south) -- (h1.north);
-        \draw[-Stealth, thin] (inp.south) -- (h2.north);
-        \draw[-Stealth, thin] (inp.south) -- (hH.north);
-
-        % SSM per head
-        \node[hbox, fill=mambagreen!20, minimum width=\hw cm] (s1) at (-1.8, 2.4) {SSM\\[-1pt]$(a, B, C)_1$};
-        \node[hbox, fill=mambagreen!20, minimum width=\hw cm] (s2) at (-0.6, 2.4) {SSM\\[-1pt]$(a, B, C)_2$};
-        \node[font=\tiny] at (0.35, 2.4) {$\cdots$};
-        \node[hbox, fill=mambagreen!20, minimum width=\hw cm] (sH) at (1.3, 2.4) {SSM\\[-1pt]$(a, B, C)_H$};
-
-        \draw[-Stealth, thin] (h1) -- (s1);
-        \draw[-Stealth, thin] (h2) -- (s2);
-        \draw[-Stealth, thin] (hH) -- (sH);
-
-        % Outputs per head
-        \node[hbox, fill=yellow!20, minimum width=\hw cm] (o1) at (-1.8, 1.2) {$Y_1$\\[-1pt]$T \!\times\! P$};
-        \node[hbox, fill=yellow!20, minimum width=\hw cm] (o2) at (-0.6, 1.2) {$Y_2$\\[-1pt]$T \!\times\! P$};
-        \node[font=\tiny] at (0.35, 1.2) {$\cdots$};
-        \node[hbox, fill=yellow!20, minimum width=\hw cm] (oH) at (1.3, 1.2) {$Y_H$\\[-1pt]$T \!\times\! P$};
-
-        \draw[-Stealth, thin] (s1) -- (o1);
-        \draw[-Stealth, thin] (s2) -- (o2);
-        \draw[-Stealth, thin] (sH) -- (oH);
-
-        % Concat
-        \node[font=\tiny, mambagray, anchor=east] at (-2.3, 0.55) {concatenate};
-        \node[hbox, fill=violet!15, minimum width=4.5cm] (out) at (0, 0.0) {Output $Y \in \R^{T \times D}$};
-
-        \draw[-Stealth, thin] (o1.south) -- (out.north);
-        \draw[-Stealth, thin] (o2.south) -- (out.north);
-        \draw[-Stealth, thin] (oH.south) -- (out.north);
-
-        % Annotation: shared within head (brace points left, toward the label)
-        \draw[decorate, decoration={brace, amplitude=4pt}, mambagray]
-          (-2.5, 2.0) -- (-2.5, 4.15);
-        \node[font=\tiny, mambagray, rotate=90, anchor=south] at (-2.95, 3.1) {same $(a,B,C)$};
-      \end{tikzpicture}
-    \end{column}
-  \end{columns}
-\end{frame}
-
-% -----------------------------------------------------------------------
 \begin{frame}{Unrolling the SSM: From Recurrence to Matmul}
 
   \textbf{Starting point} (scalar $A_t = a_t$, $h_0 = 0$, per-channel $x_t, y_t \in \R$):
@@ -1501,9 +1418,9 @@
     Matmul-based         & \checkmark              & \texttimes              & \checkmark \\
     \midrule
     State size (infer.)  & $T$ (KV cache)          & $N$                     & $\bm{N}$ \textbf{(const.!)} \\
-    Training FLOPs       & $T^2 N$                 & $TN^2$                  & $\bm{TN^2}$ \\
-    Inference FLOPs      & $TN$                    & $N^2$                   & $\bm{N^2}$ \\
-    Naive memory         & $T^2$                   & $TN^2$                  & $\bm{TN}$ \\
+    Training FLOPs       & $T^2 N$                 & $TNP$                   & $\bm{TNP}$ \\
+    Inference FLOPs      & $TN$                    & $NP$                    & $\bm{NP}$ \\
+    Naive memory         & $T^2$                   & $TNP$                   & $\bm{TN}$ \\
     \bottomrule
   \end{tabular}
   \end{center}
@@ -1527,7 +1444,7 @@
 
   \textbf{Neither pure mode is ideal for long-sequence training:}
   \begin{itemize}\itemsep1pt
-    \item \emph{Linear / SSM recurrence mode} ($h_t = a_t h_{t-1} + B_t x_t$): $O(TN^2)$ FLOPs, but sequential and no matmuls (idles tensor cores).
+    \item \emph{Linear / SSM recurrence mode} ($h_t = a_t h_{t-1} + B_t x_t^\top$): $O(TNP)$ FLOPs, but sequential and no matmuls (idles tensor cores).
     \item \emph{Quadratic / attention mode} ($Y = (L \circ CB^\top) X$): pure matmul, but $O(T^2 N)$ FLOPs and $O(T^2)$ memory.
   \end{itemize}
 
@@ -1553,7 +1470,7 @@
         \item Pass states across chunk boundaries sequentially ($Q$ steps, not $T$).
         \item For each chunk, add the contribution of all past states: $Y_{\text{inter}}$.
       \end{itemize}
-    \item \textbf{Combine:} $Y = Y_{\text{intra}} + Y_{\text{inter}} + D \odot X$.
+    \item \textbf{Combine:} $Y = Y_{\text{intra}} + Y_{\text{inter}}$.
   \end{itemize}
 
   \vspace{0.3em}
@@ -1940,7 +1857,7 @@
 \begin{frame}[fragile]{Reference Implementation: the \texttt{segsum} Helper}
 
     \begin{itemize}
-        \item Source: \texttt{ssd\_minimal\_discrete} in the official Mamba-2 repo (\texttt{mamba\_ssm/modules/ssd\_minimal.py})
+        \item Source: \texttt{ssd\_minimal\_discrete} in the official Mamba-2 repo (\href{https://github.com/state-spaces/mamba/blob/main/mamba_ssm/modules/ssd_minimal.py}{\texttt{mamba\_ssm/modules/ssd\_minimal.py}})
         \item Pedagogical implementation. True implementation is a Triton kernel.
     \end{itemize}
 
@@ -2126,6 +2043,89 @@ def ssd_minimal_discrete(X, A, B, C, block_len, initial_states=None):
 
 % -----------------------------------------------------------------------
 \subsubsection{The Mamba-2 Architecture}
+
+% -----------------------------------------------------------------------
+\begin{frame}{Multihead SSMs}
+
+  \begin{columns}[T]
+    \begin{column}{0.52\textwidth}
+      For real language models, inputs have $D$ channels. We split them into $H$ heads of size $P = D/H$:
+      \[
+        Y^{(T,P)} = \mathsf{SSM}\!\left(a^{(T)},\, B^{(T,N)},\, C^{(T,N)}\right)\!\left(X^{(T,P)}\right)
+      \]
+
+      \begin{itemize}
+        \item Head dim $P \in \{64, 128\}$ (vs.\ $P=1$ in Mamba-1).
+        \item \textbf{Within a head}: same $(a_t, B_t, C_t)$ for all $P$ channels.
+        \item \textbf{Across heads}: independent $(a, B, C)$.
+      \end{itemize}
+
+      \begin{block}{Key advantage over Mamba-1}
+        Larger state: $N = 16$ (Mamba-1) $\to$ $N \in [64, 256]$ (Mamba-2), while training faster.
+      \end{block}
+    \end{column}
+    \begin{column}{0.46\textwidth}
+      \centering
+      \begin{tikzpicture}[
+        scale=0.75, every node/.style={scale=0.75},
+        hbox/.style={draw, rounded corners=3pt, minimum height=0.55cm, inner sep=2pt,
+                     font=\tiny, align=center},
+      ]
+        % Input tensor
+        \node[hbox, fill=mambared!15, minimum width=4.5cm] (inp) at (0, 5.2) {Input $X \in \R^{T \times D}$};
+
+        % Split
+        \node[font=\tiny, mambagray, anchor=east] at (-2.3, 4.6) {split into $H$ heads};
+
+        % Heads
+        \def\hw{1.0}
+        \def\hgap{0.15}
+        \node[hbox, fill=mambablue!20, minimum width=\hw cm] (h1) at (-1.8, 3.8) {Head 1\\[-1pt]$T \!\times\! P$};
+        \node[hbox, fill=mambablue!20, minimum width=\hw cm] (h2) at (-0.6, 3.8) {Head 2\\[-1pt]$T \!\times\! P$};
+        \node[font=\tiny] at (0.35, 3.8) {$\cdots$};
+        \node[hbox, fill=mambablue!20, minimum width=\hw cm] (hH) at (1.3, 3.8) {Head $H$\\[-1pt]$T \!\times\! P$};
+
+        % Arrows from input to heads
+        \draw[-Stealth, thin] (inp.south) -- (h1.north);
+        \draw[-Stealth, thin] (inp.south) -- (h2.north);
+        \draw[-Stealth, thin] (inp.south) -- (hH.north);
+
+        % SSM per head
+        \node[hbox, fill=mambagreen!20, minimum width=\hw cm] (s1) at (-1.8, 2.4) {SSM\\[-1pt]$(a, B, C)_1$};
+        \node[hbox, fill=mambagreen!20, minimum width=\hw cm] (s2) at (-0.6, 2.4) {SSM\\[-1pt]$(a, B, C)_2$};
+        \node[font=\tiny] at (0.35, 2.4) {$\cdots$};
+        \node[hbox, fill=mambagreen!20, minimum width=\hw cm] (sH) at (1.3, 2.4) {SSM\\[-1pt]$(a, B, C)_H$};
+
+        \draw[-Stealth, thin] (h1) -- (s1);
+        \draw[-Stealth, thin] (h2) -- (s2);
+        \draw[-Stealth, thin] (hH) -- (sH);
+
+        % Outputs per head
+        \node[hbox, fill=yellow!20, minimum width=\hw cm] (o1) at (-1.8, 1.2) {$Y_1$\\[-1pt]$T \!\times\! P$};
+        \node[hbox, fill=yellow!20, minimum width=\hw cm] (o2) at (-0.6, 1.2) {$Y_2$\\[-1pt]$T \!\times\! P$};
+        \node[font=\tiny] at (0.35, 1.2) {$\cdots$};
+        \node[hbox, fill=yellow!20, minimum width=\hw cm] (oH) at (1.3, 1.2) {$Y_H$\\[-1pt]$T \!\times\! P$};
+
+        \draw[-Stealth, thin] (s1) -- (o1);
+        \draw[-Stealth, thin] (s2) -- (o2);
+        \draw[-Stealth, thin] (sH) -- (oH);
+
+        % Concat
+        \node[font=\tiny, mambagray, anchor=east] at (-2.3, 0.55) {concatenate};
+        \node[hbox, fill=violet!15, minimum width=4.5cm] (out) at (0, 0.0) {Output $Y \in \R^{T \times D}$};
+
+        \draw[-Stealth, thin] (o1.south) -- (out.north);
+        \draw[-Stealth, thin] (o2.south) -- (out.north);
+        \draw[-Stealth, thin] (oH.south) -- (out.north);
+
+        % Annotation: shared within head (brace points left, toward the label)
+        \draw[decorate, decoration={brace, amplitude=4pt}, mambagray]
+          (-2.5, 2.0) -- (-2.5, 4.15);
+        \node[font=\tiny, mambagray, rotate=90, anchor=south] at (-2.95, 3.1) {same $(a,B,C)$};
+      \end{tikzpicture}
+    \end{column}
+  \end{columns}
+\end{frame}
 
 % -----------------------------------------------------------------------
 \begin{frame}{Mamba-2 Block~\cite{dao2024mamba2}}

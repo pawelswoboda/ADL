@@ -34,6 +34,10 @@
 \end{frame}
 
 
+\subsection{RoPE}
+
+\input{rope}
+
 % =======================================================================
 \subsection{KV-Cache}
 % =======================================================================
@@ -283,59 +287,42 @@
 \end{frame}
 
 % -----------------------------------------------------------------------
-\begin{frame}{KV-Cache: Prefill vs.\ Decode}
+\begin{frame}{KV-Cache: Compute and Memory}
 
   \begin{columns}[T]
     \begin{column}{0.48\textwidth}
+      {\footnotesize Projections: $Q\!=\!XW_Q$, $K\!=\!XW_K$, $V\!=\!XW_V$, output $W_O$.}
+
       \textbf{Prefill} (compute-bound):
       \begin{itemize}
-        \item Large matrix multiplies, high arithmetic intensity
-        \item Na\"ive cost: $O(T \cdot d)$ projections $+$ $O(T^2 \cdot d)$ attention
+        \item Large matmuls, high arithmetic intensity
+        \item $O(T \cdot d^2)$ proj.\ $+$ $O(T^2 \cdot d)$ attn.
       \end{itemize}
 
-      \vspace{0.5em}
+      \vspace{0.4em}
       \textbf{Decode} (memory-bound):
       \begin{itemize}
-        \item Reading KV-cache dominates; only 1 query vector per step
-        \item $O(d)$ projection $+$ $O(t \cdot d)$ attention per step
+        \item Only new token projected; past $K,V$ from cache
+        \item $O(d^2)$ proj.\ $+$ $O(t \cdot d)$ attn.\ per step
       \end{itemize}
     \end{column}
     \begin{column}{0.50\textwidth}
-      \textbf{Memory:} cache grows as $O(L \cdot h \cdot T \cdot d_k)$
+      \textbf{Cache size:}
+      \[
+        2 \cdot L \cdot h \cdot T \cdot d_k \cdot b \text{ bytes}
+      \]
+      {\footnotesize $L$ layers, $h$ heads, $T$ seq.\ length, $d_k$ head dim, $b$ bytes/elem.}
 
-      {\footnotesize ($L$ layers, $h$ heads, $T$ seq.\ length, $d_k$ head dim).}
-
-      \vspace{0.5em}
-      \begin{alertblock}{\small Optimizations}
-        KV-cache memory can become very large.
-        Techniques for reduction: see next slides.
-      \end{alertblock}
+      \vspace{0.4em}
+      \textbf{Example} (LLaMA-2 70B dims, MHA, BF16):\\
+      $L{=}80$, $h{=}64$, $d_k{=}128$, $b{=}2$
+      \begin{itemize}
+        \item $T{=}4$k: $\approx 10.7$\,GB / sequence
+        \item $T{=}128$k: $\approx 335$\,GB -- larger than the model!
+        \item LLaMA-2 70B uses GQA ($g{=}8$), $8\times$ smaller.
+      \end{itemize}
     \end{column}
   \end{columns}
-
-\end{frame}
-
-% -----------------------------------------------------------------------
-\begin{frame}{KV-Cache: The Memory Problem}
-
-  \textbf{Recall:} KV-cache stores $K$ and $V$ for all past tokens, across all layers and heads.
-
-  \vspace{0.3em}
-  \textbf{Total KV-cache size:}
-  \[
-    \text{KV-cache} = 2 \cdot L \cdot h \cdot T \cdot d_k \cdot b
-    \quad \text{bytes}
-  \]
-  {\footnotesize $L$ = layers, $h$ = heads, $T$ = sequence length, $d_k$ = head dim, $b$ = bytes per element.}
-
-  \vspace{0.3em}
-  \textbf{Hypothetical example} (LLaMA-2 70B dimensions with MHA, BF16, $T = 4096$):
-  \begin{itemize}
-    \item $L = 80$, $h = 64$, $d_k = 128$, $b = 2$
-    \item KV-cache $= 2 \times 80 \times 64 \times 4096 \times 128 \times 2 \approx 10.7$\,GB \textbf{per sequence}
-    \item At $T = 128$k: $\approx 335$\,GB -- larger than the model itself!
-    \item Note: LLaMA-2 70B actually uses GQA ($g{=}8$), reducing this by $8\times$.
-  \end{itemize}
 
   \vspace{0.3em}
   \begin{alertblock}{\small Approaches to Reduce KV-Cache}
@@ -812,10 +799,6 @@
 
 \end{frame}
 
-\subsection{RoPE}
-
-\input{rope}
-
 \subsection{Normalization and Activations}
 
 % -----------------------------------------------------------------------
@@ -864,7 +847,7 @@
 % -----------------------------------------------------------------------
 \begin{frame}{QK-Norm~\cite{henry2020qknorm}}
 
-  \textbf{Problem:} During training, query and key norms grow unboundedly.
+  \textbf{Problem:} During training, query and key norms can grow too much.
   This causes attention logits to explode, softmax to saturate, and gradients to vanish.
 
   \vspace{0.3em}
@@ -902,77 +885,94 @@
 \end{frame}
 
 % -----------------------------------------------------------------------
-\begin{frame}{Normalization Placement: Pre-LN vs.\ Peri-LN}
+\begin{frame}{Normalization Placement: Pre-LN vs.\ Peri-LN~\cite{he2025periln}}
 
   Where to place normalization layers matters for training stability at scale.
 
   \vspace{0.3em}
   \begin{columns}[T]
-    \begin{column}{0.48\textwidth}
-      \textbf{Pre-LN} (GPT-2, LLaMA):
-      \begin{align*}
-        x &\leftarrow x + \text{Attn}(\text{Norm}(x)) \\
-        x &\leftarrow x + \text{MLP}(\text{Norm}(x))
-      \end{align*}
+    \begin{column}{0.50\textwidth}
+      \begin{center}\textbf{Pre-LN} (GPT-2, LLaMA)\end{center}
+      \vspace{-0.3em}
+      \[
+        \begin{aligned}
+          x &\leftarrow x + \text{Attn}(\text{Norm}(x)) \\
+          x &\leftarrow x + \text{MLP}(\text{Norm}(x))
+        \end{aligned}
+      \]
 
+      \begin{center}
+      \begin{tikzpicture}[
+        scale=0.9, transform shape,
+        box/.style={draw, rounded corners=3pt, minimum width=1.5cm, minimum height=0.38cm, font=\scriptsize, align=center, inner sep=2pt},
+        norm/.style={box, fill=yellow!20, draw=yellow!50!black},
+        attn/.style={box, fill=orange!15},
+        mlp/.style={box, fill=cyan!15},
+        addcirc/.style={circle, draw=red!40, fill=red!8, inner sep=1pt, font=\tiny\bfseries, text=red!60!black},
+        arr/.style={-{Stealth[length=3pt]}, thick, gray!70},
+      ]
+        \node[norm] (n1) at (0, 0.3) {Norm};
+        \node[attn] (a1) at (0, 1.0) {Attn};
+        \node[addcirc] (add1) at (0, 1.7) {$+$};
+        \node[norm] (n2) at (0, 2.3) {Norm};
+        \node[mlp] (m1) at (0, 3.0) {MLP};
+        \node[addcirc] (add2) at (0, 3.7) {$+$};
+        \draw[arr] (0,-0.2) -- (n1); \draw[arr] (n1) -- (a1); \draw[arr] (a1) -- (add1);
+        \draw[arr] (add1) -- (n2); \draw[arr] (n2) -- (m1); \draw[arr] (m1) -- (add2);
+        \draw[gray!50, thin, dashed, rounded corners=2pt] (-0.4,-0.1) -- (-1.2,-0.1) -- (-1.2,1.7) -- (add1.west);
+        \draw[gray!50, thin, dashed, rounded corners=2pt] (-0.4,1.9) -- (-1.2,1.9) -- (-1.2,3.7) -- (add2.west);
+      \end{tikzpicture}
+      \end{center}
+
+      \vspace{-0.3em}
+      {\footnotesize
       \begin{itemize}
         \item Standard since GPT-2
-        \item Stable but prone to ``massive activations'': hidden state norms grow across layers
-      \end{itemize}
+        \item Prone to ``massive activations'': hidden state norms grow across layers
+      \end{itemize}}
     \end{column}
-    \begin{column}{0.48\textwidth}
-      \textbf{Peri-LN}~\cite{he2025periln} (Gemma 2/3, OLMo 2):
-      \begin{align*}
-        x &\leftarrow x + \text{Norm}(\text{Attn}(\text{Norm}(x))) \\
-        x &\leftarrow x + \text{Norm}(\text{MLP}(\text{Norm}(x)))
-      \end{align*}
+    \begin{column}{0.50\textwidth}
+      \begin{center}\textbf{Peri-LN} (Gemma 2/3, OLMo 2)\end{center}
+      \vspace{-0.3em}
+      \[
+        \begin{aligned}
+          x &\leftarrow x + \text{Norm}(\text{Attn}(\text{Norm}(x))) \\
+          x &\leftarrow x + \text{Norm}(\text{MLP}(\text{Norm}(x)))
+        \end{aligned}
+      \]
 
+      \begin{center}
+      \begin{tikzpicture}[
+        scale=0.9, transform shape,
+        box/.style={draw, rounded corners=3pt, minimum width=1.5cm, minimum height=0.38cm, font=\scriptsize, align=center, inner sep=2pt},
+        norm/.style={box, fill=yellow!20, draw=yellow!50!black},
+        attn/.style={box, fill=orange!15},
+        mlp/.style={box, fill=cyan!15},
+        addcirc/.style={circle, draw=red!40, fill=red!8, inner sep=1pt, font=\tiny\bfseries, text=red!60!black},
+        arr/.style={-{Stealth[length=3pt]}, thick, gray!70},
+      ]
+        \node[norm] (pn1) at (0, 0.3) {Norm};
+        \node[attn] (pa1) at (0, 1.0) {Attn};
+        \node[norm, draw=red!60, thick] (pn2) at (0, 1.7) {Norm};
+        \node[addcirc] (padd1) at (0, 2.4) {$+$};
+        \node[norm] (pn3) at (0, 3.0) {Norm};
+        \node[mlp] (pm1) at (0, 3.7) {MLP};
+        \draw[arr] (0,-0.2) -- (pn1); \draw[arr] (pn1) -- (pa1); \draw[arr] (pa1) -- (pn2);
+        \draw[arr] (pn2) -- (padd1); \draw[arr] (padd1) -- (pn3); \draw[arr] (pn3) -- (pm1);
+        \draw[gray!50, thin, dashed, rounded corners=2pt] (-0.4,-0.1) -- (-1.2,-0.1) -- (-1.2,2.4) -- (padd1.west);
+        \node[font=\tiny, red!60!black, anchor=west] at (0.85, 1.7) {extra norm};
+      \end{tikzpicture}
+      \end{center}
+
+      \vspace{-0.3em}
+      {\footnotesize
       \begin{itemize}
-        \item Wraps each sublayer with normalization on both sides
+        \item Wraps each sublayer with norm on both sides
         \item Keeps hidden state norms uniform across layers
-        \item Avoids both vanishing and exploding gradients
-      \end{itemize}
+        \item Avoids vanishing/exploding gradients
+      \end{itemize}}
     \end{column}
   \end{columns}
-
-  \vspace{0.5em}
-  \begin{center}
-  \begin{tikzpicture}[
-    box/.style={draw, rounded corners=3pt, minimum width=1.8cm, minimum height=0.45cm, font=\scriptsize, align=center},
-    norm/.style={box, fill=yellow!20, draw=yellow!50!black},
-    attn/.style={box, fill=orange!15},
-    mlp/.style={box, fill=cyan!15},
-    addcirc/.style={circle, draw=red!40, fill=red!8, inner sep=1pt, font=\tiny\bfseries, text=red!60!black},
-    arr/.style={-{Stealth[length=3pt]}, thick, gray!70},
-  ]
-    % Pre-LN
-    \node[font=\scriptsize\bfseries] at (0, 3.4) {Pre-LN};
-    \node (in1) at (0, -0.2) {};
-    \node[norm] (n1) at (0, 0.3) {Norm};
-    \node[attn] (a1) at (0, 1.0) {Attn};
-    \node[addcirc] (add1) at (0, 1.7) {$+$};
-    \node[norm] (n2) at (0, 2.3) {Norm};
-    \node[mlp] (m1) at (0, 3.0) {MLP};
-    \draw[arr] (0,-0.4) -- (n1); \draw[arr] (n1) -- (a1); \draw[arr] (a1) -- (add1);
-    \draw[arr] (add1) -- (n2); \draw[arr] (n2) -- (m1);
-    \draw[gray!50, thin, dashed, rounded corners=2pt] (-0.4, -0.3) -- (-1.2, -0.3) -- (-1.2, 1.7) -- (add1.west);
-
-    % Peri-LN
-    \node[font=\scriptsize\bfseries] at (4, 3.4) {Peri-LN};
-    \node[norm] (pn1) at (4, 0.0) {Norm};
-    \node[attn] (pa1) at (4, 0.7) {Attn};
-    \node[norm] (pn2) at (4, 1.4) {Norm};
-    \node[addcirc] (padd1) at (4, 2.1) {$+$};
-    \node[norm] (pn3) at (4, 2.7) {Norm};
-    \draw[arr] (4,-0.4) -- (pn1); \draw[arr] (pn1) -- (pa1); \draw[arr] (pa1) -- (pn2);
-    \draw[arr] (pn2) -- (padd1); \draw[arr] (padd1) -- (pn3);
-    \draw[gray!50, thin, dashed, rounded corners=2pt] (3.6, -0.3) -- (2.8, -0.3) -- (2.8, 2.1) -- (padd1.west);
-
-    % Extra output norm highlight
-    \draw[red!60, thick, rounded corners=2pt] ([xshift=-4pt, yshift=-3pt]pn2.south west) rectangle ([xshift=4pt, yshift=3pt]pn2.north east);
-    \node[font=\tiny, red!60!black, anchor=west] at (5.0, 1.4) {extra norm};
-  \end{tikzpicture}
-  \end{center}
 \end{frame}
 
 % -----------------------------------------------------------------------
@@ -1039,6 +1039,7 @@
     \begin{column}{0.48\textwidth}
       \centering
       \begin{tikzpicture}[
+        scale=0.85, transform shape,
         box/.style={draw, rounded corners=3pt, minimum width=2.0cm, minimum height=0.5cm, font=\scriptsize, align=center},
         norm/.style={box, fill=yellow!20, draw=yellow!50!black},
         attn/.style={box, fill=orange!15},
@@ -1064,6 +1065,7 @@
     \begin{column}{0.48\textwidth}
       \centering
       \begin{tikzpicture}[
+        scale=0.85, transform shape,
         box/.style={draw, rounded corners=3pt, minimum width=1.6cm, minimum height=0.5cm, font=\scriptsize, align=center},
         norm/.style={box, fill=yellow!20, draw=yellow!50!black, minimum width=2.0cm},
         attn/.style={box, fill=orange!15},
@@ -1102,52 +1104,6 @@
       \end{alertblock}
     \end{column}
   \end{columns}
-\end{frame}
-
-% -----------------------------------------------------------------------
-\begin{frame}{Modern Decoder Block}
-
-  Putting the improvements together: a modern decoder block (e.g.\ LLaMA~\cite{touvron2023llama}) vs.\ GPT-2.
-
-  \vspace{0.3em}
-  \begin{columns}[T]
-    \begin{column}{0.48\textwidth}
-      \centering\textbf{GPT-2 Block}
-      \begin{align*}
-        x &\leftarrow x + \text{Attn}(\text{LN}(x)) \\
-        x &\leftarrow x + \text{MLP}(\text{LN}(x))
-      \end{align*}
-
-      \begin{itemize}
-        \item LayerNorm (pre-norm)
-        \item Multi-Head Attention
-        \item GELU MLP ($d \to 4d \to d$)
-        \item Learned absolute positions
-        \item Biases in linear layers
-      \end{itemize}
-    \end{column}
-    \begin{column}{0.48\textwidth}
-      \centering\textbf{LLaMA / Gemma Block}
-      \begin{align*}
-        x &\leftarrow x + \text{GQA}(\text{RMSNorm}(x)) \\
-        x &\leftarrow x + \text{SwiGLU}(\text{RMSNorm}(x))
-      \end{align*}
-
-      \begin{itemize}
-        \item RMSNorm (pre-norm or Peri-LN)
-        \item GQA + RoPE (+ optional QK-norm)
-        \item SwiGLU MLP ($d \to \tfrac{8}{3}d \to d$)
-        \item RoPE (relative positions)
-        \item No biases anywhere
-      \end{itemize}
-    \end{column}
-  \end{columns}
-
-  \vspace{0.5em}
-  \begin{alertblock}{Same skeleton, different components}
-    The residual stream with pre-norm attention and MLP remains unchanged.
-    Every sub-component has been upgraded for better quality and efficiency.
-  \end{alertblock}
 \end{frame}
 
 \subsection{Attention Sinks and Mitigations}
@@ -1223,12 +1179,6 @@
     \item[Softmax$_1$] Replace softmax denominator $\sum_j \exp(s_j)$ with $1 + \sum_j \exp(s_j)$.
       Allows total attention weight $< 1$ without any learned parameters.
   \end{description}
-
-  \vspace{0.3em}
-  \begin{alertblock}{Practical impact}
-    Attention sinks also cause massive activation outliers ($100{,}000\times$ normal), which severely degrade INT8/INT4 quantization.
-    Mitigating sinks directly improves quantization quality.
-  \end{alertblock}
 \end{frame}
 
 % -----------------------------------------------------------------------
@@ -1281,5 +1231,52 @@
       {\footnotesize The gate $g_i(q)$ is a simple linear projection of the query. One scalar per head, negligible parameter overhead.}
     \end{column}
   \end{columns}
+\end{frame}
+
+% -----------------------------------------------------------------------
+\begin{frame}{Modern Decoder Block}
+
+  Putting the improvements together: a modern decoder block (e.g.\ LLaMA~\cite{touvron2023llama}) vs.\ GPT-2.
+
+  \vspace{0.3em}
+  \begin{columns}[T]
+    \begin{column}{0.48\textwidth}
+      \centering\textbf{GPT-2 Block}
+      \begin{align*}
+        x &\leftarrow x + \text{Attn}(\text{LN}(x)) \\
+        x &\leftarrow x + \text{MLP}(\text{LN}(x))
+      \end{align*}
+
+      \begin{itemize}
+        \item LayerNorm (pre-norm)
+        \item Multi-Head Attention
+        \item GELU MLP ($d \to 4d \to d$)
+        \item Learned absolute positions
+        \item Biases in linear layers
+      \end{itemize}
+    \end{column}
+    \begin{column}{0.48\textwidth}
+      \centering\textbf{LLaMA / Gemma Block}
+      \begin{align*}
+        x &\leftarrow x + \text{GQA}(\text{RMSNorm}(x)) \\
+        x &\leftarrow x + \text{SwiGLU}(\text{RMSNorm}(x))
+      \end{align*}
+
+      \begin{itemize}
+        \item RMSNorm (pre-norm or Peri-LN)
+        \item GQA + RoPE (+ optional QK-norm)
+        \item Gated attention (per-head sigmoid gate)
+        \item SwiGLU MLP ($d \to \tfrac{8}{3}d \to d$)
+        \item RoPE (relative positions)
+        \item No biases anywhere
+      \end{itemize}
+    \end{column}
+  \end{columns}
+
+  \vspace{0.5em}
+  \begin{alertblock}{Same skeleton, different components}
+    The residual stream with pre-norm attention and MLP remains unchanged.
+    Every sub-component has been upgraded for better quality and efficiency.
+  \end{alertblock}
 \end{frame}
 

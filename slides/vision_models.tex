@@ -1,7 +1,270 @@
 % !TEX root=./adl.tex
 
+% --- Sketch scene for vision intro (house, tree, person) ------------
+% Drawn with bottom-left at (0,0), size 2x2.
+\newcommand{\visionSketchScene}{%
+  \fill[blue!12] (0, 0.5) rectangle (2, 2);
+  \fill[green!40!brown!50] (0, 0) rectangle (2, 0.5);
+  \fill[yellow!80!orange] (1.65, 1.7) circle (0.18);
+  \fill[brown!60!black] (0.28, 0.5) rectangle (0.42, 0.95);
+  \fill[green!55!black] (0.05, 0.85) -- (0.65, 0.85) -- (0.35, 1.55) -- cycle;
+  \fill[orange!50!brown!70] (0.85, 0.5) rectangle (1.45, 1.05);
+  \fill[red!60!black] (0.78, 1.05) -- (1.52, 1.05) -- (1.15, 1.5) -- cycle;
+  \fill[brown!80!black] (1.05, 0.5) rectangle (1.25, 0.85);
+  \fill[yellow!60!orange] (1.78, 0.92) circle (0.07);
+  \draw[thick] (1.78, 0.85) -- (1.78, 0.65);
+  \draw[thick] (1.78, 0.78) -- (1.7, 0.7);
+  \draw[thick] (1.78, 0.78) -- (1.86, 0.7);
+  \draw[thick] (1.78, 0.65) -- (1.71, 0.52);
+  \draw[thick] (1.78, 0.65) -- (1.85, 0.52);
+}
+% Alternate sketch scene B (mountain + lake), 2x2 at origin.
+\newcommand{\visionSketchSceneB}{%
+  \fill[orange!20] (0, 0.6) rectangle (2, 2);
+  \fill[blue!35] (0, 0) rectangle (2, 0.6);
+  \fill[brown!50!gray] (0.25, 0.6) -- (1.45, 0.6) -- (0.85, 1.7) -- cycle;
+  \fill[white!88!brown] (0.62, 1.28) -- (1.08, 1.28) -- (0.85, 1.7) -- cycle;
+  \fill[orange!90!red] (1.55, 1.55) circle (0.17);
+  \draw[white!85!blue, thick] (0.05, 0.4) -- (0.4, 0.45) -- (0.75, 0.4) -- (1.1, 0.45) -- (1.45, 0.4) -- (1.8, 0.45);
+  \draw[white!85!blue, thick] (0.1, 0.2) -- (0.45, 0.25) -- (0.8, 0.2) -- (1.15, 0.25) -- (1.5, 0.2) -- (1.85, 0.25);
+}
+% Thumbnail of one 0.5x0.5 patch from the sketch scene.
+% #1: thumb x, #2: thumb y, #3: scene col (0..3), #4: scene row (0..3 bottom up)
+\newcommand{\visionPatchThumb}[4]{%
+  \pgfmathsetmacro{\vptpx}{0.5*#3}
+  \pgfmathsetmacro{\vptpy}{0.5*#4}
+  \pgfmathsetmacro{\vptsx}{#1 - \vptpx}
+  \pgfmathsetmacro{\vptsy}{#2 - \vptpy}
+  \begin{scope}
+    \clip (#1, #2) rectangle (#1+0.5, #2+0.5);
+    \begin{scope}[shift={(\vptsx, \vptsy)}]
+      \visionSketchScene
+    \end{scope}
+  \end{scope}
+  \draw[thick] (#1, #2) rectangle (#1+0.5, #2+0.5);
+}
+
 % -----------------------------------------------------------------------
 \section{Vision Models}
+
+% =======================================================================
+\subsection{Overview}
+
+% -----------------------------------------------------------------------
+\begin{frame}[t]{Vision Models: From NLP Transformers to Images}
+
+  \textbf{Goal}: Transformer-style architectures for image classification, detection, segmentation, tracking, $\ldots$
+
+  \vspace{0.1em}
+  \begin{center}
+    \begin{tikzpicture}[
+      scale=0.6, every node/.style={scale=0.6},
+      tok/.style={draw, rounded corners=1pt, minimum width=0.7cm, minimum height=0.35cm, font=\tiny},
+      arr/.style={-Stealth, thick},
+    ]
+      % --- Text side ---
+      \node[font=\small\bfseries] at (-4.5, 2.4) {NLP};
+      \node[font=\scriptsize] at (-4.5, 1.7) {``The cat sat on the mat''};
+      \draw[arr] (-4.5, 1.4) -- (-4.5, 0.9);
+      \node[tok, fill=blue!12] at (-6.3, 0.5) {The};
+      \node[tok, fill=blue!12] at (-5.5, 0.5) {cat};
+      \node[tok, fill=blue!12] at (-4.7, 0.5) {sat};
+      \node[font=\scriptsize] at (-3.95, 0.5) {$\cdots$};
+      \node[tok, fill=blue!12] at (-3.2, 0.5) {mat};
+      \node[font=\scriptsize, text=gray, align=center] at (-4.5, -0.2) {1D sequence,\\discrete vocabulary};
+
+      % --- Image side ---
+      \node[font=\small\bfseries] at (1.5, 2.4) {Vision};
+
+      % Scene (bottom-left at (0.5, 0), 2x2)
+      \begin{scope}[shift={(0.5, 0)}]
+        \begin{scope}
+          \clip (0,0) rectangle (2,2);
+          \visionSketchScene
+        \end{scope}
+      \end{scope}
+
+      % 4x4 patch grid
+      \draw[very thick] (0.5, 0) rectangle (2.5, 2);
+      \foreach \i in {1,2,3} {
+        \pgfmathsetmacro{\xpos}{0.5 + 0.5*\i}
+        \pgfmathsetmacro{\ypos}{0.5*\i}
+        \draw[thick, gray!70] (\xpos, 0) -- (\xpos, 2);
+        \draw[thick, gray!70] (0.5, \ypos) -- (2.5, \ypos);
+      }
+
+      % Arrow from image to sequence
+      \draw[arr] (2.7, 1.0) -- (3.4, 1.0);
+      \node[font=\tiny, above] at (3.05, 1.0) {patchify};
+
+      % Patch sequence on the right (thumbnails of actual scene patches)
+      \def\seqx{3.7}
+      \visionPatchThumb{\seqx}{1.85}{0}{3}
+      \node[font=\tiny, left] at (\seqx, 2.1) {$p_1$};
+      \visionPatchThumb{\seqx}{1.25}{2}{3}
+      \node[font=\tiny, left] at (\seqx, 1.5) {$p_3$};
+      \node[font=\tiny] at (3.95, 1.0) {$\vdots$};
+      \visionPatchThumb{\seqx}{0.35}{2}{1}
+      \node[font=\tiny, left] at (\seqx, 0.6) {$p_k$};
+      \visionPatchThumb{\seqx}{-0.25}{3}{0}
+      \node[font=\tiny, left] at (\seqx, 0.0) {$p_N$};
+
+      \node[font=\scriptsize, text=gray, align=center] at (1.5, -0.6) {2D grid $\to$ patch tokens,\\continuous pixel values};
+    \end{tikzpicture}
+  \end{center}
+
+  \vspace{-0.3em}
+  \begin{columns}
+    \begin{column}{0.48\textwidth}
+      \textbf{Differences from NLP}
+      \begin{itemize}
+        \item \textbf{Continuous signal}: pixels are continuous values, not discrete symbols
+        \item \textbf{No natural tokens}: patches are an arbitrary grid; text has words / BPE units of meaning
+        \item \textbf{2D, no causal order}: spatial neighborhood replaces sequential order
+        \item \textbf{High redundancy}: nearby patches are strongly correlated; word content is not
+        \item \textbf{Weak inductive bias}: locality and translation equivariance are not built in
+      \end{itemize}
+    \end{column}
+    \begin{column}{0.48\textwidth}
+      \textbf{Key challenges}
+      \begin{itemize}
+        \item \textbf{Attention cost}: $N = HW/P^2$ tokens grows with resolution; self-attention is $\mathcal{O}(N^2)$
+        \item \textbf{Sample efficiency}: weak prior, needs large pre-training data
+        \item \textbf{Pre-training objective}: no next-token likelihood; need masked modeling or contrastive substitutes
+        \item \textbf{Position encoding}: 2D layout must be reinjected into a sequence model
+        \item \textbf{Multi-scale features}: objects span many spatial scales; hierarchical features needed
+      \end{itemize}
+    \end{column}
+  \end{columns}
+
+\end{frame}
+
+% -----------------------------------------------------------------------
+\begin{frame}{Vision Models: Recurring Design Themes}
+
+  \begin{columns}[T]
+    \begin{column}{0.48\textwidth}
+      \begin{center}
+        \begin{tikzpicture}[scale=0.65, every node/.style={scale=0.65}]
+          \begin{scope}
+            \clip (0,0) rectangle (2,2);
+            \visionSketchScene
+          \end{scope}
+          \draw[thick] (0,0) rectangle (2,2);
+          \foreach \i in {1,2,3} {
+            \pgfmathsetmacro{\xpos}{0.5*\i}
+            \draw[gray!60] (\xpos, 0) -- (\xpos, 2);
+            \draw[gray!60] (0, \xpos) -- (2, \xpos);
+          }
+          \draw[-Stealth, thick] (2.2, 1) -- (2.9, 1);
+          \visionPatchThumb{3.1}{1.6}{0}{3}
+          \visionPatchThumb{3.1}{1.0}{2}{3}
+          \node[font=\tiny] at (3.35, 0.7) {$\vdots$};
+          \visionPatchThumb{3.1}{0.0}{3}{0}
+        \end{tikzpicture}
+      \end{center}
+      \textbf{Patchification} \quad {\footnotesize (ViT, DeiT, MAE)}\\
+      {\footnotesize Image $\to$ sequence of patch tokens.}
+
+      \vspace{0.8em}
+      \begin{center}
+        \begin{tikzpicture}[scale=0.5, every node/.style={scale=0.5}]
+          \draw[thick, fill=gray!8] (0,0) rectangle (5,5);
+          \foreach \i in {1,2,3,4} {
+            \draw[gray!40] (\i,0) -- (\i,5);
+            \draw[gray!40] (0,\i) -- (5,\i);
+          }
+          \node[font=\scriptsize, text=gray, above] at (2.5, 5) {feature map};
+          \fill[red] (2.5, 2.5) circle (5pt);
+          \node[font=\scriptsize, text=red!60!black, right=2pt] at (2.5, 2.5) {$\mathbf{p}_q$};
+          \draw[-Stealth, thick, blue!70!black] (2.5, 2.5) -- (0.7, 3.8);
+          \fill[blue!70!black] (0.7, 3.8) circle (4pt);
+          \node[font=\tiny, text=blue!70!black, left=1pt] at (0.7, 3.8) {$\Delta_1$};
+          \draw[-Stealth, thick, blue!70!black] (2.5, 2.5) -- (4.3, 4.0);
+          \fill[blue!70!black] (4.3, 4.0) circle (4pt);
+          \node[font=\tiny, text=blue!70!black, right=1pt] at (4.3, 4.0) {$\Delta_2$};
+          \draw[-Stealth, thick, blue!70!black] (2.5, 2.5) -- (4.1, 0.8);
+          \fill[blue!70!black] (4.1, 0.8) circle (4pt);
+          \node[font=\tiny, text=blue!70!black, right=1pt] at (4.1, 0.8) {$\Delta_3$};
+          \draw[-Stealth, thick, blue!70!black] (2.5, 2.5) -- (0.9, 1.0);
+          \fill[blue!70!black] (0.9, 1.0) circle (4pt);
+          \node[font=\tiny, text=blue!70!black, left=1pt] at (0.9, 1.0) {$\Delta_4$};
+        \end{tikzpicture}
+      \end{center}
+      \textbf{Restricted attention} \quad {\footnotesize (Swin, Def.\ DETR, Mask2Former)}\\
+      {\footnotesize Query attends to $K$ learned sample points instead of $\mathcal{O}(HW)$ positions.}
+    \end{column}
+    \begin{column}{0.48\textwidth}
+      \begin{center}
+        \begin{tikzpicture}[scale=0.65, every node/.style={scale=0.65}]
+          \begin{scope}
+            \clip (0,0) rectangle (2,2);
+            \visionSketchScene
+          \end{scope}
+          \draw[thick] (0,0) rectangle (2,2);
+          \draw[very thick, green!50!black] (0.03, 0.49) rectangle (0.68, 1.58);
+          \draw[very thick, red!70!black] (0.76, 0.49) rectangle (1.54, 1.52);
+          \draw[very thick, violet] (1.68, 0.43) rectangle (1.9, 1.02);
+          \node[font=\scriptsize, anchor=base] at (3.5, 2.1) {queries};
+          \foreach \i/\y in {1/1.7, 2/1.2, 3/0.7, 4/0.2} {
+            \node[draw, fill=violet!20, circle, font=\scriptsize, inner sep=1pt] (q\i) at (3.5, \y) {$q_{\i}$};
+          }
+          \draw[-Stealth, very thick, green!50!black] (q1.west) -- (0.4, 1.0);
+          \draw[-Stealth, very thick, red!70!black]   (q2.west) -- (1.15, 1.0);
+          \draw[-Stealth, very thick, gray, dashed]   (q3.west) -- ++(-0.6, 0) node[left, font=\tiny, text=gray] {$\varnothing$};
+          \draw[-Stealth, very thick, violet]         (q4.west) -- (1.79, 0.7);
+        \end{tikzpicture}
+      \end{center}
+      \textbf{Object queries} \quad {\footnotesize (DETR, MaskFormer family)}\\
+      {\footnotesize Each query $\to$ (class, box) or $\varnothing$; a fixed set of slots.}
+
+      \vspace{0.8em}
+      \begin{center}
+        \begin{tikzpicture}[scale=0.7, every node/.style={scale=0.7}]
+          % Left: image with 75% of patches masked
+          \begin{scope}
+            \clip (0,0) rectangle (2,2);
+            \visionSketchScene
+          \end{scope}
+          \foreach \r in {0,1,2,3} {
+            \foreach \c in {0,1,2,3} {
+              \pgfmathtruncatemacro{\visible}{(\r==2 && \c==1) ? 1 : ((\r==3 && \c==2) ? 1 : ((\r==1 && \c==3) ? 1 : ((\r==0 && \c==0) ? 1 : 0)))}
+              \pgfmathsetmacro{\xx}{0.5*\c}
+              \pgfmathsetmacro{\yy}{0.5*\r}
+              \ifnum\visible=0
+                \fill[gray!55] (\xx, \yy) rectangle (\xx+0.5, \yy+0.5);
+                \node[font=\tiny, text=gray!90] at (\xx+0.25, \yy+0.25) {$\times$};
+              \fi
+            }
+          }
+          \draw[thick] (0,0) rectangle (2,2);
+          \foreach \i in {1,2,3} {
+            \pgfmathsetmacro{\xpos}{0.5*\i}
+            \draw[gray!50] (\xpos, 0) -- (\xpos, 2);
+            \draw[gray!50] (0, \xpos) -- (2, \xpos);
+          }
+          % Arrow
+          \draw[-Stealth, thick] (2.2, 1) -- (3.1, 1);
+          \node[font=\scriptsize, above] at (2.65, 1) {reconstruct};
+          % Right: reconstructed scene
+          \begin{scope}[shift={(3.3, 0)}]
+            \clip (0,0) rectangle (2,2);
+            \visionSketchScene
+          \end{scope}
+          \draw[thick] (3.3, 0) rectangle (5.3, 2);
+          \foreach \i in {1,2,3} {
+            \pgfmathsetmacro{\xpos}{3.3 + 0.5*\i}
+            \pgfmathsetmacro{\ypos}{0.5*\i}
+            \draw[gray!50] (\xpos, 0) -- (\xpos, 2);
+            \draw[gray!50] (3.3, \ypos) -- (5.3, \ypos);
+          }
+        \end{tikzpicture}
+      \end{center}
+      \textbf{Masked image modeling} \quad {\footnotesize (MAE)}\\
+      {\footnotesize Reconstruct $\sim$75\% masked patches for self-supervised pre-training.}
+    \end{column}
+  \end{columns}
+\end{frame}
 
 % =======================================================================
 \subsection{Vision Transformer (ViT)}
@@ -18,30 +281,28 @@
       box/.style={draw, rounded corners, minimum height=0.5cm, align=center, font=\small},
       arr/.style={-Stealth, thick},
     ]
-      % --- Image ---
-      \node[inner sep=0] (img) at (-5.2, 0) {
+      % --- Image (sketch scene) ---
+      \node[inner sep=0] (img) at (-5.2, 0.44) {
         \begin{tikzpicture}
-          \draw[thick, fill=orange!10] (0,0) rectangle (2,2);
-          % Grid lines for patches
+          \begin{scope}
+            \clip (0,0) rectangle (2,2);
+            \visionSketchScene
+          \end{scope}
+          \draw[thick] (0,0) rectangle (2,2);
           \foreach \i in {0.5, 1.0, 1.5} {
-            \draw[gray!60, dashed] (\i, 0) -- (\i, 2);
-            \draw[gray!60, dashed] (0, \i) -- (2, \i);
+            \draw[gray!60] (\i, 0) -- (\i, 2);
+            \draw[gray!60] (0, \i) -- (2, \i);
           }
-          % Number a few patches
-          \node[font=\tiny] at (0.25, 1.75) {$p_1$};
-          \node[font=\tiny] at (0.75, 1.75) {$p_2$};
-          \node[font=\tiny] at (1.75, 0.25) {$p_N$};
         \end{tikzpicture}
       };
       \node[font=\scriptsize, below=0.1cm of img] {Image $H{\times}W{\times}C$};
 
       % --- Flatten + Linear Projection ---
-      \node[box, fill=blue!10, minimum width=1.4cm] (proj) at (-1.5, 0) {Linear\\Proj.};
-      \draw[arr] (-3.1, 0) -- (proj);
+      \node[box, fill=blue!10, minimum width=1.4cm] (proj) at (-1.5, 0.44) {Linear\\Proj.};
+      \draw[arr] (-3.1, 0.44) -- (proj);
 
       % --- Patch embeddings + CLS ---
-      \def\ew{0.28}
-      \def\npatches{7} % showing CLS + 6 patches
+      % 7 tokens spanning y = -1.12 .. 2.0 (CLS at top)
       \foreach \i [count=\c from 0] in {0,...,6} {
         \pgfmathsetmacro{\yy}{2.0 - \c*0.52}
         \ifnum\i=0
@@ -55,30 +316,29 @@
       \draw[arr] (proj) -- (e3);
 
       % --- Positional embeddings ---
-      \node[font=\scriptsize, text=orange!70!black] at (0.8, 2.65) {$+\,E_\text{pos}$};
+      \node[font=\scriptsize, text=orange!70!black] at (0.8, 2.55) {$+\,E_\text{pos}$};
 
-      % --- Transformer Encoder ---
-      \node[box, fill=red!10, minimum width=1.6cm, minimum height=2.8cm] (enc) at (3.0, 0.28) {};
-      \node[font=\small, text=red!60!black] at (3.0, 1.25) {\textbf{Transformer}};
-      \node[font=\small, text=red!60!black] at (3.0, 0.85) {\textbf{Encoder}};
-      \node[font=\scriptsize, text=gray] at (3.0, 0.35) {$L$ layers};
-      % Internal structure hint
-      \node[draw, rounded corners, fill=white, minimum width=1.2cm, font=\tiny, inner sep=2pt] at (3.0, -0.15) {MSA + MLP};
-      \node[draw, rounded corners, fill=white, minimum width=1.2cm, font=\tiny, inner sep=2pt] at (3.0, -0.65) {MSA + MLP};
+      % --- Transformer Encoder (sized to span the full token column) ---
+      \node[box, fill=red!10, minimum width=1.6cm, minimum height=3.2cm] (enc) at (3.0, 0.44) {};
+      \node[font=\small, text=red!60!black] at (3.0, 1.5) {\textbf{Transformer}};
+      \node[font=\small, text=red!60!black] at (3.0, 1.1) {\textbf{Encoder}};
+      \node[font=\scriptsize, text=gray] at (3.0, 0.6) {$L$ layers};
+      \node[draw, rounded corners, fill=white, minimum width=1.2cm, font=\tiny, inner sep=2pt] at (3.0, 0.05) {MSA + MLP};
+      \node[draw, rounded corners, fill=white, minimum width=1.2cm, font=\tiny, inner sep=2pt] at (3.0, -0.45) {MSA + MLP};
 
-      \draw[arr] (1.3, 0.28) -- (2.1, 0.28);
+      \draw[arr] (1.3, 0.44) -- (2.1, 0.44);
 
-      % --- MLP Head ---
-      \node[box, fill=yellow!20, minimum width=1.2cm] (head) at (5.5, 1.7) {MLP\\Head};
-      \draw[arr] (3.85, 1.7) -- node[above, font=\tiny, text=violet] {[CLS] output} (head);
+      % --- MLP Head (aligned with [CLS] at top of encoder) ---
+      \node[box, fill=yellow!20, minimum width=1.2cm] (head) at (5.5, 2.0) {MLP\\Head};
+      \draw[arr] (3.85, 2.0) -- node[above, font=\tiny, text=violet] {[CLS] output} (head);
 
       % --- Class output ---
-      \node[font=\small] (cls) at (7.2, 1.7) {Class};
+      \node[font=\small] (cls) at (7.2, 2.0) {Class};
       \draw[arr] (head) -- (cls);
 
       % --- Annotations ---
-      \node[font=\scriptsize, text=gray, align=center] at (-5.2, -1.8) {Split into $N = \frac{HW}{P^2}$\\patches of size $P{\times}P$};
-      \node[font=\scriptsize, text=gray, align=center] at (0.8, -1.8) {Patch embeddings\\$\in \mathbb{R}^{(N+1) \times D}$};
+      \node[font=\scriptsize, text=gray, align=center] at (-5.2, -1.5) {Split into $N = \frac{HW}{P^2}$\\patches of size $P{\times}P$};
+      \node[font=\scriptsize, text=gray, align=center] at (0.8, -1.9) {Patch embeddings\\$\in \mathbb{R}^{(N+1) \times D}$};
     \end{tikzpicture}
   \end{center}
 
@@ -133,8 +393,6 @@
           \node[box=red!15] (msa) at (0, 1.6) {Multi-Head SA};
           \draw[arr] (ln1) -- (msa);
 
-          % Residual 1
-          \draw[arr, gray!50] (in.east) -- ++(0.8, 0) |- ($(msa.north) + (0, 0.3)$);
           \node[draw, circle, inner sep=1pt, font=\scriptsize, fill=white] (add1) at (0, 2.2) {$+$};
           \draw[arr] (msa) -- (add1);
 
@@ -146,10 +404,12 @@
           \node[box=blue!12] (mlp) at (0, 4.0) {MLP};
           \draw[arr] (ln2) -- (mlp);
 
-          % Residual 2
-          \draw[arr, gray!50] (add1.east) -- ++(0.8, 0) |- ($(mlp.north) + (0, 0.3)$);
           \node[draw, circle, inner sep=1pt, font=\scriptsize, fill=white] (add2) at (0, 4.6) {$+$};
           \draw[arr] (mlp) -- (add2);
+
+          % Residual skip connections (both at the same x, pushed to the right of the boxes)
+          \draw[arr, gray!50] (in.east) -- (1.8, -0.3) -- (1.8, 2.2) -- (add1.east);
+          \draw[arr, gray!50] (add1.east) -- (1.8, 2.2) -- (1.8, 4.6) -- (add2.east);
 
           % Output
           \node[font=\small] (out) at (0, 5.3) {$\mathbf{z}_\ell$};
@@ -288,6 +548,187 @@
   \end{columns}
 \end{frame}
 
+% -----------------------------------------------------------------------
+\begin{frame}{DeiT: RandAugment \& Random Erasing}
+
+  Two single-image augmentations applied independently to each example.
+
+  \vspace{0.3em}
+  \begin{columns}[T]
+    \begin{column}{0.5\textwidth}
+      \begin{center}
+        \textbf{RandAugment}\\[0.2em]
+        \begin{tikzpicture}[scale=0.55, every node/.style={scale=0.55}]
+          \begin{scope}
+            \clip (0,0) rectangle (2,2);
+            \visionSketchScene
+          \end{scope}
+          \draw[thick] (0,0) rectangle (2,2);
+          \draw[-Stealth, thick] (2.2, 1) -- (3.0, 1);
+          \node[font=\tiny, above, align=center] at (2.6, 1) {Rotate $+$\\Solarize};
+          \begin{scope}[shift={(3.2, 0)}]
+            \begin{scope}
+              \clip (0,0) rectangle (2,2);
+              \begin{scope}[rotate around={12:(1,1)}]
+                \visionSketchScene
+              \end{scope}
+              \fill[orange, opacity=0.35] (0,0) rectangle (2,2);
+            \end{scope}
+            \draw[thick] (0,0) rectangle (2,2);
+          \end{scope}
+        \end{tikzpicture}
+      \end{center}
+    \end{column}
+    \begin{column}{0.5\textwidth}
+      \begin{center}
+        \textbf{Random Erasing}\\[0.2em]
+        \begin{tikzpicture}[scale=0.55, every node/.style={scale=0.55}]
+          \begin{scope}
+            \clip (0,0) rectangle (2,2);
+            \visionSketchScene
+          \end{scope}
+          \draw[thick] (0,0) rectangle (2,2);
+          \draw[-Stealth, thick] (2.2, 1) -- (3.0, 1);
+          \node[font=\tiny, above] at (2.6, 1) {erase};
+          \begin{scope}[shift={(3.2, 0)}]
+            \begin{scope}
+              \clip (0,0) rectangle (2,2);
+              \visionSketchScene
+            \end{scope}
+            \fill[gray!55] (0.75, 0.7) rectangle (1.65, 1.35);
+            \draw[thick] (0,0) rectangle (2,2);
+          \end{scope}
+        \end{tikzpicture}
+      \end{center}
+    \end{column}
+  \end{columns}
+
+  \vspace{0.3em}
+  \begin{columns}[T]
+    \begin{column}{0.5\textwidth}
+      {\footnotesize
+      \cite{cubuk2020randaugment}: two hyperparameters $N$ ops, magnitude $M$.
+      \begin{enumerate}\itemsep0pt
+        \item Sample $N$ ops uniformly from a fixed pool of 14
+        \item Apply each with shared magnitude $M$
+      \end{enumerate}
+      Pool: AutoContrast, Equalize, Invert, Solarize, Posterize, Contrast, Color, Brightness, Sharpness, Rotate, ShearX/Y, TranslateX/Y.\\
+      DeiT: $N{=}2$, $M{=}9$.}
+    \end{column}
+    \begin{column}{0.5\textwidth}
+      {\footnotesize
+      \cite{zhong2020randomerasing}: with probability $p$, replace a random rectangle of pixels with random / mean / zero values.
+      \begin{itemize}\itemsep0pt
+        \item Area ratio $S_e \sim U(s_l, s_h)$
+        \item Aspect ratio $r_e \sim U(r_l, r_h)$
+        \item Position uniform in image
+      \end{itemize}
+      Encourages \textbf{occlusion robustness}: the model cannot rely on a single discriminative region.}
+    \end{column}
+  \end{columns}
+\end{frame}
+
+% -----------------------------------------------------------------------
+\begin{frame}{DeiT: Mixup \& CutMix}
+
+  Both create new training samples by combining \textbf{pairs} of images and labels.
+
+  \vspace{0.3em}
+  \begin{columns}[T]
+    \begin{column}{0.5\textwidth}
+      \begin{center}
+        \textbf{Mixup}\\[0.2em]
+        \begin{tikzpicture}[scale=0.45, every node/.style={scale=0.45}]
+          \begin{scope}
+            \clip (0,0) rectangle (2,2);
+            \visionSketchScene
+          \end{scope}
+          \draw[thick] (0,0) rectangle (2,2);
+          \node[font=\Large] at (2.5, 1) {$+$};
+          \begin{scope}[shift={(3.0, 0)}]
+            \begin{scope}
+              \clip (0,0) rectangle (2,2);
+              \visionSketchSceneB
+            \end{scope}
+            \draw[thick] (0,0) rectangle (2,2);
+          \end{scope}
+          \node[font=\Large] at (5.5, 1) {$=$};
+          \begin{scope}[shift={(6.0, 0)}]
+            \begin{scope}
+              \clip (0,0) rectangle (2,2);
+              \begin{scope}[transparency group, opacity=0.55]
+                \visionSketchScene
+              \end{scope}
+              \begin{scope}[transparency group, opacity=0.55]
+                \visionSketchSceneB
+              \end{scope}
+            \end{scope}
+            \draw[thick] (0,0) rectangle (2,2);
+          \end{scope}
+        \end{tikzpicture}
+      \end{center}
+    \end{column}
+    \begin{column}{0.5\textwidth}
+      \begin{center}
+        \textbf{CutMix}\\[0.2em]
+        \begin{tikzpicture}[scale=0.45, every node/.style={scale=0.45}]
+          \begin{scope}
+            \clip (0,0) rectangle (2,2);
+            \visionSketchScene
+          \end{scope}
+          \draw[thick] (0,0) rectangle (2,2);
+          \node[font=\Large] at (2.5, 1) {$+$};
+          \begin{scope}[shift={(3.0, 0)}]
+            \begin{scope}
+              \clip (0,0) rectangle (2,2);
+              \visionSketchSceneB
+            \end{scope}
+            \draw[very thick, dashed, red] (0.5, 0.55) rectangle (1.45, 1.4);
+            \draw[thick] (0,0) rectangle (2,2);
+          \end{scope}
+          \node[font=\Large] at (5.5, 1) {$=$};
+          \begin{scope}[shift={(6.0, 0)}]
+            \begin{scope}
+              \clip (0,0) rectangle (2,2);
+              \visionSketchScene
+            \end{scope}
+            \begin{scope}
+              \clip (0.5, 0.55) rectangle (1.45, 1.4);
+              \visionSketchSceneB
+            \end{scope}
+            \draw[very thick, dashed, red] (0.5, 0.55) rectangle (1.45, 1.4);
+            \draw[thick] (0,0) rectangle (2,2);
+          \end{scope}
+        \end{tikzpicture}
+      \end{center}
+    \end{column}
+  \end{columns}
+
+  \vspace{0.3em}
+  \begin{columns}[T]
+    \begin{column}{0.5\textwidth}
+      {\footnotesize
+      \cite{zhang2018mixup}: linear blend
+      \[
+        \tilde{x} = \lambda\, x_1 + (1{-}\lambda)\, x_2, \quad
+        \tilde{y} = \lambda\, y_1 + (1{-}\lambda)\, y_2
+      \]
+      $\lambda \sim \mathrm{Beta}(\alpha, \alpha)$, DeiT uses $\alpha{=}0.8$.\\
+      Encourages \textbf{linear behavior} between examples and smoother decision boundaries.}
+    \end{column}
+    \begin{column}{0.5\textwidth}
+      {\footnotesize
+      \cite{yun2019cutmix}: paste a random box
+      \[
+        \tilde{x} = (1{-}M) \odot x_1 + M \odot x_2, \quad
+        \tilde{y} = \lambda y_1 + (1{-}\lambda) y_2
+      \]
+      $\lambda = 1 - |B|/(HW)$ is the area outside the patch.\\
+      No unrealistic blended pixels; encourages spatial attention and improves localization.}
+    \end{column}
+  \end{columns}
+\end{frame}
+
 % =======================================================================
 \subsection{MAE: Masked Autoencoders}
 
@@ -304,42 +745,53 @@
       box/.style={draw, rounded corners, fill=#1, minimum width=1.6cm, minimum height=0.5cm, align=center, font=\small},
       arr/.style={-Stealth, thick},
     ]
-      % --- Image patch grid ---
-      \begin{scope}[shift={(-6.5, -1.2)}]
-        \node[font=\scriptsize\bfseries] at (1.2, 2.8) {Image patches};
-        \foreach \r in {0,...,3} {
-          \foreach \c in {0,...,3} {
-            \pgfmathsetmacro{\x}{\c*0.6}
-            \pgfmathsetmacro{\y}{1.8 - \r*0.6}
-            \draw[thick, fill=orange!15] (\x, \y) rectangle (\x+0.55, \y+0.55);
-          }
+      % --- Image patches (sketch scene with patch grid) ---
+      \begin{scope}[shift={(-6.5, -1.0)}]
+        \node[font=\scriptsize\bfseries] at (1.0, 2.3) {Image patches};
+        \begin{scope}
+          \clip (0,0) rectangle (2,2);
+          \visionSketchScene
+        \end{scope}
+        \draw[thick] (0,0) rectangle (2,2);
+        \foreach \i in {1,2,3} {
+          \pgfmathsetmacro{\xpos}{0.5*\i}
+          \draw[gray!70] (\xpos, 0) -- (\xpos, 2);
+          \draw[gray!70] (0, \xpos) -- (2, \xpos);
         }
       \end{scope}
 
       % Arrow
-      \draw[arr] (-4.0, 0) -- (-3.2, 0);
-      \node[font=\scriptsize, text=gray] at (-3.6, 0.3) {mask 75\%};
+      \draw[arr] (-4.3, 0) -- (-3.2, 0);
+      \node[font=\scriptsize, text=gray] at (-3.75, 0.3) {mask 75\%};
 
-      % --- Masked grid ---
-      \begin{scope}[shift={(-3.0, -1.2)}]
-        \node[font=\scriptsize\bfseries] at (1.2, 2.8) {After masking};
+      % --- After masking (sketch scene with 12/16 patches masked) ---
+      \begin{scope}[shift={(-3.0, -1.0)}]
+        \node[font=\scriptsize\bfseries] at (1.0, 2.3) {After masking};
+        \begin{scope}
+          \clip (0,0) rectangle (2,2);
+          \visionSketchScene
+        \end{scope}
+        % Mask 12 of 16 patches; leave 4 visible: (r=0,c=1), (r=1,c=3), (r=2,c=0), (r=3,c=2)
         \foreach \r in {0,...,3} {
           \foreach \c in {0,...,3} {
-            \pgfmathsetmacro{\x}{\c*0.6}
-            \pgfmathsetmacro{\y}{1.8 - \r*0.6}
-            % ~75% masked (12 out of 16)
-            \pgfmathtruncatemacro{\masked}{
-              (\r==0 && \c==1) ? 0 :
-              (\r==1 && \c==3) ? 0 :
-              (\r==2 && \c==0) ? 0 :
-              (\r==3 && \c==2) ? 0 : 1}
-            \ifnum\masked=1
-              \draw[thick, fill=gray!20] (\x, \y) rectangle (\x+0.55, \y+0.55);
-              \node[font=\tiny, text=gray!50] at (\x+0.275, \y+0.275) {$\times$};
-            \else
-              \draw[thick, fill=green!25] (\x, \y) rectangle (\x+0.55, \y+0.55);
+            \pgfmathtruncatemacro{\visible}{
+              (\r==0 && \c==1) ? 1 :
+              (\r==1 && \c==3) ? 1 :
+              (\r==2 && \c==0) ? 1 :
+              (\r==3 && \c==2) ? 1 : 0}
+            \pgfmathsetmacro{\xx}{0.5*\c}
+            \pgfmathsetmacro{\yy}{0.5*(3-\r)}
+            \ifnum\visible=0
+              \fill[gray!55] (\xx, \yy) rectangle (\xx+0.5, \yy+0.5);
+              \node[font=\tiny, text=gray!90] at (\xx+0.25, \yy+0.25) {$\times$};
             \fi
           }
+        }
+        \draw[thick] (0,0) rectangle (2,2);
+        \foreach \i in {1,2,3} {
+          \pgfmathsetmacro{\xpos}{0.5*\i}
+          \draw[gray!70] (\xpos, 0) -- (\xpos, 2);
+          \draw[gray!70] (0, \xpos) -- (2, \xpos);
         }
       \end{scope}
 
@@ -367,26 +819,35 @@
       % Arrow to reconstruction
       \draw[arr] (6.5, 0) -- (7.5, 0);
 
-      % --- Reconstructed grid ---
-      \begin{scope}[shift={(7.7, -1.2)}]
-        \node[font=\scriptsize\bfseries] at (1.2, 2.8) {Reconstruction};
+      % --- Reconstruction (full sketch with reconstructed patches tinted) ---
+      \begin{scope}[shift={(7.7, -1.0)}]
+        \node[font=\scriptsize\bfseries] at (1.0, 2.3) {Reconstruction};
+        \begin{scope}
+          \clip (0,0) rectangle (2,2);
+          \visionSketchScene
+        \end{scope}
+        % Tint the 12 reconstructed patches (everything except the 4 visible)
         \foreach \r in {0,...,3} {
           \foreach \c in {0,...,3} {
-            \pgfmathsetmacro{\x}{\c*0.6}
-            \pgfmathsetmacro{\y}{1.8 - \r*0.6}
-            \pgfmathtruncatemacro{\masked}{
-              (\r==0 && \c==1) ? 0 :
-              (\r==1 && \c==3) ? 0 :
-              (\r==2 && \c==0) ? 0 :
-              (\r==3 && \c==2) ? 0 : 1}
-            \ifnum\masked=1
-              \draw[thick, fill=orange!30] (\x, \y) rectangle (\x+0.55, \y+0.55);
-            \else
-              \draw[thick, fill=green!25] (\x, \y) rectangle (\x+0.55, \y+0.55);
+            \pgfmathtruncatemacro{\visible}{
+              (\r==0 && \c==1) ? 1 :
+              (\r==1 && \c==3) ? 1 :
+              (\r==2 && \c==0) ? 1 :
+              (\r==3 && \c==2) ? 1 : 0}
+            \pgfmathsetmacro{\xx}{0.5*\c}
+            \pgfmathsetmacro{\yy}{0.5*(3-\r)}
+            \ifnum\visible=0
+              \fill[orange!50, opacity=0.45] (\xx, \yy) rectangle (\xx+0.5, \yy+0.5);
             \fi
           }
         }
-        \node[font=\scriptsize, text=red!60!black] at (1.2, -0.5) {MSE loss on \textcolor{orange!70!black}{masked} only};
+        \draw[thick] (0,0) rectangle (2,2);
+        \foreach \i in {1,2,3} {
+          \pgfmathsetmacro{\xpos}{0.5*\i}
+          \draw[gray!70] (\xpos, 0) -- (\xpos, 2);
+          \draw[gray!70] (0, \xpos) -- (2, \xpos);
+        }
+        \node[font=\scriptsize, text=red!60!black] at (1.0, -0.5) {MSE loss on \textcolor{orange!70!black}{masked} only};
       \end{scope}
     \end{tikzpicture}
   \end{center}
@@ -397,6 +858,84 @@
     \item \textbf{Decoder}: lightweight (8 layers, width 512), operates on all tokens incl.\ shared learned \textcolor{violet}{mask tokens}
     \item \textbf{Target}: per-patch normalized pixel values; loss $= \frac{1}{|\mathcal{M}|}\sum_{i \in \mathcal{M}} \|\hat{x}_i - x_i\|^2$ on masked patches only
   \end{itemize}
+\end{frame}
+
+% -----------------------------------------------------------------------
+\begin{frame}{MAE: Decoder \& Reconstruction Loss}
+
+  The decoder is responsible for predicting raw pixels for the missing 75\% of patches.
+
+  \vspace{0.3em}
+  \begin{columns}[T]
+    \begin{column}{0.55\textwidth}
+      \textbf{Decoder input} (full sequence, $N{+}1$ tokens):
+      \begin{itemize}\itemsep0pt
+        \item Encoded \textcolor{green!50!black}{visible patch} embeddings (from encoder)
+        \item One \textcolor{violet}{mask token} $[M]$ inserted at each masked position
+        \item $[M]$ is a \emph{single shared learned vector} reused at every masked position
+        \item Positional embeddings added to \textbf{all} tokens, so the decoder knows where each one belongs
+      \end{itemize}
+
+      \vspace{0.3em}
+      \textbf{Architecture}: lightweight Transformer
+      \begin{itemize}\itemsep0pt
+        \item 8 blocks, hidden dim 512 ($\sim 9\%$ of encoder FLOPs)
+        \item Standard pre-norm MSA + MLP blocks
+        \item Asymmetric design: only the \emph{encoder} is kept for downstream tasks; decoder is \textbf{discarded} after pre-training
+      \end{itemize}
+
+      \vspace{0.3em}
+      \textbf{Output head}: a single linear layer maps each output token to a vector $\hat{x}_i \in \mathbb{R}^{P^2 C}$, the predicted pixel values of patch $i$ (reshaped to $P{\times}P{\times}C$).
+    \end{column}
+    \begin{column}{0.42\textwidth}
+      \begin{center}
+        \begin{tikzpicture}[
+          scale=0.7, every node/.style={scale=0.7},
+          tk/.style={draw, minimum width=0.32cm, minimum height=0.4cm, inner sep=0pt, font=\tiny, rounded corners=1pt},
+          arr/.style={-Stealth, thick},
+        ]
+          % Input tokens row: mix of visible (0) and mask (1)
+          \node[font=\scriptsize, anchor=base] at (2, 5.6) {Decoder input ($N{+}1$ tokens)};
+          \foreach \i/\type in {0/1, 1/0, 2/1, 3/1, 4/0, 5/1, 6/1, 7/0, 8/1, 9/1} {
+            \pgfmathsetmacro{\xx}{0.4 + \i*0.35}
+            \ifnum\type=0
+              \node[tk, fill=green!25] at (\xx, 5) {};
+            \else
+              \node[tk, fill=violet!25, font=\tiny] at (\xx, 5) {$\scriptscriptstyle[M]$};
+            \fi
+          }
+          \node[font=\scriptsize, text=orange!70!black] at (2, 4.55) {$+\,E_\text{pos}$ (on all tokens)};
+
+          \draw[arr] (2, 4.25) -- (2, 3.85);
+
+          \node[draw, rounded corners, fill=blue!12, minimum width=3.0cm, minimum height=1.0cm, align=center, font=\small] (dec) at (2, 3.3) {Decoder\\\scriptsize 8 blocks, dim 512};
+
+          \draw[arr] (2, 2.75) -- (2, 2.35);
+
+          \node[draw, rounded corners, fill=yellow!20, minimum width=3.0cm, font=\scriptsize] at (2, 2.05) {Linear head (per token)};
+
+          \draw[arr] (2, 1.75) -- (2, 1.35);
+
+          % Predicted patches row
+          \foreach \i in {0,...,9} {
+            \pgfmathsetmacro{\xx}{0.4 + \i*0.35}
+            \node[tk, fill=orange!25, font=\tiny] at (\xx, 1.0) {};
+          }
+          \node[font=\scriptsize] at (2, 0.55) {$\hat{x}_i \in \mathbb{R}^{P^2 C}$};
+
+          \draw[arr, red!60!black] (2, 0.25) -- (2, -0.2);
+          \node[font=\scriptsize, text=red!60!black, align=center] at (2, -0.5) {MSE loss\\(masked only)};
+        \end{tikzpicture}
+      \end{center}
+    \end{column}
+  \end{columns}
+
+  \vspace{0.3em}
+  \textbf{Training loss}: per-patch MSE, computed \textbf{only on masked positions} (visible positions are ignored, like BERT):
+  \[
+    \mathcal{L} = \frac{1}{|\mathcal{M}|} \sum_{i \in \mathcal{M}} \bigl\| \hat{x}_i - \mathrm{norm}(x_i) \bigr\|_2^2
+  \]
+  where $\mathrm{norm}(x_i) = (x_i - \mu_i)/\sigma_i$ uses the patch's \emph{own} mean and std. This per-patch normalization improves representation quality compared to raw-pixel targets.
 \end{frame}
 
 % -----------------------------------------------------------------------
@@ -452,7 +991,6 @@
            & \textbf{Fine-tune} & \textbf{Lin.\ probe} \\
           \midrule
           MAE & \textbf{best} & good \\
-          BEiT & good & good \\
           DINO & good & \textbf{best} \\
           MoCo v3 & good & good \\
           \bottomrule
@@ -463,80 +1001,6 @@
       \textbf{Key}: MAE scales excellently to ViT-H; contrastive methods plateau at larger sizes.
     \end{column}
   \end{columns}
-\end{frame}
-
-% -----------------------------------------------------------------------
-\begin{frame}[fragile]{MAE: Comparison with BEiT}
-
-  \begin{center}
-    \begin{tikzpicture}[
-      scale=0.75, every node/.style={scale=0.75},
-      box/.style={draw, rounded corners, fill=#1, minimum width=2.0cm, minimum height=0.5cm, align=center, font=\small},
-      arr/.style={-Stealth, thick},
-    ]
-      % === MAE (top) ===
-      \node[font=\small\bfseries] at (-5, 3.5) {MAE};
-
-      % Patches (visible only going to encoder)
-      \node[draw, fill=green!20, minimum width=0.5cm, minimum height=0.3cm, font=\tiny] (v1) at (-5.5, 2.5) {};
-      \node[draw, fill=green!20, minimum width=0.5cm, minimum height=0.3cm, font=\tiny] (v2) at (-4.8, 2.5) {};
-      \node[draw, fill=green!20, minimum width=0.5cm, minimum height=0.3cm, font=\tiny] (v3) at (-4.1, 2.5) {};
-      \node[font=\tiny, text=green!50!black] at (-4.8, 2.0) {25\% visible};
-
-      \node[box=red!12, minimum width=2.0cm] (mae_enc) at (-2.0, 2.5) {ViT Encoder};
-      \draw[arr, green!50!black] (-3.6, 2.5) -- (mae_enc);
-      \node[font=\tiny, text=gray, below=0.05cm of mae_enc] {large, 25\% tokens};
-
-      % Insert mask tokens
-      \node[draw, fill=violet!15, minimum width=0.4cm, minimum height=0.3cm, font=\tiny] at (0.3, 2.9) {};
-      \node[draw, fill=violet!15, minimum width=0.4cm, minimum height=0.3cm, font=\tiny] at (0.3, 2.5) {};
-      \node[draw, fill=violet!15, minimum width=0.4cm, minimum height=0.3cm, font=\tiny] at (0.3, 2.1) {};
-      \node[font=\tiny, text=violet, right] at (0.6, 2.5) {mask tokens};
-
-      \node[box=blue!12, minimum width=1.6cm] (mae_dec) at (2.8, 2.5) {Decoder};
-      \draw[arr] (mae_enc) -- (mae_dec);
-      \node[font=\tiny, text=gray, below=0.05cm of mae_dec] {small, 100\% tokens};
-
-      \node[box=orange!12, minimum width=1.6cm, font=\scriptsize] (mae_out) at (5.5, 2.5) {Pixels\\(MSE)};
-      \draw[arr] (mae_dec) -- (mae_out);
-
-      % === BEiT (bottom) ===
-      \node[font=\small\bfseries] at (-5, 0.5) {BEiT};
-
-      % All patches including masks go to encoder
-      \node[draw, fill=green!20, minimum width=0.5cm, minimum height=0.3cm, font=\tiny] at (-5.5, -0.5) {};
-      \node[draw, fill=gray!30, minimum width=0.5cm, minimum height=0.3cm, font=\tiny] at (-4.8, -0.5) {};
-      \node[draw, fill=green!20, minimum width=0.5cm, minimum height=0.3cm, font=\tiny] at (-4.1, -0.5) {};
-      \node[font=\tiny, text=gray] at (-4.8, -1.0) {100\% (with masks)};
-
-      \node[box=red!12, minimum width=2.0cm] (beit_enc) at (-2.0, -0.5) {ViT Encoder};
-      \draw[arr] (-3.6, -0.5) -- (beit_enc);
-      \node[font=\tiny, text=gray, below=0.05cm of beit_enc] {large, 100\% tokens};
-
-      \node[box=orange!12, minimum width=1.6cm, font=\scriptsize] (beit_out) at (1.3, -0.5) {dVAE tokens\\(CE)};
-      \draw[arr] (beit_enc) -- (beit_out);
-
-      % dVAE tokenizer
-      \node[box=yellow!15, minimum width=1.6cm, font=\scriptsize] (dvae) at (1.3, -1.8) {Pre-trained\\dVAE};
-      \draw[arr, dashed, gray] (dvae) -- (beit_out);
-    \end{tikzpicture}
-  \end{center}
-
-  \vspace{0.3em}
-  \begin{center}
-    \small
-    \begin{tabular}{lcccccc}
-      \toprule
-      & \textbf{Encoder input} & \textbf{Target} & \textbf{Ext.\ tokenizer} & \textbf{Mask ratio} & \textbf{Speed} \\
-      \midrule
-      MAE & visible only (25\%) & pixels & No & 75\% & $3\times$+ faster \\
-      BEiT & all (incl.\ masks) & dVAE tokens & Yes & 40\% & slower \\
-      SimMIM & all (incl.\ masks) & pixels & No & 32--60\% & slower \\
-      \bottomrule
-    \end{tabular}
-  \end{center}
-
-  MAE is simpler (no tokenizer), faster (encoder sees fewer tokens), and achieves better fine-tuning accuracy.
 \end{frame}
 
 % =======================================================================

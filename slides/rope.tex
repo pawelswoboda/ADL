@@ -331,37 +331,40 @@
 % -----------------------------------------------------------------------
 \begin{frame}{RoPE: Why Long-Range Decay?}
 
-  The RoPE score between positions $m$ and $n$ is a sum over dimension pairs:
+  Expand $\langle R_m \vq, R_n \vk\rangle$ pair by pair using $\cos(m\theta_i)\cos(n\theta_i) + \sin(m\theta_i)\sin(n\theta_i) = \cos(\Delta\theta_i)$, $\Delta = m-n$:
   \[
-    \text{score}(m,n) = \sum_{i=0}^{d/2-1} \underbrace{a_i}_{\text{content}} \cos(\Delta\,\theta_i) + \underbrace{b_i}_{\text{content}} \sin(\Delta\,\theta_i), \qquad \Delta = m{-}n
+    \text{score}(m,n) = \sum_{i=0}^{d/2-1} a_i \cos(\Delta\,\theta_i) + b_i \sin(\Delta\,\theta_i)
   \]
-  where $a_i, b_i$ depend on $\vq, \vk$ and $\theta_i = \text{base}^{-2i/d}$ spans a huge frequency range.
+  with, on each pair $(2i, 2i{+}1)$,
+  \(
+    a_i = q_{2i}k_{2i} + q_{2i+1}k_{2i+1}
+  \)
+  (unrotated dot product) and
+  \(
+    b_i = q_{2i+1}k_{2i} - q_{2i}k_{2i+1}
+  \)
+  (2D cross-product). Both are \textbf{content-only}; positions enter only through $\theta_i = \text{base}^{-2i/d}$.
 
   \vspace{0.3em}
   \begin{columns}[T]
     \begin{column}{0.55\textwidth}
-      \textbf{At $\Delta = 0$:} All $\cos(0) = 1$, $\sin(0) = 0$.
-      Score equals the unrotated dot product $\vq^\top \vk$. Full signal.
+      \textbf{$\Delta = 0$:} $\cos(0){=}1$, $\sin(0){=}0$ $\Rightarrow$ score $= \vq^\top \vk$ (full signal).
 
       \vspace{0.3em}
-      \textbf{At increasing $|\Delta|$:}
-      Each pair oscillates at its own frequency.
-      The phases spread across the unit circle and \textbf{destructively interfere}:
+      \textbf{Growing $|\Delta|$:} pairs oscillate at different $\theta_i$; phases spread and \textbf{destructively interfere}:
       \begin{itemize}
-        \item Small $|\Delta|$: Only high-freq pairs (small $i$) cancel. Low-freq pairs still coherent. Score slightly reduced.
-        \item Large $|\Delta|$: Nearly all pairs oscillate incoherently. Only the slowest pairs contribute. Score near zero.
+        \item Small $|\Delta|$: high-freq pairs cancel; low-freq still coherent.
+        \item Large $|\Delta|$: nearly all pairs incoherent; score near zero.
       \end{itemize}
 
       \vspace{0.3em}
-      This is the \textbf{Riemann-Lebesgue effect}:
-      a sum of oscillating terms at spread-out frequencies vanishes as the common phase shift grows.
+      \textbf{Riemann-Lebesgue effect:} a sum of oscillators at spread-out frequencies vanishes as the phase shift grows.
     \end{column}
     \begin{column}{0.43\textwidth}
       \centering
-      \textbf{Phasor view} at large $|\Delta|$:
+      {\small\textbf{Phasor view} at large $|\Delta|$:}
 
-      \vspace{0.2em}
-      \begin{tikzpicture}[scale=0.72]
+      \begin{tikzpicture}[scale=0.45]
         % Unit circle
         \draw[gray!30] (0,0) circle(1.8);
         \draw[-{Stealth[length=2pt]}, gray!40] (-2.0,0) -- (2.0,0);
@@ -374,16 +377,14 @@
 
         % Sum vector (small, near origin)
         \draw[-{Stealth[length=3pt]}, black, very thick] (0,0) -- (0.3, 0.15);
-        \node[font=\scriptsize, anchor=west] at (0.35, 0.15) {$\sum$};
+        \node[font=\tiny, anchor=west] at (0.35, 0.15) {$\sum$};
 
-        \node[font=\scriptsize, gray, anchor=north] at (0, -2.2) {Phases spread $\Rightarrow$ sum $\approx 0$};
+        \node[font=\tiny, gray, anchor=north] at (0, -2.0) {Phases spread $\Rightarrow$ sum $\approx 0$};
       \end{tikzpicture}
 
-      \vspace{0.5em}
-      \textbf{At $\Delta = 0$} all phasors point right ($e^{j \cdot 0} = 1$):
+      {\small\textbf{At $\Delta = 0$} all phasors aligned:}
 
-      \vspace{0.2em}
-      \begin{tikzpicture}[scale=0.72]
+      \begin{tikzpicture}[scale=0.45]
         \draw[gray!30] (0,0) circle(1.8);
         \draw[-{Stealth[length=2pt]}, gray!40] (-2.0,0) -- (2.0,0);
         \draw[-{Stealth[length=2pt]}, gray!40] (0,-2.0) -- (0,2.0);
@@ -395,9 +396,9 @@
         }
 
         \draw[-{Stealth[length=3pt]}, black, very thick] (0,0) -- (1.8, 0);
-        \node[font=\scriptsize, anchor=west] at (1.85, 0) {$\sum$};
+        \node[font=\tiny, anchor=west] at (1.85, 0) {$\sum$};
 
-        \node[font=\scriptsize, gray, anchor=north] at (0, -2.2) {All aligned $\Rightarrow$ max score};
+        \node[font=\tiny, gray, anchor=north] at (0, -2.0) {All aligned $\Rightarrow$ max score};
       \end{tikzpicture}
     \end{column}
   \end{columns}
@@ -504,52 +505,144 @@
 % -----------------------------------------------------------------------
 \begin{frame}{NTK-aware Interpolation}
 
-  \textbf{Problem with uniform interpolation:}
-  position scaling $m \to m/s$ affects all frequencies equally,
-  but high-frequency dimensions already resolve fine positions well.
-
-  \vspace{0.5em}
-  \textbf{Idea~\cite{bloc97_2023ntk}:} Scale the RoPE base instead:
-  \[
-    b' = b \cdot s^{\,d/(d-2)}
-  \]
-
-  This changes the frequencies $\theta_i = 1/b'^{\,2i/d}$ non-uniformly:
-  \begin{description}[labelwidth=\widthof{\bfseries High-freq (small $i$):~~}, leftmargin=!]
-    \item[High-freq (small $i$):] barely changed, preserves local resolution
-    \item[Low-freq (large $i$):] significantly stretched, accommodates longer sequences
+  \begin{description}[labelwidth=\widthof{\bfseries head dim $d$:~~}, leftmargin=!, font=\small]
+    \item[scale $s$:] extension ratio $L_{\text{test}}/L_{\text{train}}$.
+    \item[head dim $d$:] $d/2$ rotation pairs $i = 0,\ldots,\tfrac{d}{2}{-}1$ with frequencies $\theta_i = b^{-2i/d}$ and wavelengths $\lambda_i = 2\pi/\theta_i$.
   \end{description}
 
-  \vspace{0.3em}
-  \begin{block}{Intuition}
-    High-frequency components already cycle many times within $L_{\text{train}}$.
-    Stretching them would lose local discriminability. \\
-    Low-frequency components have room to stretch without ambiguity.
-  \end{block}
+  \vspace{0.4em}
+  \begin{columns}[T]
+    \begin{column}{0.40\textwidth}
+      \textbf{NTK-aware~\cite{bloc97_2023ntk}.} Scale the base, not positions:
+      \[
+        b' = b \cdot s^{\,d/(d-2)}.
+      \]
+      The exponent $\tfrac{d}{d-2}$ makes
+      \begin{itemize}
+        \item $\theta_0' = \theta_0$ (high freq kept),
+        \item $\theta_{\tfrac{d}{2}-1}' = \theta_{\tfrac{d}{2}-1}/s$ (low freq fully interpolated).
+      \end{itemize}
 
-  Works reasonably well even \textbf{without fine-tuning} for moderate extensions ($2$--$4\times$).
+      \vspace{0.3em}
+      Wavelengths shorter than $L_{\text{train}}$ stay; longer ones are stretched. Works without fine-tuning for $2$--$4\times$ extensions.
+    \end{column}
+    \begin{column}{0.58\textwidth}
+      \centering
+      \begin{tikzpicture}[scale=0.82,
+          wbar/.style={line width=2.6pt, line cap=round},
+          lbl/.style={font=\tiny},
+        ]
+        % Background regions: train, extension, beyond L_test
+        \fill[green!10]  (0,   -0.1) rectangle (2.4, 4.7);
+        \fill[orange!10] (2.4, -0.1) rectangle (4.8, 4.7);
+        \fill[red!7]     (4.8, -0.1) rectangle (7.6, 4.7);
+
+        % --- bars (drawn before dashed lines so the lines stay visible on top) ---
+        % small i: tiny wavelength, NTK unchanged
+        \draw[wbar, blue!70]         (0, 4.2)  -- (0.18, 4.2);
+        \draw[wbar, orange!80!black] (0, 3.95) -- (0.18, 3.95);
+        \node[lbl, anchor=west] at (0.4, 4.07) {small $i$ (high freq): unchanged};
+
+        % medium-small i
+        \draw[wbar, blue!70]         (0, 3.1)  -- (1.0, 3.1);
+        \draw[wbar, orange!80!black] (0, 2.85) -- (1.3, 2.85);
+
+        % medium i: near L_train, NTK crosses L_train
+        \draw[wbar, blue!70]         (0, 2.0)  -- (2.0, 2.0);
+        \draw[wbar, orange!80!black] (0, 1.75) -- (3.5, 1.75);
+
+        % large i: long wavelength, heavy stretch
+        \draw[wbar, blue!70]         (0, 0.85) -- (3.2, 0.85);
+        \draw[wbar, orange!80!black] (0, 0.55) -- (6.6, 0.55);
+        \node[lbl, anchor=west, orange!80!black] at (6.7, 0.55) {$\approx s\,\lambda_i$};
+        \node[lbl, anchor=west] at (0.05, 0.25) {large $i$ (low freq): stretched};
+
+        % Boundary markers (on top of bars)
+        \draw[green!50!black, thick, densely dashed] (2.4, -0.1) -- (2.4, 4.7);
+        \draw[red!50!black,   thick, densely dashed] (4.8, -0.1) -- (4.8, 4.7);
+        \node[lbl, green!50!black, anchor=south] at (2.4, 4.7) {$L_{\text{train}}$};
+        \node[lbl, red!50!black,   anchor=south] at (4.8, 4.7) {$L_{\text{test}}$};
+
+        % Position axis (drawn last so it sits above fills)
+        \draw[gray!60, -{Stealth[length=2.5pt]}] (-0.05, -0.1) -- (7.7, -0.1)
+          node[right, lbl, gray] {position};
+
+        % Side label
+        \node[lbl, gray, rotate=90] at (-0.4, 2.5) {wavelength $\lambda_i$};
+
+        % Legend
+        \draw[wbar, blue!70]         (0.0, -0.75) -- (0.3, -0.75);
+        \node[lbl, anchor=west] at (0.35, -0.75) {original $\lambda_i$};
+        \draw[wbar, orange!80!black] (2.0, -0.75) -- (2.3, -0.75);
+        \node[lbl, anchor=west] at (2.35, -0.75) {NTK $\lambda_i'$};
+      \end{tikzpicture}
+    \end{column}
+  \end{columns}
 
 \end{frame}
 
 % -----------------------------------------------------------------------
 \begin{frame}{YaRN: Yet another RoPE extensioN~\cite{peng2023yarn}}
 
-  YaRN combines three ideas for robust context extension:
+  YaRN combines three ideas for robust context extension.
 
-  \vspace{0.5em}
-  \textbf{1. Frequency-dependent interpolation} \\[0.3em]
-  Partition dimension pairs into three groups based on wavelength $\lambda_i = 2\pi b^{2i/d}$:
-  \begin{description}[labelwidth=\widthof{\bfseries Interpolation:~~}, leftmargin=!]
-    \item[No scaling:] $\lambda_i < L_{\text{train}}$ (high-freq). These already complete full cycles. Leave unchanged.
-    \item[Interpolation:] $\lambda_i > L_{\text{test}}$ (low-freq). Apply full linear interpolation: $\theta_i \to \theta_i / s$.
-    \item[NTK blend:] In between. Smoothly interpolate between no scaling and full interpolation using a ramp function $\gamma(\lambda_i) \in [0, 1]$.
-  \end{description}
+  \vspace{0.4em}
+  \textbf{1. Frequency-dependent interpolation.}
+  Let $r_i = L_{\text{train}}/\lambda_i$ be the number of full rotations of dim pair $i$ within the training context.
 
   \vspace{0.3em}
-  Effective frequency for each pair:
-  \[
-    \theta_i' = \bigl(1 - \gamma(\lambda_i)\bigr)\,\frac{\theta_i}{s} + \gamma(\lambda_i)\,\theta_i
-  \]
+  \begin{columns}[T]
+    \begin{column}{0.48\textwidth}
+      \begin{description}[labelwidth=\widthof{\bfseries Interp.:~~}, leftmargin=!, font=\small]
+        \item[Keep:] $r_i \ge \beta$ (high-freq, many cycles in $L_{\text{train}}$) -- $\theta_i$ unchanged.
+        \item[Interp.:] $r_i \le \alpha$ (low-freq, $<\!1$ full cycle) -- $\theta_i \to \theta_i/s$.
+        \item[Blend:] $\alpha < r_i < \beta$ -- linear ramp $\gamma(r_i)$.
+      \end{description}
+
+      \vspace{0.3em}
+      \[
+        \theta_i' = \bigl(1 - \gamma(r_i)\bigr)\,\frac{\theta_i}{s} + \gamma(r_i)\,\theta_i
+      \]
+
+      \vspace{0.2em}
+      LLaMA defaults: $\alpha = 1$, $\beta = 32$.
+    \end{column}
+    \begin{column}{0.48\textwidth}
+      \centering
+      \begin{tikzpicture}[scale=0.9]
+        % Background regions
+        \fill[orange!10] (0,   0) rectangle (0.8, 1.9);
+        \fill[gray!10]   (0.8, 0) rectangle (3.5, 1.9);
+        \fill[blue!10]   (3.5, 0) rectangle (4.4, 1.9);
+
+        % Region labels above plot
+        \node[font=\tiny, orange!70!black] at (0.4, 2.10) {full interp.};
+        \node[font=\tiny, gray!50!black]   at (2.15, 2.10) {blend};
+        \node[font=\tiny, blue!50!black]   at (3.95, 2.10) {keep};
+
+        % Axes
+        \draw[gray!60, -{Stealth[length=3pt]}] (-0.05, 0) -- (4.7, 0)
+          node[right, font=\tiny, gray] {$r_i$};
+        \draw[gray!60, -{Stealth[length=3pt]}] (0, -0.05) -- (0, 2.5)
+          node[above, font=\tiny, gray] {$\gamma(r_i)$};
+
+        % Marks at α and β
+        \draw[gray!50, densely dashed] (0.8, 0) -- (0.8, 1.7);
+        \draw[gray!50, densely dashed] (3.5, 0) -- (3.5, 1.7);
+        \node[font=\tiny, anchor=north] at (0.8, -0.02) {$\alpha$};
+        \node[font=\tiny, anchor=north] at (3.5, -0.02) {$\beta$};
+
+        % Horizontal reference at 1
+        \draw[gray!40, densely dashed] (0, 1.7) -- (3.5, 1.7);
+        \node[font=\tiny, gray, anchor=east] at (-0.05, 1.7) {$1$};
+        \node[font=\tiny, gray, anchor=east] at (-0.05, 0) {$0$};
+
+        % Ramp curve (drawn on top)
+        \draw[blue!70!black, very thick]
+          (0, 0) -- (0.8, 0) -- (3.5, 1.7) -- (4.4, 1.7);
+      \end{tikzpicture}
+    \end{column}
+  \end{columns}
 
 \end{frame}
 
@@ -557,7 +650,7 @@
 \begin{frame}{YaRN: Attention Scaling and Fine-Tuning}
 
   \textbf{2. Attention scaling} \\[0.3em]
-  Interpolation compresses the angle differences, reducing attention logit magnitudes.
+  Interpolation compresses the angle differences, increasing attention logit magnitudes.
 
   \vspace{0.3em}
   YaRN compensates with a temperature factor:
