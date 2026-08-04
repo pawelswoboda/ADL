@@ -614,15 +614,18 @@
       \textbf{Algorithm overview:}
       \begin{enumerate}
         \item Compute gradient $G_t = \nabla_W L$
-        \item Accumulate with \textbf{Nesterov momentum}:
+        \item Accumulate momentum (EMA) with a \textbf{Nesterov} look-ahead:
         \[
-          M_t = \beta \cdot M_{t-1} + G_t
+          \begin{aligned}
+            M_t &= \beta M_{t-1} + (1{-}\beta) G_t,\\
+            \tilde{M}_t &= (1{-}\beta) G_t + \beta M_t
+          \end{aligned}
         \]
-        \item \textbf{Orthogonalize} the momentum via Newton-Schulz iteration:
+        \item \textbf{Orthogonalize} via Newton-Schulz iteration:
         \[
-          U_t = \text{NS}_5(M_t) \approx \text{Ortho}(M_t)
+          O_t = \text{NS}_5(\tilde{M}_t) \approx \text{Ortho}(\tilde{M}_t)
         \]
-        \item Update: $W_t = W_{t-1} - \eta \cdot U_t$
+        \item Update: $W_t = W_{t-1} - \eta \cdot O_t$
       \end{enumerate}
 
       \vspace{0.3em}
@@ -1014,6 +1017,73 @@
 \end{frame}
 
 % -----------------------------------------------------------------------
+\begin{frame}{Nesterov Momentum: Looking Ahead}
+
+  Muon orthogonalizes the \emph{momentum buffer}, so only its \textbf{direction} matters; \textbf{Nesterov} momentum keeps that direction responsive.
+
+  \vspace{0.2em}
+  \begin{columns}[T]
+    \begin{column}{0.55\textwidth}
+      \textbf{Momentum} (EMA of the gradient)
+      \[
+        M_t = \beta M_{t-1} + (1{-}\beta) G_t, \qquad W_t = W_{t-1} - \eta\,M_t
+      \]
+      A trailing average $\Rightarrow$ reacts to gradient changes with a lag.
+
+      \vspace{0.2em}
+      \textbf{Nesterov idea:} momentum will reach the \emph{look-ahead} point $W_{t-1} - \eta\beta M_{t-1}$ anyway; use the gradient \emph{there}. Equivalent buffer form, no extra gradient eval.~\cite{sutskever2013momentum}:
+      \[
+        M_t = \beta M_{t-1} + (1{-}\beta) G_t, \qquad
+        \tilde{M}_t = (1{-}\beta) G_t + \beta M_t.
+      \]
+
+      \vspace{0.2em}
+      \textbf{Where is the look-ahead?} $\tilde{M}_t = M_t + \beta(M_t - M_{t-1})$: the plain step plus an \textbf{extrapolation} $\beta(M_t{-}M_{t-1})$.
+    \end{column}
+    \begin{column}{0.42\textwidth}
+      \begin{center}
+        \begin{tikzpicture}[scale=0.7, >=stealth, font=\scriptsize]
+          % contours around optimum
+          \begin{scope}
+            \clip (-1.0,-2.7) rectangle (3.7,1.0);
+            \foreach \r in {0.6,1.1,1.6,2.1,2.6}{
+              \draw[gray!40,thin] (2.9,-1.7) ellipse ({\r*1.15} and {\r*0.85});
+            }
+          \end{scope}
+          \fill[black] (2.9,-1.7) circle (1.3pt);
+          \node[anchor=west,font=\tiny,gray] at (3.0,-1.7) {$W^*$};
+
+          % current point
+          \fill[black] (0,0) circle (1.7pt);
+          \node[anchor=south east,font=\tiny] at (0.05,0.02) {$W_{t-1}$};
+
+          % momentum jump to look-ahead
+          \draw[->,very thick,brown!70!black] (0,0) -- (2.0,-0.5);
+          \node[brown!70!black,anchor=south,font=\tiny] at (1.0,-0.18) {$\beta M_{t-1}$};
+          \fill[black] (2.0,-0.5) circle (1.3pt);
+          \node[anchor=south west,font=\tiny] at (2.05,-0.48) {look-ahead};
+
+          % descent gradient at look-ahead (solid) -> toward optimum
+          \draw[->,thick,red!70!black] (2.0,-0.5) -- (2.5,-1.65);
+          \node[red!70!black,anchor=west,font=\tiny] at (2.5,-1.2) {$-G$ here};
+
+          % descent gradient at current point (dashed) -> steeper, off-target
+          \draw[->,thick,red!55!black,dashed] (0,0) -- (0.35,-1.3);
+          \node[red!55!black,anchor=east,font=\tiny] at (-0.02,-1.0) {$-G$ at $W_{t-1}$};
+
+          % resulting Nesterov step
+          \draw[->,ultra thick,green!55!black] (0,0) -- (2.5,-1.65);
+          \node[green!55!black,anchor=north west,font=\tiny] at (1.05,-0.95) {Nesterov step};
+        \end{tikzpicture}
+      \end{center}
+    \end{column}
+  \end{columns}
+
+  \vspace{0.1em}
+  {\footnotesize \textbf{Asides.} (i) The heavy-ball form ($G_t$ weight $1$, not $1{-}\beta$; original Muon) only rescales the buffer by a constant NS divides out ($X/\|X\|_F$) $\Rightarrow$ same $O_t$. (ii) Only $M_t$ is stored ($\tilde{M}_t$ transient): one matrix/param, half of Adam.}
+\end{frame}
+
+% -----------------------------------------------------------------------
 \begin{frame}{Full Muon Algorithm}
 
   \begin{columns}[T]
@@ -1025,13 +1095,10 @@
         Initialize $M_0 = 0$ for each 2D param $W$\;
         \For{$t = 1, 2, \ldots$}{
           $G_t \gets \nabla_W L(W_{t-1})$\;
-          \tcp{Nesterov momentum}
-          $M_t \gets \beta \cdot M_{t-1} + G_t$\;
-          $\tilde{M}_t \gets \beta \cdot M_t + G_t$\;
-          \tcp{Orthogonalize via NS}
-          $U_t \gets \text{NewtonSchulz}_T(\tilde{M}_t)$\;
-          \tcp{Update weights}
-          $W_t \gets W_{t-1} - \eta \cdot U_t$\;
+          $M_t \gets \beta M_{t-1} + (1{-}\beta) G_t$\tcp*{momentum buffer (stored)}
+          $\tilde{M}_t \gets (1{-}\beta) G_t + \beta M_t$\tcp*{Nesterov look-ahead (transient)}
+          $O_t \gets \text{NewtonSchulz}_T(\tilde{M}_t)$\tcp*{orthogonalize}
+          $W_t \gets W_{t-1} - \eta\, O_t$\tcp*{update weights}
         }
       \end{algorithm}
 
@@ -1053,8 +1120,8 @@
           \node[box, fill=slide_beige!50] (grad) at (0, 0) {Gradient $G_t$};
           \node[box, fill=slide_blue!50] (mom) at (0, -1.5) {Nesterov\\Momentum $\tilde{M}_t$};
           \node[box, fill=slide_green!70] (ns) at (0, -3.0) {Newton-Schulz\\$\text{NS}_5(\tilde{M}_t)$};
-          \node[box, fill=green!30] (ortho) at (0, -4.5) {Orthogonal\\Update $U_t$};
-          \node[box, fill=gray!15] (update) at (0, -6.0) {$W_t = W_{t-1} - \eta U_t$};
+          \node[box, fill=green!30] (ortho) at (0, -4.5) {Orthogonal\\Update $O_t$};
+          \node[box, fill=gray!15] (update) at (0, -6.0) {$W_t = W_{t-1} - \eta O_t$};
 
           \draw[arr] (grad) -- (mom);
           \draw[arr] (mom) -- (ns);
@@ -1063,7 +1130,7 @@
 
           % Side annotations
           \node[font=\tiny, gray, anchor=west, align=left] at (1.8, -1.5) {smooths gradient\\over time};
-          \node[font=\tiny, gray, anchor=west, align=left] at (1.8, -3.0) {5 mat-muls\\in bfloat16};
+          \node[font=\tiny, gray, anchor=west, align=left] at (1.8, -3.0) {3 mat-muls\\in bfloat16};
           \node[font=\tiny, gray, anchor=west, align=left] at (1.8, -4.5) {all $\sigma_i = 1$};
         \end{tikzpicture}
       \end{center}

@@ -90,7 +90,6 @@
       \begin{itemize}
         \item Ignores the rejected response entirely
         \item Does not learn \emph{what to avoid}
-        \item May copy surface patterns of A without understanding \emph{why} it was preferred
       \end{itemize}
     \end{column}
   \end{columns}
@@ -179,6 +178,8 @@
 
 % -----------------------------------------------------------------------
 \begin{frame}{RL for Reasoning: Emergent Chain-of-Thought}
+  \emphdef{Chain-of-thought (CoT)}: the model writes intermediate reasoning steps before its final answer,
+  spending more \emphdef{test-time compute} to break a hard problem into easier sub-steps.
   \begin{center}
     \begin{tikzpicture}[
       scale=0.78, every node/.style={scale=0.78},
@@ -218,9 +219,9 @@
 
   \vspace{-0.2em}
   \begin{itemize}[nosep]
-    \item The verifier only checks the \emphdef{final answer}. It does not supervise the reasoning trace
-    \item The model \emphdef{discovers on its own} that reasoning leads to correct answers
-    \item No human-written chain-of-thought labels needed
+    \item The verifier only checks the \emphdef{final answer}, giving no signal on the reasoning steps
+    \item Traces that reason are correct more often, so their tokens get reinforced. The model \emphdef{discovers on its own} that reasoning pays off
+    \item No human-written CoT labels needed. Longer traces emerge purely from maximizing verifiable reward
   \end{itemize}
 \end{frame}
 
@@ -389,6 +390,11 @@
     \item Attending a full RL course is advised
     \item We will distill a big field into a short excursion
     \item Wonderful theory and intricate algorithms; we scratch the surface
+    \item Recommended resources:
+      \begin{itemize}
+        \item Sutton \& Barto, \emph{Reinforcement Learning: An Introduction}, 2nd ed.~\cite{sutton2018rl}
+        \item David Silver's RL lecture series~\cite{silver2015rl}
+      \end{itemize}
   \end{itemize}
 \end{frame}
 
@@ -535,11 +541,11 @@
       \draw[-{Stealth[length=4pt]}, thick, green!50!black] (t7.east) -- (rew.west);
 
       % States: braces below spanning from prompt start to current token
-      \draw[bracebelow, thick, blue!60] (t0.south west) ++(0,-0.1) -- ++(1.0,0)
+      \draw[bracebelow, thick, blue!60] (t0.south west) ++(0,-0.1) -- ++(4.3,0)
         node[midway, below=6pt, font=\scriptsize, text=blue!60] {$s_0$};
-      \draw[bracebelow, thick, blue!60] (t0.south west) ++(0,-0.55) -- ++(5.25,0)
+      \draw[bracebelow, thick, blue!60] (t0.south west) ++(0,-0.55) -- ++(5.7,0)
         node[midway, below=6pt, font=\scriptsize, text=blue!60] {$s_1$};
-      \draw[bracebelow, thick, blue!60] (t0.south west) ++(0,-1.0) -- ++(6.35,0)
+      \draw[bracebelow, thick, blue!60] (t0.south west) ++(0,-1.0) -- ++(6.8,0)
         node[midway, below=6pt, font=\scriptsize, text=blue!60] {$s_2$};
 
       % Actions: braces above for each generated token
@@ -706,6 +712,15 @@
 
 % -----------------------------------------------------------------------
 \begin{frame}{Policy Gradient Theorem: Derivation}
+  \begin{theorem}[Policy Gradient]
+    For $J(\theta) = \E_{\tau \sim \pi_\theta}[R(\tau)]$,
+    \[
+      \nabla_\theta J(\theta) = \E_{\tau \sim \pi_\theta}\!\left[\nabla_\theta \log P(\tau \mid \theta) \, R(\tau)\right].
+    \]
+  \end{theorem}
+
+  \vspace{0.3em}
+  \textbf{Proof:}
   \begin{align*}
     \nabla_\theta J(\theta) &= \nabla_\theta \E_{\tau \sim \pi_\theta}[R(\tau)] \\
     &= \nabla_\theta \int P(\tau \mid \theta) \, R(\tau) \, d\tau && \text{expand expectation} \\
@@ -722,7 +737,14 @@
 
 % -----------------------------------------------------------------------
 \begin{frame}{Policy Gradient Theorem: Final Form}
-  Expanding $\log P(\tau \mid \theta) = \log \rho_0(s_0) + \sum_{t} \log P(s_{t+1} \mid s_t, a_t) + \sum_{t} \log \pi_\theta(a_t \mid s_t)$
+  The trajectory probability factorizes into initial state, transitions, and actions:
+  \[
+    P(\tau \mid \theta) = \rho_0(s_0) \prod_{t} P(s_{t+1} \mid s_t, a_t) \, \pi_\theta(a_t \mid s_t)
+  \]
+  Taking the log turns the product into a sum:
+  \[
+    \log P(\tau \mid \theta) = \log \rho_0(s_0) + \sum_{t} \log P(s_{t+1} \mid s_t, a_t) + \sum_{t} \log \pi_\theta(a_t \mid s_t)
+  \]
 
   \vspace{0.3em}
   Only $\log \pi_\theta$ depends on $\theta$, so environment terms vanish under $\nabla_\theta$:
@@ -739,25 +761,29 @@
 \end{frame}
 
 % -----------------------------------------------------------------------
-\begin{frame}{Policy Gradient Intuition}
-  \begin{center}
-    \includegraphics[width=0.85\textwidth]{images/rl_meme.png}
-  \end{center}
-\end{frame}
-
-% -----------------------------------------------------------------------
 \begin{frame}{REINFORCE Algorithm}
   \begin{algorithm}[H]
   \small
   \caption{REINFORCE}
-  \KwInput{Policy network $\pi_\theta$, reward model $R$, learning rate $\alpha$, prompt dataset $\mathcal{P}$}
+  \KwInput{Policy $\pi_\theta$ (the LLM), reward model $R$, prompt dataset $\mathcal{P}$, batch size $B$, learning rate $\alpha$}
   Initialize policy parameters $\theta$\;
   \For{$k = 0$ \KwTo $K-1$}{
-    \textbf{Sample trajectories:} For each prompt $x \in \mathcal{P}$, generate response $y \sim \pi_\theta(\cdot \mid x)$\;
-    \textbf{Compute rewards:} $R(\tau_i)$ for each trajectory $\tau_i$ using reward model\;
+    \tcp{one on-policy update: rollouts use current $\theta$}
+    Sample a minibatch of prompts $\{x^{(i)}\}_{i=1}^{B} \sim \mathcal{P}$\;
+    \For{$i = 1$ \KwTo $B$}{
+      \tcp{autoregressive rollout of the response}
+      $s_0 \leftarrow x^{(i)}$\;
+      \For{$t = 0, 1, 2, \dots$}{
+        $a_t \sim \pi_\theta(\cdot \mid s_t)$ \tcp*{sample next token}
+        $s_{t+1} \leftarrow s_t \oplus a_t$ \tcp*{append token to context}
+        \lIf{$a_t = \texttt{[EOS]}$ \textbf{or} $t = T_{\max}$}{\textbf{break}}
+      }
+      $\tau_i \leftarrow (x^{(i)}, a_0, a_1, \dots, a_{T_i-1})$\;
+      $R(\tau_i) \leftarrow$ score of full response with reward model / verifier\;
+    }
     \textbf{Estimate policy gradient:}\;
     \Indp
-      $\hat{g} = \frac{1}{|D|} \sum_{\tau \in D} \sum_{t=0}^{T} \nabla_\theta \log \pi_\theta(a_t \mid s_t) \, R(\tau)$\;
+      $\hat{g} = \frac{1}{B} \sum_{i=1}^{B} \sum_{t=0}^{T_i-1} \nabla_\theta \log \pi_\theta(a_t \mid s_t) \, R(\tau_i)$\;
     \Indm
     \textbf{Update:} $\theta \leftarrow \theta + \alpha \, \hat{g}$\;
   }
@@ -765,9 +791,20 @@
 
   \vspace{0.3em}
   \begin{description}[nosep]
-    \item[Trajectories:] Generate text with LLM. Prompts are questions/user requests.
-    \item[Rewards:] Given by trained reward model (or verifier).
+    \item[Outer loop $k$:] Each iteration is one gradient step on $\theta$. Rollouts are \emphdef{on-policy}: regenerated from the current $\pi_\theta$ every iteration, then discarded.
+    \item[State / action:] $s_t = $ prompt $+$ tokens generated so far; action $a_t = $ next token. Continuing a trajectory $=$ autoregressive decoding.
+    \item[Reward:] One scalar $R(\tau_i)$ per finished response (reward model or verifier); every token in the response shares it.
   \end{description}
+\end{frame}
+
+% -----------------------------------------------------------------------
+\begin{frame}{REINFORCE: Problems in Practice}
+  \begin{itemize}[nosep]
+    \item \emphdef{High variance:} the gradient estimator has large variance, so it needs many samples to converge.
+    \item \emphdef{No baseline:} uses absolute rewards rather than relative performance, wasting information about which actions are better than average.
+    \item \emphdef{Sample inefficiency:} strictly on-policy, each rollout is used for a single update then discarded.
+    \item \emphdef{Instability:} large, noisy steps can collapse the policy; no mechanism limits how far $\theta$ moves per update.
+  \end{itemize}
 \end{frame}
 
 
@@ -775,49 +812,142 @@
 
 % -----------------------------------------------------------------------
 \begin{frame}{Why REINFORCE Has High Variance}
-  \begin{columns}
-    \begin{column}{0.45\textwidth}
-      \begin{center}
-        \gridworld{0.52}
-      \end{center}
-    \end{column}
-    \begin{column}{0.53\textwidth}
-      \textbf{$\tau_1$} (green): 12 steps to goal, $R = 88$
-      \begin{itemize}[nosep]
-        \item REINFORCE: all 12 actions get gradient $\times\, 88$
-        \item But step 1 ($\downarrow$) was trivial, step 7 ($\rightarrow$ turning toward goal) was the key decision
-      \end{itemize}
+  \begin{itemize}[nosep]
+    \item Each rollout: unbiased estimate $g_i = R_i\,\nabla_\theta\log\pi_\theta(a_i\mid s)$, $\E[g_i] = \nabla_\theta J$.
+    \item Sample estimates (grey) scatter around the true gradient (red); their \emph{average is the red arrow} in both panels.
+    \item Wider scatter $\Rightarrow$ more rollouts needed to average out the noise.
+  \end{itemize}
+  \begin{center}
+  \begin{tikzpicture}[
+      scale=0.46, every node/.style={scale=0.46},
+      samplearr/.style={-{Stealth[length=4pt]}, gray!55, line width=0.6pt},
+      truearr/.style={-{Stealth[length=8pt]}, red!80!black, line width=1.8pt},
+    ]
+    % Mean (true gradient) tip: length 3.0 at 72 degrees (points up), identical in both panels.
+    \coordinate (O)  at (0,0);
+    \coordinate (M)  at (72:3.0);
+    \coordinate (O2) at (11,0);
+    \coordinate (M2) at ($(11,0)+(72:3.0)$);
 
-      \vspace{0.3em}
-      \textbf{$\tau_2$} (red): 6 steps into trap, $R = -10$
-      \begin{itemize}[nosep]
-        \item All 6 actions get gradient $\times\, (-10)$
-        \item Only the last step ($\downarrow$ into trap) was bad
-      \end{itemize}
+    % Samples drawn as symmetric +/- noise pairs about the mean tip:
+    % for every base direction (a:r) we draw a tip at M+(a:r) AND at M+(a+180:r),
+    % so the two cancel and the average of all tips is EXACTLY M (the red arrow).
+    % LEFT PANEL: high variance -- large noise radii
+    \foreach \a/\r in {10/1.5, 45/1.25, 80/1.55, 120/1.15, 155/1.4, 205/1.0, 250/1.45} {
+      \draw[samplearr] (O) -- ($(M)+(\a:\r)$);
+      \draw[samplearr] (O) -- ($(M)+(\a+180:\r)$);
+    }
+    \draw[truearr] (O) -- (M);
+    \fill[black] (O) circle (2.2pt);
 
-      \vspace{0.3em}
-      \textbf{Problem:}
-      \begin{itemize}[nosep]
-        \item Same start, two rollouts $\Rightarrow$ gradients differ by factor $\approx -9\times$
-        \item Good/bad actions credited equally
-        \item Gradient estimate is \emphdef{unbiased but very noisy}
-      \end{itemize}
-    \end{column}
-  \end{columns}
+    % RIGHT PANEL: low variance -- small noise radii (same directions, ~1/3 the spread)
+    \foreach \a/\r in {10/0.5, 45/0.42, 80/0.52, 120/0.38, 155/0.47, 205/0.34, 250/0.5} {
+      \draw[samplearr] (O2) -- ($(M2)+(\a:\r)$);
+      \draw[samplearr] (O2) -- ($(M2)+(\a+180:\r)$);
+    }
+    \draw[truearr] (O2) -- (M2);
+    \fill[black] (O2) circle (2.2pt);
+
+    % titles
+    \node[align=center] at (0,5.0)  {\textbf{High variance}};
+    \node[align=center] at (11,5.0) {\textbf{Low variance}};
+
+    % captions
+    \node[align=center, gray!50!black] at (0,-1.3)  {\footnotesize same mean, wide scatter\\[-2pt]$\Rightarrow$ noisy average};
+    \node[align=center, gray!50!black] at (11,-1.3) {\footnotesize same mean, tight scatter\\[-2pt]$\Rightarrow$ stable average};
+
+    % theta labels
+    \node[below left=-2pt] at (O)  {$\theta$};
+    \node[below left=-2pt] at (O2) {$\theta$};
+
+    % legend for true gradient
+    \draw[truearr] (2.8,-0.6) -- ++(0:0.9);
+    \node[anchor=west, red!80!black] at (3.8,-0.6) {\footnotesize true gradient $\E[g]=\nabla_\theta J$ (same in both)};
+  \end{tikzpicture}
+  \end{center}
+
+  \begin{itemize}[nosep]
+    \item Both are unbiased: only the \emph{spread} of the estimator differs, not what it converges to.
+    \item Next: what exactly drives that spread, and how to shrink it without touching the mean.
+  \end{itemize}
+\end{frame}
+
+% -----------------------------------------------------------------------
+\begin{frame}{What Drives the Variance? Magnitude, Not Spread of $R$}
+  Write the score $s = \nabla_\theta\log\pi_\theta(a\mid s)$, so a single-sample gradient is $g = R\,s$. The score is zero-mean,
+  \[
+    \E[s]=\sum_a \pi_\theta\,\tfrac{\nabla_\theta\pi_\theta}{\pi_\theta}=\nabla_\theta\sum_a\pi_\theta=\nabla_\theta 1 = 0,
+    \qquad\text{so}\qquad
+    \mathrm{Var}(g) = \E[R^2 s^2] - \underbrace{(\E[R\,s])^2}_{=\,(\nabla_\theta J)^2}.
+  \]
+  \begin{itemize}[nosep]
+    \item Noise is governed by the \emph{raw second moment} $\E[R^2 s^2]$: the reward \emph{magnitude} $R$, weighted by $s^2\ge 0$, drives the spread, not how much $R$ fluctuates about its own mean.
+    \item \textbf{Shift test.} Offset $R\to R+c$. The mean is untouched, $\E[(R+c)s]=\E[Rs]+c\,\E[s]=\E[Rs]$, so the optimum is unchanged, yet
+      \[
+        \E[(R+c)^2 s^2] = \E[R^2 s^2] + 2c\,\E[R s^2] + c^2\,\E[s^2]
+      \]
+      grows quadratically in $c$: pure offset, more noise, same solution.
+    \item So $\mathrm{Var}(R)$ (shift-invariant) is \emph{not} the culprit. Large all-positive returns (big $\E[R^2]$, small $\mathrm{Var}(R)$) are the worst case, e.g.\ every rollout gets reward $\approx +100$.
+  \end{itemize}
+
+  \vspace{0.4em}
+  \textbf{Two ways to shrink $\E[R^2 s^2]$ while keeping the mean.} Both leave $\nabla_\theta J$ unchanged (each removed piece has zero expectation against $s$):
+  \begin{description}[nosep,leftmargin=!,labelwidth=\widthof{\textbf{Baseline}}]
+    \item[\textbf{Reward-to-go}] drop reward earned \emph{before} an action: it is uncorrelated with that action's score, so it only adds noise.
+    \item[\textbf{Baseline}] subtract a reference level $b(s)$: recenter $R$ so its second moment collapses toward its \emph{variance}, killing the offset term above.
+  \end{description}
 \end{frame}
 
 % -----------------------------------------------------------------------
 \begin{frame}{REINFORCE Gradient: Reducing Variance}
-  \vspace{0.3em}
+  \vspace{0.2em}
   \textbf{Fix 1: Reward-to-go.} Only credit future rewards, not past ones:
   \[
     \nabla_\theta J(\theta) = \frac{1}{|D|} \sum_{\tau \in D} \sum_{t=1}^{T} \nabla_\theta \log \pi_\theta(a_t \mid s_t) \underbrace{\left(\sum_{t'=t}^{T} r(s_{t'}, a_{t'})\right)}_{\text{reward-to-go}}
   \]
-  \textbf{Why valid?} Past rewards $r_{t'}$ for $t' < t$ are independent of $a_t$:
-  \[
-    \E_{a_t}\!\left[\nabla_\theta \log \pi_\theta(a_t \mid s_t) \, r_{t'}\right]
-    = r_{t'} \underbrace{\sum_{a_t} \nabla_\theta \pi_\theta(a_t \mid s_t)}_{= \nabla_\theta 1 = 0} = 0 \quad \text{for } t' < t
-  \]
+
+  \begin{center}
+  \begin{tikzpicture}[
+    scale=0.9, every node/.style={scale=0.9},
+    act/.style={rectangle, draw, rounded corners, minimum width=0.85cm, minimum height=0.55cm, font=\scriptsize},
+    rew/.style={font=\scriptsize},
+  ]
+    % action boxes on a timeline
+    \foreach \i in {1,...,6} {
+      \node[act, fill=gray!8] (a\i) at (\i*1.35, 0) {$a_{\i}$};
+      \node[rew] (r\i) at (\i*1.35, -0.85) {$r_{\i}$};
+      \draw[gray!40, thin] (a\i.south) -- (r\i.north);
+    }
+    % highlight chosen action a_3
+    \node[act, draw=slide_violet, thick, fill=slide_violet!12] at (3*1.35, 0) {$a_{3}$};
+
+    % past rewards greyed / crossed
+    \foreach \i in {1,2} {
+      \node[rew, text=gray!55] at (\i*1.35, -0.85) {$r_{\i}$};
+      \draw[gray!55] (\i*1.35-0.22,-0.72) -- (\i*1.35+0.22,-0.98);
+    }
+    \draw[decorate, decoration={brace, amplitude=4pt, mirror}, gray!60]
+      (0.85, -1.25) -- (2.85, -1.25);
+    \node[font=\tiny, text=gray!60, align=center] at (1.85, -1.85)
+      {fixed before $a_3$\\$\Rightarrow$ zero-mean, drop};
+
+    % reward-to-go brace over r_3..r_6
+    \draw[decorate, decoration={brace, amplitude=5pt}, slide_violet, thick]
+      (3*1.35-0.5, 0.55) -- (6*1.35+0.5, 0.55);
+    \node[font=\tiny, text=slide_violet, align=center] at (4.5*1.35, 1.05)
+      {reward-to-go $\sum_{t'\ge 3} r_{t'}$ credited to $a_3$};
+  \end{tikzpicture}
+  \end{center}
+
+  \vspace{-0.2em}
+  \textbf{Why valid?} A past reward $r_{t'}$ ($t' < t$) is already determined before $a_t$ is chosen, so it is constant w.r.t.\ the expectation over $a_t$ and factors out:
+  \begin{align*}
+    \E_{a_t \sim \pi_\theta}\!\left[\nabla_\theta \log \pi_\theta(a_t \mid s_t) \, r_{t'}\right]
+    &= r_{t'} \sum_{a_t} \pi_\theta(a_t \mid s_t) \, \frac{\nabla_\theta \pi_\theta(a_t \mid s_t)}{\pi_\theta(a_t \mid s_t)}
+    && \text{(log-derivative trick)} \\
+    &= r_{t'} \sum_{a_t} \nabla_\theta \pi_\theta(a_t \mid s_t)
+    = r_{t'} \, \nabla_\theta \underbrace{\sum_{a_t} \pi_\theta(a_t \mid s_t)}_{= 1} = 0
+  \end{align*}
   Past terms vanish in expectation $\Rightarrow$ removing them preserves unbiasedness but reduces variance.
 
 \end{frame}
@@ -829,6 +959,44 @@
     \nabla_\theta J(\theta) = \frac{1}{|D|} \sum_{\tau \in D} \sum_{t=1}^{T} \nabla_\theta \log \pi_\theta(a_t \mid s_t) \left(\sum_{t'=t}^{T} r(s_{t'}, a_{t'}) - b(s_t)\right)
   \]
 
+  \begin{center}
+  \begin{tikzpicture}[scale=0.9, every node/.style={scale=0.9}]
+    % ----- LEFT: without baseline -----
+    \begin{scope}
+      \draw[gray, thin] (-0.3,0) -- (3.3,0);
+      \foreach \h/\i in {2.4/1, 1.7/2, 2.9/3, 2.1/4} {
+        \fill[vir3!70] (\i*0.7-0.22, 0) rectangle (\i*0.7+0.22, \h);
+      }
+      \draw[dashed, red!70!black] (0.3, 2.275) -- (3.1, 2.275)
+        node[right, font=\tiny, text=red!70!black] {$b$};
+      \node[font=\tiny, align=center] at (1.75, -0.5) {returns $R^{(i)}$:\\all positive};
+      \node[font=\tiny, align=center, text=gray!60!black] at (1.75, 3.3)
+        {every logit pushed\\up $\Rightarrow$ noisy};
+    \end{scope}
+
+    % arrow
+    \node[font=\small, anchor=south] at (4.4, 1.45) {$-\,b$};
+    \draw[-{Stealth[length=5pt]}, thick] (3.9,1.3) -- (4.9,1.3);
+
+    % ----- RIGHT: with baseline (centered) -----
+    \begin{scope}[shift={(5.4,0)}]
+      \draw[gray, thin] (-0.3,1.15) -- (3.3,1.15);
+      \node[left, font=\tiny, text=gray] at (-0.3,1.15) {$0$};
+      \foreach \h/\i in {0.125/1, -0.575/2, 0.625/3, -0.175/4} {
+        \ifdim\h pt<0pt
+          \fill[red!55] (\i*0.7-0.22, 1.15) rectangle (\i*0.7+0.22, 1.15+\h);
+        \else
+          \fill[vir4!80] (\i*0.7-0.22, 1.15) rectangle (\i*0.7+0.22, 1.15+\h);
+        \fi
+      }
+      \node[font=\tiny, align=center] at (1.75, -0.5) {advantages $R^{(i)}-b$:\\centered at $0$};
+      \node[font=\tiny, align=center, text=gray!60!black] at (1.75, 3.3)
+        {up / down,\\smaller $\Rightarrow$ low variance};
+    \end{scope}
+  \end{tikzpicture}
+  \end{center}
+
+  \vspace{-0.1em}
   \textbf{Why valid?} $b(s_t)$ does not depend on $a_t$, so its contribution vanishes:
   \begin{align*}
     \E_{a_t \sim \pi_\theta}\!\left[\nabla_\theta \log \pi_\theta(a_t \mid s_t) \, b(s_t)\right]
@@ -838,6 +1006,60 @@
   \end{align*}
 
   $\Rightarrow$ Any $b(s_t)$ independent of actions preserves unbiasedness but \emphdef{reduces variance} by centering the reward around a reference value.
+\end{frame}
+
+% -----------------------------------------------------------------------
+\begin{frame}{Which Baseline Minimizes Variance?}
+  Per-step estimator with score $g_t \coloneqq \nabla_\theta \log \pi_\theta(a_t \mid s_t)$ and return-to-go $R_t$:
+  \[
+    \hat{g}(b) = g_t\,\bigl(R_t - b(s_t)\bigr).
+  \]
+  The baseline leaves the mean unchanged (unbiased), so minimizing the variance means minimizing the \emph{second moment} $\E\!\bigl[\|g_t\|^2 (R_t - b)^2\bigr]$.
+
+  \medskip
+  \textbf{Step 1: condition on the state} (tower rule):
+  \[
+    \E\!\bigl[\|g_t\|^2 (R_t - b)^2\bigr]
+      \;=\; \E_{s_t}\!\Bigl[\,\E\!\bigl[\|g_t\|^2 (R_t - b)^2 \bigm| s_t\bigr]\Bigr]
+  \]
+
+  \textbf{Step 2: factorize.} Approximation: given the state, the score magnitude $\|g_t\|^2$ is uncorrelated with the centered return $(R_t - b)^2$:
+  \[
+    \E\!\bigl[\|g_t\|^2 (R_t - b)^2 \bigm| s_t\bigr]
+      \;\approx\; \underbrace{\E\!\bigl[\|g_t\|^2 \bigm| s_t\bigr]}_{\text{does not depend on } b}
+      \;\cdot\; \E\!\bigl[(R_t - b)^2 \bigm| s_t\bigr]
+  \]
+
+  $\Rightarrow$ The weight in front is fixed, so it suffices to minimize
+  \[
+    \E\!\bigl[(R_t - b)^2 \bigm| s_t\bigr] \quad \text{\emph{separately for each state} } s_t.
+  \]
+\end{frame}
+
+% -----------------------------------------------------------------------
+\begin{frame}{The Optimal Baseline is $V(s)$}
+  \textbf{Step 3: per-state minimization.} Add and subtract $V(s_t) \coloneqq \E[R_t \mid s_t]$, then expand the square:
+  \begin{align*}
+    \E\!\bigl[(R_t - b)^2 \bigm| s_t\bigr]
+      &= \E\!\Bigl[\bigl(\,\underbrace{R_t - V(s_t)}_{\text{random}} + \underbrace{V(s_t) - b}_{\text{const.\ given } s_t}\,\bigr)^2 \Bigm| s_t\Bigr] \\
+      &= \underbrace{\E\!\bigl[(R_t - V(s_t))^2 \bigm| s_t\bigr]}_{=\,\mathrm{Var}(R_t \mid s_t)}
+        + 2\bigl(V(s_t) - b\bigr)\underbrace{\E\!\bigl[R_t - V(s_t) \bigm| s_t\bigr]}_{=\,0 \text{ by def.\ of } V(s_t)}
+        + \bigl(V(s_t) - b\bigr)^2 \\
+      &= \underbrace{\mathrm{Var}(R_t \mid s_t)}_{\text{irreducible, indep.\ of } b}
+        \;+\; \underbrace{\bigl(V(s_t) - b\bigr)^2}_{\text{offset penalty} \ \ge\ 0}
+  \end{align*}
+  Only the offset penalty depends on $b$; it vanishes exactly at
+  \[
+    \boxed{\,b^\star(s_t) \approx V(s_t)\,}
+  \]
+
+  \begin{itemize}[nosep]
+    \item Plain REINFORCE ($b=0$) pays the full offset penalty $V(s_t)^2$: recall variance scales with $\E[R^2]$, not $\mathrm{Var}(R)$; subtracting $V(s_t)$ removes exactly this inflation.
+    \item Residual $R_t - V(s_t) = A(s_t,a_t)$ is \emphdef{zero-mean per state}, so the score is scaled by a small centered signal $\Rightarrow$ low-variance gradient.
+    \item Without the Step-2 approximation, the exact optimum is the $\|g_t\|^2$-weighted return
+      $b^\star(s_t) = \E\bigl[\|g_t\|^2 R_t \mid s_t\bigr] / \E\bigl[\|g_t\|^2 \mid s_t\bigr]$; in practice close to $V(s_t)$.
+  \end{itemize}
+  $\Rightarrow$ The \emphdef{value function} $V(s_t)$ is the natural, near variance-minimizing baseline.
 \end{frame}
 
 % -----------------------------------------------------------------------
@@ -900,44 +1122,15 @@
 % -----------------------------------------------------------------------
 \begin{frame}{$A(s_t, a_t)$ Advantage Function}
   \[
-    A(s, a) = \E_{\tau : s_0=s, a_0=a}[R(\tau)] - V(s)
+    A(s, a) = \underbrace{\E_{\tau : s_0=s, a_0=a}[R(\tau)]}_{\text{return (reward-to-go)}} - \underbrace{V(s)}_{\text{baseline } b(s)}
   \]
 
   \textbf{Interpretation:}
-  \begin{itemize}
-    \item How much better is it to take action $a$ in state $s$ over the average action of policy $\pi$
-    \item When used in policy gradient: Increase/decrease logits of actions with positive/negative advantage
-  \end{itemize}
-
-  \vspace{0.5em}
-  \textbf{Recursively rewriting Advantage Function:}
-  \begin{align*}
-    A(s_t, a_t) &= \E[r(s_t, a_t) + \gamma V(s_{t+1})] - V(s_t) \\
-    A(s_t, a_t) &= \E[r_t + \gamma r_{t+1} + \gamma^2 V(s_{t+2})] - V(s_t) \\
-                &\;\vdots
-  \end{align*}
-
-  \textbf{Generalized Advantage Estimation (GAE):}
-  Temporal difference (TD) residual:
-  \[
-    \delta_t = r_t + \gamma V(s_{t+1}) - V(s_t)
-  \]
-  GAE advantage estimate (hyperparameter $\lambda \in [0,1]$):
-  \[
-    \hat{A}_t = \sum_{l=0}^{T-t} (\gamma \lambda)^l \, \delta_{t+l}
-  \]
   \begin{itemize}[nosep]
-    \item $\lambda = 0$: $\hat{A}_t = \delta_t$ (one-step TD, low variance, high bias)
-    \item $\lambda = 1$: $\hat{A}_t = R_t - V(s_t)$ (Monte Carlo, high variance, no bias)
+    \item \emphdef{Fix 1 + Fix 2 combined:} reward-to-go minus the value baseline $b(s_t)=V(s_t)$ (the natural, near variance-minimizing choice) $\Rightarrow$ low-variance, unbiased policy-gradient signal
+    \item How much better is it to take action $a$ in state $s$ over the average action of policy $\pi$
+    \item In the policy gradient: increase/decrease logits of actions with positive/negative advantage
   \end{itemize}
-\end{frame}
-
-% -----------------------------------------------------------------------
-\begin{frame}{Advantage Function: Policy Gradient Update}
-  Policy Gradient Update with Advantage Function:
-  \[
-    \nabla_\theta J(\theta) \approx \frac{1}{|D|} \sum_{\tau \in D} \sum_{t=0}^{T} \nabla_\theta \log \pi_\theta(a_t \mid s_t) \, \hat{A}(s_t, a_t)
-  \]
 
   \begin{center}
     \begin{tikzpicture}[
@@ -983,6 +1176,133 @@
       \draw[arr, red!60, thin] (3*1.6+1.0, -0.7) -- (3*1.6+0.45, -0.7);
     \end{tikzpicture}
   \end{center}
+\end{frame}
+
+% -----------------------------------------------------------------------
+\begin{frame}{Advantage Function: Recursive Form and GAE}
+  \small
+  \textbf{Definition} (previous slide): $A(s_t,a_t) = \E[G_t] - V(s_t)$, reward-to-go $G_t = \sum_{l\ge 0}\gamma^l r_{t+l}$.
+  Unroll $n$ rewards and bootstrap the tail via $\E[G_{t+n}\mid s_{t+n}] = V(s_{t+n})$:
+  \[
+    G_t = \sum_{l=0}^{n-1}\gamma^l r_{t+l} + \gamma^n G_{t+n}
+    \;\;\longrightarrow\;\;
+    \underbrace{\sum_{l=0}^{n-1}\gamma^l r_{t+l} + \gamma^n V(s_{t+n})}_{\text{reward-to-go estimate in } \hat{A}_t^{(n)}}
+  \]
+  Subtracting the baseline $V(s_t)$ gives the $n$-step estimators:
+  \vspace{-0.2em}
+  \begin{align*}
+    \hat{A}_t^{(1)} &= r_t + \gamma V(s_{t+1}) - V(s_t) = \delta_t \\
+    \hat{A}_t^{(2)} &= r_t + \gamma r_{t+1} + \gamma^2 V(s_{t+2}) - V(s_t) = \delta_t + \gamma\, \delta_{t+1} \\
+                    &\ \ \vdots \\
+    \hat{A}_t^{(n)} &= \sum_{l=0}^{n-1} \gamma^l r_{t+l} + \gamma^n V(s_{t+n}) - V(s_t) = \sum_{l=0}^{n-1} \gamma^l\, \delta_{t+l}
+  \end{align*}
+
+  where $\delta_{t+l} = r_{t+l} + \gamma V(s_{t+l+1}) - V(s_{t+l})$ is the one-step \emphdef{TD residual} (so $\hat{A}_t^{(1)} = \delta_t$). \emphdef{GAE} exponentially averages the whole family ($\lambda \in [0,1]$):
+  \[
+    \hat{A}_t^{\text{GAE}} = (1-\lambda)\sum_{n=1}^{\infty} \lambda^{\,n-1}\, \hat{A}_t^{(n)} = \sum_{l=0}^{\infty} (\gamma \lambda)^l \, \delta_{t+l}
+  \]
+  \begin{itemize}[nosep]
+    \item $\lambda = 0$: $\hat{A}_t^{\text{GAE}} = \hat{A}_t^{(1)} = \delta_t$ (one-step TD, low variance, high bias)
+    \item $\lambda = 1$: $\hat{A}_t^{\text{GAE}} = \hat{A}_t^{(\infty)} = R_t - V(s_t)$ (Monte Carlo, high variance, no bias)
+  \end{itemize}
+\end{frame}
+
+% -----------------------------------------------------------------------
+\begin{frame}{GAE: An Exponentially Weighted Average of $n$-Step Estimators}
+  \small
+  \vspace{-0.3em}
+  \begin{align*}
+    \hat{A}_t^{\text{GAE}} = (1-\lambda)\sum_{n=1}^{\infty}\lambda^{\,n-1}\,\hat{A}_t^{(n)}
+    &= (1-\lambda)\sum_{n=1}^{\infty}\lambda^{\,n-1}\sum_{l=0}^{n-1}\gamma^l\,\delta_{t+l}
+      && \text{insert } \hat{A}_t^{(n)} = \textstyle\sum_{l=0}^{n-1}\gamma^l\delta_{t+l} \\
+    &= (1-\lambda)\sum_{l=0}^{\infty}\gamma^l\,\delta_{t+l}\sum_{n=l+1}^{\infty}\lambda^{\,n-1}
+      && \text{swap sums: } \delta_{t+l} \text{ in all } \hat{A}_t^{(n)},\ n > l \\
+    &= (1-\lambda)\sum_{l=0}^{\infty}\gamma^l\,\delta_{t+l}\,\frac{\lambda^{l}}{1-\lambda}
+     = \sum_{l=0}^{\infty}(\gamma\lambda)^l\,\delta_{t+l}
+      && \text{geometric series}
+  \end{align*}
+  \vspace{-0.9em}
+  \begin{columns}[T]
+    \begin{column}{0.58\textwidth}
+      \begin{center}
+      \begin{tikzpicture}[
+        scale=0.82, every node/.style={scale=0.82},
+        del/.style={rectangle, draw, minimum width=0.9cm, minimum height=0.55cm,
+                    font=\scriptsize, fill=slide_blue!60},
+      ]
+        % TD residuals row
+        \foreach \i/\lab in {0/{$\delta_t$}, 1/{$\delta_{t+1}$}, 2/{$\delta_{t+2}$}, 3/{$\delta_{t+3}$}} {
+          \node[del] (d\i) at (\i*1.5, 0) {\lab};
+        }
+        \node[font=\scriptsize, anchor=west] at (4*1.5-0.4, 0) {$\cdots$};
+
+        % faint vertical guides down the residual columns
+        \foreach \i in {0,1,2,3} {
+          \draw[gray!30, thin] (\i*1.5, -0.32) -- (\i*1.5, -3.7);
+        }
+
+        % n-step estimator rows: bracket over first n residuals
+        \foreach \n/\y/\wt in {1/-0.85/{(1{-}\lambda)}, 2/-1.7/{(1{-}\lambda)\lambda},
+                               3/-2.55/{(1{-}\lambda)\lambda^2}, 4/-3.4/{(1{-}\lambda)\lambda^3}} {
+          \pgfmathsetmacro\rightx{(\n-1)*1.5+0.45}
+          \draw[decorate, decoration={brace, amplitude=4pt, mirror}, slide_violet, thick]
+                (-0.45, \y+0.24) -- (\rightx, \y+0.24);
+          \node[font=\scriptsize, anchor=west] at (5.1, \y+0.24) {$\hat{A}_t^{(\n)}$};
+          \node[font=\tiny, text=slide_violet, anchor=west] at (6.15, \y+0.24) {$\times\,\wt$};
+        }
+      \end{tikzpicture}
+      \end{center}
+    \end{column}
+    \begin{column}{0.42\textwidth}
+      \begin{center}
+      \begin{tikzpicture}[scale=0.9, every node/.style={scale=0.9}]
+        \begin{axis}[
+          width=6.2cm, height=4.4cm,
+          ybar, bar width=2.4pt,
+          xlabel={$n$ (estimator horizon, $n{=}T$ is Monte Carlo)}, ylabel={weight $w_n$},
+          xlabel style={font=\scriptsize}, ylabel style={font=\scriptsize},
+          tick label style={font=\tiny},
+          xmin=0.3, xmax=8.7, ymin=0, ymax=1.05,
+          xtick={1,2,3,4,5,6,7,8}, xticklabels={1,2,3,4,5,6,7,$T$},
+          legend style={font=\tiny, at={(0.98,0.98)}, anchor=north east, draw=none},
+          legend columns=2, legend cell align=left,
+        ]
+          % lambda = 0: all weight on n=1
+          \addplot[fill=vir1, draw=vir1] coordinates {
+            (1,1)(2,0)(3,0)(4,0)(5,0)(6,0)(7,0)(8,0)};
+          \addlegendentry{$\lambda=0$}
+          % lambda = 0.5
+          \addplot[fill=vir3, draw=vir3] coordinates {
+            (1,0.5)(2,0.25)(3,0.125)(4,0.0625)(5,0.03125)(6,0.0156)(7,0.0078)(8,0.0039)};
+          \addlegendentry{$\lambda=0.5$}
+          % lambda = 0.9
+          \addplot[fill=vir4, draw=vir4] coordinates {
+            (1,0.1)(2,0.09)(3,0.081)(4,0.0729)(5,0.0656)(6,0.059)(7,0.0531)(8,0.0478)};
+          \addlegendentry{$\lambda=0.9$}
+          % lambda = 1: all weight on the longest horizon n=T (Monte Carlo)
+          \addplot[fill=vir5, draw=vir5!75!black] coordinates {
+            (1,0)(2,0)(3,0)(4,0)(5,0)(6,0)(7,0)(8,1)};
+          \addlegendentry{$\lambda=1$}
+        \end{axis}
+      \end{tikzpicture}
+      \end{center}
+    \end{column}
+  \end{columns}
+
+  \vspace{0.2em}
+  \footnotesize
+  \begin{itemize}[nosep]
+    \item $\lambda\to 0$: all weight on $\hat{A}_t^{(1)}=\delta_t$ (one-step TD, low variance, high bias)
+    \item $\lambda\to 1$: weight spread over long horizons $\Rightarrow$ Monte Carlo $R_t-V(s_t)$ (high variance, no bias)
+  \end{itemize}
+\end{frame}
+
+% -----------------------------------------------------------------------
+\begin{frame}{Advantage Function: Policy Gradient Update}
+  Policy Gradient Update with Advantage Function:
+  \[
+    \nabla_\theta J(\theta) \approx \frac{1}{|D|} \sum_{\tau \in D} \sum_{t=0}^{T} \nabla_\theta \log \pi_\theta(a_t \mid s_t) \, \hat{A}(s_t, a_t)
+  \]
 
   \begin{itemize}[nosep]
     \item \textbf{Positive advantage}: action was better than average $\Rightarrow$ increase its logit
@@ -993,38 +1313,51 @@
 \subsection{Off-Policy Learning and PPO}
 
 % -----------------------------------------------------------------------
-\begin{frame}{(Off-Policy) Sampling Trajectories}
-  We need to sample trajectories $\tau$ to estimate $\nabla_\theta J(\theta)$ and make a gradient step.
-
-  \begin{description}
-    \item[On-Policy:] Sample from current policy $\pi_\theta$ before every update.
-      \begin{itemize}
-        \item Inefficient: trajectories discarded after each gradient step.
-      \end{itemize}
-    \item[Off-Policy:] Reuse trajectories from an older policy $\pi_{\theta_\text{old}}$ via \emphdef{Importance Sampling}.
-  \end{description}
-
-  \vspace{0.3em}
-  \textbf{Importance Sampling: Derivation}
+\begin{frame}{Reusing Trajectories: Why Policy Gradient Is On-Policy}
+  The policy gradient is an \emph{expectation over trajectories drawn from the current policy}:
   \[
-    \E_{x \sim p}[f(x)] = \int p(x) f(x)\, dx = \int q(x) \frac{p(x)}{q(x)} f(x)\, dx = \E_{x \sim q}\!\left[\frac{p(x)}{q(x)} f(x)\right]
+    \nabla_\theta J(\theta) = \E_{\tau \sim \pi_\theta}\!\Big[\textstyle\sum_t \nabla_\theta \log \pi_\theta(a_t \mid s_t)\, \hat{A}_t\Big]
   \]
-
-  \textbf{Applied to RL:}
   \begin{itemize}[nosep]
-    \item $x = (s_t, a_t)$: state-action pairs from a trajectory
-    \item $p = \pi_\theta$: current policy (what we want to optimize)
-    \item $q = \pi_{\theta_\text{old}}$: old policy (what we actually sampled trajectories from)
-    \item $f$: the quantity we want to estimate, e.g.\ $\nabla_\theta \log \pi_\theta(a_t \mid s_t) \, \hat{A}_t$
-    \item Ratio $\frac{p}{q} = \frac{\pi_\theta(a_t \mid s_t)}{\pi_{\theta_\text{old}}(a_t \mid s_t)}$: corrects for the mismatch between old and current policy
+    \item The Monte-Carlo estimate $\frac{1}{|D|}\sum_{\tau \in D}(\cdots)$ is only unbiased if the batch $D$ was sampled from $\pi_\theta$ \emph{itself} (\emphdef{on-policy}).
   \end{itemize}
 
   \vspace{0.3em}
-  \textbf{Why higher variance?}
+  \textbf{We would like to reuse a batch.} For LLMs, generating rollouts is the expensive part, so one gradient step per batch is wasteful. But after the first update $\theta$ changes, so the stored trajectories now come from $\pi_{\theta_\text{old}} \neq \pi_\theta$.
+
+  \vspace{0.3em}
+  \textbf{Why naive reuse is biased.} Plugging $\pi_{\theta_\text{old}}$ samples into the on-policy formula averages over the \emph{wrong distribution}: it estimates $\E_{\tau \sim \pi_{\theta_\text{old}}}[\cdots]$, not $\E_{\tau \sim \pi_\theta}[\cdots]$.
+
+  \vspace{0.2em}
+  $\Rightarrow$ Correct for the distribution mismatch with \emphdef{importance sampling}.
+\end{frame}
+
+% -----------------------------------------------------------------------
+\begin{frame}{Off-Policy Correction via Importance Sampling}
+  \textbf{Importance-sampling identity.} Rewrite an expectation under $p$ as one under $q$:
+  \[
+    \E_{x \sim p}[f(x)] = \int p(x) f(x)\, dx = \int q(x)\, \frac{p(x)}{q(x)}\, f(x)\, dx = \E_{x \sim q}\!\left[\frac{p(x)}{q(x)}\, f(x)\right]
+  \]
+  {\footnotesize (valid whenever $q(x) > 0$ wherever $p(x) > 0$).}
+
+  \vspace{0.3em}
+  \textbf{Apply to the policy gradient} with $p = \pi_\theta$, $q = \pi_{\theta_\text{old}}$, $f = \nabla_\theta \log \pi_\theta(a_t \mid s_t)\, \hat{A}_t$:
+  \begin{align*}
+    \nabla_\theta J(\theta)
+    &= \E_{a_t \sim \pi_\theta}\!\big[\nabla_\theta \log \pi_\theta(a_t \mid s_t)\, \hat{A}_t\big] \\
+    &= \E_{a_t \sim \pi_{\theta_\text{old}}}\!\Big[\underbrace{\tfrac{\pi_\theta(a_t \mid s_t)}{\pi_{\theta_\text{old}}(a_t \mid s_t)}}_{r_t(\theta)}\, \nabla_\theta \log \pi_\theta(a_t \mid s_t)\, \hat{A}_t\Big]
+  \end{align*}
+  Since $\pi_{\theta_\text{old}}$ is constant in $\theta$, we have $r_t \nabla_\theta \log \pi_\theta = \tfrac{\nabla_\theta \pi_\theta}{\pi_{\theta_\text{old}}} = \nabla_\theta r_t$, hence
+  \[
+    \nabla_\theta J(\theta) = \nabla_\theta \underbrace{\E_{a_t \sim \pi_{\theta_\text{old}}}\!\big[r_t(\theta)\, \hat{A}_t\big]}_{\text{surrogate objective } L(\theta)}
+  \]
+  $\Rightarrow$ maximize $L(\theta) = \E_{\pi_{\theta_\text{old}}}[r_t(\theta)\, \hat{A}_t]$: sample once from $\pi_{\theta_\text{old}}$, reuse for several steps. The ratio $r_t$ up-weights actions the new policy prefers, restoring the on-policy average.
+
+  \vspace{0.3em}
+  \textbf{But: higher variance.}
   \begin{itemize}[nosep]
-    \item If $\pi_\theta$ assigns high probability where $\pi_{\theta_\text{old}}$ assigns low $\Rightarrow$ ratio explodes
-    \item A few samples with extreme ratios dominate the estimate $\Rightarrow$ noisy gradients
-    \item The more $\pi_\theta$ diverges from $\pi_{\theta_\text{old}}$, the worse it gets
+    \item If $\pi_\theta$ is high where $\pi_{\theta_\text{old}}$ is low $\Rightarrow$ $r_t$ explodes; a few extreme ratios dominate.
+    \item The more $\pi_\theta$ diverges from $\pi_{\theta_\text{old}}$, the worse it gets $\Rightarrow$ constrain the step (PPO clipping, next).
   \end{itemize}
 \end{frame}
 
@@ -1074,9 +1407,15 @@
 
 % -----------------------------------------------------------------------
 \begin{frame}{PPO Clipping Loss: Illustration}
-  \vspace{-0.3em}
+  \textbf{Why clip?}
+  \begin{itemize}[nosep]
+    \item The ratio $r_t = \frac{\pi_\theta(a_t \mid s_t)}{\pi_{\theta_\text{old}}(a_t \mid s_t)}$ is the \emph{importance weight}: it measures how far $\pi_\theta$ has moved from $\pi_{\theta_\text{old}}$
+    \item Maximizing $L(\theta) = \E_{\pi_{\theta_\text{old}}}[r_t A_t]$ pushes $r_t$ to extremes, exactly where importance sampling breaks down (exploding variance)
+    \item Remedy: clip $r_t$ to $[1{-}\epsilon,\, 1{+}\epsilon]$, removing any incentive to leave this \emphdef{trust region} around $\pi_{\theta_\text{old}}$
+  \end{itemize}
+  \vspace{-0.2em}
   \[
-    L^\text{CLIP} = \min\!\big(r_t\, A_t,\; \text{clip}(r_t,\, 1{-}\epsilon,\, 1{+}\epsilon)\, A_t\big), \qquad r_t = \frac{\pi_\theta(a_t \mid s_t)}{\pi_{\theta_\text{old}}(a_t \mid s_t)}
+    L^\text{CLIP} = \min\!\big(r_t\, A_t,\; \text{clip}(r_t,\, 1{-}\epsilon,\, 1{+}\epsilon)\, A_t\big)
   \]
   \vspace{-0.5em}
   \begin{columns}[T]
@@ -1231,9 +1570,14 @@
 
         \item $k_2 = \tfrac{1}{2}(\log r)^2$
           \begin{itemize}[nosep]
-            \item $\E_q[k_2] = \tfrac{1}{2}\bigl(\text{Var}_q[\log r] + \text{KL}^2\bigr)$
-            \item Biased (second-order), vanishes as $q \to p$
-            \item Always $\geq 0$
+            \item Second moment $=$ variance $+$ mean$^2$, and $\E_q[\log r] = -\text{KL}$:
+              \vspace{-0.4em}
+              \[
+                \E_q[k_2] = \tfrac{1}{2}\E_q[(\log r)^2]
+                = \tfrac{1}{2}\bigl(\text{Var}_q[\log r] + \underbrace{(\E_q[\log r])^2}_{=\,\text{KL}^2}\bigr)
+              \]
+              \vspace{-1.5em}
+            \item Biased (second-order), vanishes as $q \to p$; always $\geq 0$
           \end{itemize}
 
         \item $k_3 = -\log r + (r - 1)$ \;\; (preferred)
@@ -1243,13 +1587,13 @@
               \[
                 \E_q[k_3] = \E_q[-\log r] + \underbrace{\E_q[r - 1]}_{= \sum_x p(x) - 1 = 0} = \text{KL}
               \]
-              \vspace{-1.2em}
+              \vspace{-1.5em}
             \item Non-negative: $\log x \leq x - 1$ (concavity)
               \vspace{-0.5em}
               \[
                 k_3 = \underbrace{-\log r}_{\geq\, 1 - r} + (r - 1) \geq 0
               \]
-              \vspace{-1em}
+              \vspace{-1.3em}
           \end{itemize}
       \end{itemize}
       \sourceref{\url{http://joschu.net/blog/kl-approx.html}}
@@ -1321,9 +1665,11 @@
 
 % -----------------------------------------------------------------------
 \begin{frame}{GRPO: Group Relative Policy Optimization}
+  \textbf{Idea:} PPO needs a separate \emphdef{value model} (critic) to supply the advantage baseline $V(s)$: a second large network, expensive to store and hard to train from sparse, end-of-sequence rewards. GRPO removes it. For each prompt, sample a \emph{group} of $G$ responses and use their \emph{mean reward as the baseline}, scoring each response relative to its peers.
+  \vspace{-0.2em}
   \begin{center}
     \begin{tikzpicture}[
-      scale=0.62, every node/.style={scale=0.62},
+      scale=0.56, every node/.style={scale=0.56},
       pbox/.style={rectangle, draw=gray!60, rounded corners=3pt, fill=yellow!20,
         minimum width=2.2cm, minimum height=0.9cm, align=center, font=\small},
       fbox/.style={rectangle, draw=gray!60, rounded corners=3pt, fill=cyan!15,
@@ -1452,35 +1798,96 @@
   \end{center}
   \vspace{-0.5em}
   \begin{itemize}[nosep]
-    \item GRPO \cite{shao2024grpo} drops the \emphdef{value model}: estimates advantages from group reward statistics
-    \item Saves ${\approx}\tfrac{1}{3}$ of GPU memory (no critic to store or train)
+    \item GRPO \cite{shao2024grpo}: advantage from group statistics, no learned critic
+    \item Saves ${\approx}\tfrac{1}{3}$ of GPU memory (no value model to store or train)
   \end{itemize}
 \end{frame}
 
 % -----------------------------------------------------------------------
 \begin{frame}{GRPO: Advantage Function}
-  For a given prompt $q$, sample $G$ responses: $o_1, \ldots, o_G \sim \pi_\theta(\cdot \mid q)$.
+  \begin{columns}[T]
+    \begin{column}{0.54\textwidth}
+      For a prompt $q$, sample $G$ responses $o_1,\ldots,o_G \sim \pi_\theta(\cdot\mid q)$; each gets a scalar \textbf{return} $R_i = \sum_{t'} r_{i,t'}$ (reward-to-go).
 
-  \vspace{0.3em}
-  Compute \textbf{return} for each response: $R_i = \sum_{t'=t}^{T} r_{i,t'}$ \quad (reward-to-go for trajectory $i$)
+      \vspace{0.4em}
+      \textbf{Group statistics} across the $G$ responses:
+      \[
+        \mu = \frac{1}{G}\sum_{j=1}^{G} R_j, \qquad
+        \sigma = \sqrt{\frac{1}{G}\sum_{j=1}^{G}(R_j-\mu)^2}
+      \]
 
-  \vspace{0.3em}
-  \textbf{Group statistics} across the $G$ responses:
-  \[
-    \mu = \frac{1}{G} \sum_{j=1}^{G} R_j, \qquad
-    \sigma = \sqrt{\frac{1}{G} \sum_{j=1}^{G} (R_j - \mu)^2}
-  \]
+      \textbf{GRPO advantage} (shared by all tokens of $o_i$):
+      \[
+        \boxed{A_{i,t} = \frac{R_i - \mu}{\sigma}}
+      \]
+    \end{column}
+    \begin{column}{0.46\textwidth}
+      \centering
+      \begin{tikzpicture}[x=0.72cm, y=0.9cm]
+        \def\mean{1.5}
+        % baseline axis
+        \draw[gray, thin] (0.3,0) -- (6.1,0);
+        \node[font=\tiny, text=gray, anchor=east] at (0.25,0) {$0$};
+        % return bars: green if above group mean, red if below
+        \foreach \i/\h in {1/2.4, 2/1.1, 3/1.9, 4/0.5, 5/1.6} {
+          \pgfmathsetmacro\above{\h > \mean ? 1 : 0}
+          \ifnum1=\above
+            \fill[vir4!75] (\i-0.28,0) rectangle (\i+0.28,\h);
+          \else
+            \fill[red!45] (\i-0.28,0) rectangle (\i+0.28,\h);
+          \fi
+          \node[font=\tiny, anchor=south] at (\i,\h) {$R_{\i}$};
+        }
+        % group mean line = baseline
+        \draw[dashed, thick, slide_violet] (0.4,\mean) -- (5.9,\mean)
+          node[right, font=\tiny, text=slide_violet, inner sep=1pt] {$\mu$};
+        \node[font=\tiny, text=vir4!60!black, align=center] at (3.1,3.05)
+          {$R_i>\mu \Rightarrow A_i>0$ (reinforce)};
+        \node[font=\tiny, text=red!60!black, align=center] at (3.1,-0.75)
+          {$R_i<\mu \Rightarrow A_i<0$ (suppress)};
+      \end{tikzpicture}
 
-  \textbf{GRPO Advantage} for response $i$ at token $t$:
-  \[
-    \boxed{A_{i,t} = \frac{R_i - \mu}{\sigma}}
-  \]
+      \vspace{0.6em}
+      {\footnotesize Center returns on the group mean $\mu$ and scale by spread $\sigma$: no value model, only \emph{relative ranking} within the group.}
+    \end{column}
+  \end{columns}
 
-  \vspace{0.3em}
+  \vspace{0.4em}
   \begin{itemize}[nosep]
-    \item Replaces GAE: no value model needed, only \emphdef{relative ranking} within the group
-    \item $A_{i,t} > 0$ if response $i$ is better than group average, $< 0$ if worse
+    \item Replaces GAE: no critic $V_\phi$; the group mean $\mu$ acts as the baseline
+    \item $A_{i,t} > 0$ if response $i$ beats the group average, $< 0$ if worse
   \end{itemize}
+\end{frame}
+
+% -----------------------------------------------------------------------
+\begin{frame}{GRPO Objective: Sequence and Token Form}
+  \textbf{Per-sequence view:} clipped surrogate scaled by $A_i = \tfrac{R_i-\mu}{\sigma}$ (constant over $o_i$):
+  \[
+    \mathcal{J}_\text{GRPO}(\theta)
+      = \frac{1}{G}\sum_{i=1}^{G} \min\!\big(\rho_i A_i,\ \mathrm{clip}(\rho_i,1{-}\epsilon,1{+}\epsilon)\,A_i\big) - \beta\,\mathrm{KL},
+    \quad
+    \rho_i = \frac{\pi_\theta(o_i\mid q)}{\pi_{\theta_\text{old}}(o_i\mid q)}.
+  \]
+
+  \textbf{Token-level:} the policy factorizes, so the ratio is a \emph{product} $\Rightarrow$ clip \emph{per token} (clipping a product is ill-behaved):
+  \[
+    \rho_i = \prod_{t=1}^{|o_i|}\rho_{i,t},
+    \qquad
+    \rho_{i,t} = \frac{\pi_\theta(o_{i,t}\mid q,o_{i,<t})}{\pi_{\theta_\text{old}}(o_{i,t}\mid q,o_{i,<t})}.
+  \]
+
+  \textbf{Aggregate} per-token terms by \emph{averaging over length} (${\color{red!70!black}1/|o_i|}$), KL \emph{inside}:
+  \[
+    \boxed{\;
+    \mathcal{J}_\text{GRPO}(\theta)
+      = \frac{1}{G}\sum_{i=1}^{G} {\color{red!70!black}\frac{1}{|o_i|}} \sum_{t=1}^{|o_i|}
+        \Big\{\min\!\big(\rho_{i,t}\,A_i,\ \mathrm{clip}(\rho_{i,t},1{-}\epsilon,1{+}\epsilon)\,A_i\big) - \beta\, D_\text{KL}\big[\pi_\theta \,\|\, \pi_\text{ref}\big]\Big\}
+    \;}
+  \]
+  {\footnotesize $D_\text{KL} = \dfrac{\pi_\text{ref}(o_{i,t}\mid\cdot)}{\pi_\theta(o_{i,t}\mid\cdot)} - \log\dfrac{\pi_\text{ref}(o_{i,t}\mid\cdot)}{\pi_\theta(o_{i,t}\mid\cdot)} - 1 \geq 0$ (KL vs.\ frozen $\pi_\text{ref}$; ratio vs.\ $\pi_{\theta_\text{old}}$).}
+
+  \vspace{0.2em}
+  The {\color{red!70!black}$1/|o_i|$} is a \emph{choice}, not a consequence: the source of the \emph{length bias} (Dr.\ GRPO).
 \end{frame}
 
 % -----------------------------------------------------------------------
@@ -1498,8 +1905,8 @@
     \Indm
     \textbf{Policy Update:}\;
     \Indp
-      Ratio: $r_{jk} = \frac{\pi_\theta(a_{jk} \mid s_j)}{\pi_{\theta_k}(a_{jk} \mid s_j)}$\;
-      $L = -\sum_{j,k} \min(r_{jk} A_{jk}, \text{clip}(r_{jk}, 1{-}\epsilon, 1{+}\epsilon)A_{jk}) + \beta \sum_j \text{KL}[\pi_\theta(\cdot \mid s_j) \| \pi_{\theta_k}(\cdot \mid s_j)]$\;
+      Per-token ratio: $r_{jk,t} = \frac{\pi_\theta(a_{jk,t} \mid s_j, a_{jk,<t})}{\pi_{\theta_k}(a_{jk,t} \mid s_j, a_{jk,<t})}$\;
+      $L = -\sum_{j,k} \frac{1}{|a_{jk}|}\sum_{t} \big\{\min(r_{jk,t} A_{jk}, \text{clip}(r_{jk,t}, 1{-}\epsilon, 1{+}\epsilon)A_{jk}) - \beta\, \text{KL}[\pi_\theta \| \pi_\text{ref}]\big\}$\;
     \Indm
   }
   \end{algorithm}
@@ -1535,15 +1942,22 @@
 \end{frame}
 
 % -----------------------------------------------------------------------
-\begin{frame}{Dr.\ GRPO: GRPO Done Right}
-  Standard GRPO has two subtle biases \cite{liu2025drgrpo}:
-  \begin{description}[nosep]
-    \item[Length Bias:] Normalizes by sequence length $\Rightarrow$ penalizes longer correct responses more, incentivizes verbose wrong answers.
-  \end{description}
+\begin{frame}{Dr.\ GRPO: Length Bias}
+  Standard GRPO has \emph{two} subtle biases \cite{liu2025drgrpo}: a \textbf{length bias} (this slide) and a \textbf{std.\ normalization bias} (next slide).
+
+  \vspace{0.3em}
+  The length bias arises from averaging the per-token loss over the response length $|o_i|$:
+  \vspace{-0.3em}
+  \[
+    \mathcal{J}_\text{GRPO} = \frac{1}{G}\sum_{i=1}^{G} \frac{1}{{\color{red!70!black}|o_i|}}\sum_{t=1}^{|o_i|} A_i\,\rho_{i,t}
+    \;\;\Longrightarrow\;\; \text{each token pulled by } \frac{A_i}{|o_i|},
+  \]
+  \vspace{-0.3em}
+  where $\rho_{i,t}$ is the (clipped) importance ratio and $A_{i,t}=A_i$ is constant over the response. A \emph{wrong} answer ($A_i<0$) then shrinks its own penalty by growing $|o_i|$ $\Rightarrow$ verbose wrong answers, while long \emph{correct} answers get diluted reinforcement:
   \vspace{-0.2em}
   \begin{center}
     \begin{tikzpicture}[
-      scale=0.7, every node/.style={scale=0.7},
+      scale=0.62, every node/.style={scale=0.62},
       box/.style={rectangle, draw=gray!60, rounded corners=3pt, minimum height=0.7cm, align=center, font=\small},
     ]
       % Header
@@ -1583,10 +1997,80 @@
       \draw[gray!30] (-2.2, -0.25) -- (12, -0.25);
     \end{tikzpicture}
   \end{center}
-  \vspace{-0.3em}
-  \begin{description}[nosep]
-    \item[Std.\ Normalization Bias:] Dividing by $\sigma_G$ overweights nearly-solved problems (low variance).
-  \end{description}
+  \textbf{Fix:} normalize by a constant $T_\text{max}$ instead of $|o_i|$ (next slides).
+\end{frame}
+
+% -----------------------------------------------------------------------
+\begin{frame}{Dr.\ GRPO: Std.\ Normalization Bias}
+  GRPO standardizes rewards \emph{within} each question's group of $G$ responses,
+  $A_i = (R_i - \bar R)/{\color{red!70!black}\sigma_G}$ with $\sigma_G = \operatorname{std}(\{R_1,\dots,R_G\})$, so $1/\sigma_G$ acts as a \emph{per-question} weight on the whole group's gradient.
+  \vspace{-0.2em}
+  \begin{itemize}\setlength{\itemsep}{0.1em}
+    \item \textbf{Nearly-solved} (or nearly-impossible): almost all $R_i$ equal $\Rightarrow$ $\sigma_G\!\to\!0$ $\Rightarrow$ $1/\sigma_G$ \emph{blows up}. Balanced, \emph{informative} problems (large $\sigma_G$) get \emph{down}-weighted. Binary rewards: $\sigma_G\!\approx\!\sqrt{p(1-p)}$.
+    \item[$\Rightarrow$] A rare deviation on an easy problem gets a far stronger gradient than any answer on a genuinely hard (balanced) problem.
+  \end{itemize}
+  \vspace{-0.1em}
+  \begin{center}
+  \resizebox{0.98\textwidth}{!}{%
+    \begin{tikzpicture}[
+      dot/.style={circle, draw=gray!50, minimum size=4mm, inner sep=0pt, font=\scriptsize},
+      correct/.style={dot, fill=green!25},
+      wrong/.style={dot, fill=red!25},
+    ]
+      % ---- Panel A: nearly solved ----
+      \node[font=\bfseries] at (2.1,2.7) {Nearly solved};
+      \node[font=\scriptsize\itshape] at (2.1,2.35) {7/8 correct};
+      \foreach \i in {1,...,7} { \node[correct] at ({0.55*\i},1.7) {1}; }
+      \node[wrong] at ({0.55*8},1.7) {0};
+      \node[font=\scriptsize] at (2.1,1.0) {$\bar R=0.875,\ \sigma_G=0.33$ {\footnotesize(small)}};
+      \node[font=\scriptsize, anchor=east] at (0.2,0.2) {$A$};
+      \draw[gray!40] (0.4,0.2) -- (4.6,0.2);
+      \draw[red!70!black, line width=2.2pt, -{Stealth}] (0.55*8,0.2) -- (0.55*8,-1.1)
+         node[midway, right=1pt, font=\scriptsize, text=red!70!black] {$-2.6$};
+      \draw[green!50!black, line width=2.2pt, -{Stealth}] (2.0,0.2) -- (2.0,0.48)
+         node[right=1pt, font=\scriptsize, text=green!50!black] {$+0.4$};
+
+      % ---- Panel B: medium (x offset +5.4) ----
+      \begin{scope}[xshift=5.4cm]
+        \node[font=\bfseries] at (2.1,2.7) {Medium difficulty};
+        \node[font=\scriptsize\itshape] at (2.1,2.35) {4/8 correct};
+        \foreach \i in {1,...,4} { \node[correct] at ({0.55*\i},1.7) {1}; }
+        \foreach \i in {5,...,8} { \node[wrong] at ({0.55*\i},1.7) {0}; }
+        \node[font=\scriptsize] at (2.1,1.0) {$\bar R=0.5,\ \sigma_G=0.50$ {\footnotesize(large)}};
+        \node[font=\scriptsize, anchor=east] at (0.2,0.2) {$A$};
+        \draw[gray!40] (0.4,0.2) -- (4.6,0.2);
+        \draw[red!70!black, line width=2.2pt, -{Stealth}] (3.6,0.2) -- (3.6,-0.3)
+           node[midway, right=1pt, font=\scriptsize, text=red!70!black] {$-1.0$};
+        \draw[green!50!black, line width=2.2pt, -{Stealth}] (1.4,0.2) -- (1.4,0.7)
+           node[right=1pt, font=\scriptsize, text=green!50!black] {$+1.0$};
+      \end{scope}
+
+      % ---- Panel C: 1/sigma curve (right) ----
+      \begin{axis}[
+          at={(11.6cm,-1.2cm)},
+          width=5.6cm, height=4.6cm,
+          xlabel={success rate $p$}, ylabel={weight $1/\sigma_G$},
+          domain=0.06:0.94, samples=100,
+          xmin=0, xmax=1, ymin=0, ymax=4.5,
+          xtick={0,0.5,1}, ytick={2,4},
+          axis lines=left, tick align=outside,
+          every axis label/.style={font=\scriptsize},
+          tick label style={font=\scriptsize}, clip=false,
+        ]
+        \addplot[vir2, line width=1.3pt] {1/sqrt(x*(1-x))};
+        \node[font=\scriptsize, red!70!black] at (axis cs:0.17,3.9) {easy};
+        \node[font=\scriptsize, red!70!black] at (axis cs:0.80,3.9) {hard};
+        \node[font=\scriptsize, green!50!black] at (axis cs:0.5,1.35) {informative};
+        \draw[green!50!black, -{Stealth}] (axis cs:0.5,1.6) -- (axis cs:0.5,1.92);
+        \fill[red!70!black] (axis cs:0.1,3.33) circle (1.4pt);
+        \fill[red!70!black] (axis cs:0.9,3.33) circle (1.4pt);
+        \fill[green!50!black] (axis cs:0.5,2.0) circle (1.4pt);
+      \end{axis}
+    \end{tikzpicture}%
+  }
+  \end{center}
+  \vspace{-0.2em}
+  \textbf{Fix:} drop the $\sigma_G$ division, $A_i = R_i - \bar R$, so every question contributes on the same scale.
 \end{frame}
 
 % -----------------------------------------------------------------------
@@ -1635,70 +2119,6 @@
       (Compare Dr.\ GRPO's $T_\text{max}$ fix: different approach to the same length bias.)
     \item[No KL Penalty:] For long chain-of-thought reasoning, KL to $\pi_\text{ref}$ is counterproductive. DAPO drops it entirely.
   \end{description}
-\end{frame}
-
-% -----------------------------------------------------------------------
-\begin{frame}{DAPO: Overlong Reward Shaping}
-  Hard truncation at $L_\text{max}$ tokens corrupts the reward signal (correct but long $\Rightarrow$ truncated $\Rightarrow$ wrong reward).
-
-  \vspace{0.3em}
-  \textbf{Soft overlong punishment:}
-  \[
-    R_\text{length}(y) = \begin{cases}
-      0, & |y| \leq L_\text{max} - L_\text{cache} \\[0.3em]
-      \dfrac{(L_\text{max} - L_\text{cache}) - |y|}{L_\text{cache}}, & L_\text{max} - L_\text{cache} < |y| \leq L_\text{max} \\[0.3em]
-      -1, & |y| > L_\text{max}
-    \end{cases}
-  \]
-
-  \begin{center}
-    \begin{tikzpicture}[x=0.5cm, y=1.8cm]
-      % Axes
-      \draw[-{Stealth[length=3pt]}, thin] (0, -1.2) -- (0, 0.3)
-        node[above, font=\scriptsize] {$R_\text{length}$};
-      \draw[-{Stealth[length=3pt]}, thin] (-0.5, 0) -- (14, 0)
-        node[right, font=\scriptsize] {$|y|$};
-      % Zero region
-      \draw[blue!70!black, very thick] (0, 0) -- (8, 0);
-      % Linear penalty region
-      \draw[red!70!black, very thick] (8, 0) -- (12, -1);
-      % Full penalty
-      \draw[red!70!black, very thick] (12, -1) -- (13.5, -1);
-      % Tick marks
-      \draw (8, 0.06) -- (8, -0.06)
-        node[above, font=\tiny] {$L_\text{max} - L_\text{cache}$};
-      \draw (12, 0.06) -- (12, -0.06)
-        node[above, font=\tiny] {$L_\text{max}$};
-      % y-axis labels
-      \node[font=\tiny, anchor=east] at (-0.2, 0) {$0$};
-      \node[font=\tiny, anchor=east] at (-0.2, -1) {$-1$};
-      \draw[thin, gray!40] (-0.15, -1) -- (0.15, -1);
-      % Annotations
-      \node[font=\tiny, text=blue!60!black] at (4, 0.2) {no penalty};
-      \node[font=\tiny, text=red!60!black, rotate=-27] at (10, -0.3) {soft penalty};
-    \end{tikzpicture}
-  \end{center}
-  Typical values: $L_\text{max} = 20{,}480$, $L_\text{cache} = 4{,}096$ tokens.
-\end{frame}
-
-% -----------------------------------------------------------------------
-\begin{frame}{DAPO: Algorithm}
-  \begin{algorithm}[H]
-  \small
-  \caption{DAPO (modifications vs.\ GRPO in {\color{red!70!black} red})}
-  \For{$k = 0$ \KwTo $K-1$}{
-    \textbf{Data Collection:} Sample prompts $\{s_j\}$. For each $s_j$, generate $G$ responses using $\pi_{\theta_k}$\;
-    {\color{red!70!black}\textbf{Dynamic Sampling:} Discard prompts where all responses are all-correct or all-wrong. Resample to fill batch.}\;
-    \textbf{Reward:} $R_{jk} = R(s_j, a_{jk})$ {\color{red!70!black}$+ R_\text{length}(a_{jk})$}\;
-    \textbf{Advantage:} $A_{jk} = \frac{R_{jk} - \bar{R}_j}{\text{std}(\{R_{jk}\}_k)}$\;
-    \textbf{Policy Update:}\;
-    \Indp
-      $r_{jk,t} = \frac{\pi_\theta(a_{jk,t} \mid s_j, a_{jk,<t})}{\pi_{\theta_k}(a_{jk,t} \mid s_j, a_{jk,<t})}$\;
-      $L = - {\color{red!70!black}\frac{1}{\sum_{j,k} |a_{jk}|}} \sum_{j,k} \sum_t \min\!\bigl(r_{jk,t}\, A_{jk},\; \text{clip}(r_{jk,t},\, {\color{red!70!black}1{-}\epsilon_\text{low}},\, {\color{red!70!black}1{+}\epsilon_\text{high}})\, A_{jk}\bigr)$\;
-      {\color{red!70!black} (No KL penalty)}\;
-    \Indm
-  }
-  \end{algorithm}
 \end{frame}
 
 \subsection{DPO}
@@ -1762,21 +2182,6 @@
 \subsection{Summary and Open Problems}
 
 % -----------------------------------------------------------------------
-\begin{frame}{State of RL for Reasoning LLMs: Summary}
-  Major patterns across recent methods:
-
-  \begin{description}
-    \item[Critic Elimination:] Every post-PPO method found that simpler baselines match or exceed learned value functions while saving ${\sim}50\%$ memory.
-      \begin{itemize}
-        \item LLM fine-tuning from strong pretrained checkpoints makes PPO's variance reduction largely unnecessary.
-      \end{itemize}
-    \item[Std.\ Normalization Harmful:] Dr.\ GRPO, DAPO and others show that dividing advantages by $\sigma$ adds too much weight on nearly-solved problems.
-    \item[Loss Aggregation Criticality:] Sequence-level rewards combined with sample averaging introduce subtle token-level biases that fundamentally affect per-token learning signals.
-    \item[Trust Region Refinement:] PPO's $\epsilon = 0.2$ works well, yet recent methods explore asymmetric clipping (DAPO), weight-based approaches (CISPO), or divergence-based constraints (DPPO).
-  \end{description}
-\end{frame}
-
-% -----------------------------------------------------------------------
 \begin{frame}{Open Research Challenges}
   \begin{description}\largesep
     \item[Credit Assignment:] Current outcome-based methods assign essentially the same reward to all tokens. This works but is inefficient. Process reward models and step-level verifiers remain unsolved.
@@ -1786,4 +2191,11 @@
     \item[Empirical Reliability:] Evidence remains relatively narrow and expensive to reproduce.
     \item[New Capabilities vs.\ Distribution Narrowing:] Does RL teach fundamentally new skills, or does it merely \emphdef{sharpen the output distribution} toward abilities already latent from pretraining? Evidence suggests RL primarily surfaces and focuses existing capabilities rather than creating novel ones. The ceiling may be set by pre- and mid-training.
   \end{description}
+\end{frame}
+
+% -----------------------------------------------------------------------
+\begin{frame}{Policy Gradient Intuition}
+  \begin{center}
+    \includegraphics[width=0.85\textwidth]{images/rl_meme.png}
+  \end{center}
 \end{frame}

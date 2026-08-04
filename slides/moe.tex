@@ -159,85 +159,76 @@
     \begin{column}{0.55\textwidth}
       \begin{center}
         \begin{tikzpicture}[
-          scale=0.75, every node/.style={scale=0.75},
-          expert/.style={draw, rounded corners, fill=orange!20, minimum width=0.8cm, minimum height=0.45cm, align=center, font=\scriptsize},
-          gate/.style={draw, rounded corners, fill=green!18, minimum width=2.2cm, minimum height=0.45cm, align=center, font=\small},
+          scale=0.72, every node/.style={scale=0.72},
+          box/.style={draw, rounded corners, fill=blue!8, minimum width=2.0cm, minimum height=0.55cm, align=center, font=\small},
+          expert/.style={draw, rounded corners, fill=orange!15, minimum width=0.9cm, minimum height=0.5cm, align=center, font=\small},
+          gate/.style={draw, rounded corners, fill=green!15, minimum width=2.6cm, minimum height=0.5cm, align=center, font=\small},
           arr/.style={-Stealth, thick},
-          combine/.style={draw, circle, fill=yellow!15, inner sep=2pt, font=\scriptsize},
         ]
           % Input
-          \node[font=\small] (input) at (0, 0) {Input $x$};
+          \node[box] (input) at (0, 0) {Input $x$};
 
-          % Gating branch
-          \node[gate] (gating) at (-2, 1.5) {$H(x) = xW_g + \epsilon$};
-          \draw[arr] (input) -- ++(0, 0.5) -| (gating);
-
-          \node[draw, rounded corners, fill=red!10, minimum width=2.2cm, minimum height=0.4cm, font=\small] (topk) at (-2, 2.7) {TopK + Softmax};
-          \draw[arr] (gating) -- (topk);
-
-          % Weights arrow
-          \draw[arr, red!70!black] (topk.east) -- ++(0.6, 0) node[right, font=\scriptsize, red!70!black] {$g_1, \ldots, g_k$};
+          % Noisy top-k router
+          \node[gate] (router) at (0, 1.5) {Noisy gating $H(x){=}xW_g{+}\epsilon$\\ $G(x){=}\mathrm{softmax}(\mathrm{TopK})$};
+          \draw[arr] (input) -- (router);
 
           % Experts
-          \node[expert, fill=gray!15] (e1) at (1.8, 1.2) {$E_1$};
-          \node[expert, fill=orange!30] (e2) at (1.8, 2.0) {$E_2$};
-          \node[font=\small] at (1.8, 2.7) {$\vdots$};
-          \node[expert, fill=gray!15] (en1) at (1.8, 3.4) {$E_{n{-}1}$};
-          \node[expert, fill=orange!30] (en) at (1.8, 4.2) {$E_n$};
+          \node[expert, fill=gray!15] (e1) at (-2.6, 3.3) {$E_1$};
+          \node[expert] (e2) at (-1.3, 3.3) {$E_2$};
+          \node[font=\large] at (0, 3.3) {$\cdots$};
+          \node[expert, fill=gray!15] (en1) at (1.3, 3.3) {$E_{E{-}1}$};
+          \node[expert] (en) at (2.6, 3.3) {$E_E$};
 
-          % Input to experts
-          \draw[arr, gray, dashed, thin] (input.east) -- ++(0.8, 0) |- (e1.west);
-          \draw[arr, gray, dashed, thin] (0.8, 0) |- (e2.west);
-          \draw[arr, gray, dashed, thin] (0.8, 0) |- (en1.west);
-          \draw[arr, gray, dashed, thin] (0.8, 0) |- (en.west);
+          % Router to experts (highlight active ones)
+          \draw[arr, gray!40, thin] (router) -- (e1);
+          \draw[arr, red!70!black, very thick] (router) -- (e2) node[midway, left, font=\scriptsize, red!70!black] {$G(x)_2$};
+          \draw[arr, gray!40, thin] (router) -- (en1);
+          \draw[arr, red!70!black, very thick] (router) -- (en) node[midway, right, font=\scriptsize, red!70!black] {$G(x)_E$};
 
-          % Weighted sum
-          \node[combine] (sum) at (3.8, 2.7) {$\Sigma$};
-          \draw[arr, gray!40, thin] (e1.east) -- (sum);
-          \draw[arr, red!70!black, very thick] (e2.east) -- (sum);
-          \draw[arr, gray!40, thin] (en1.east) -- (sum);
-          \draw[arr, red!70!black, very thick] (en.east) -- (sum);
+          % Output combination
+          \node[box] (output) at (0, 5.0) {$y = \sum_{i=1}^{E} G(x)_i\, E_i(x)$};
+          \draw[arr, gray!40, thin] (e1) -- (output);
+          \draw[arr, red!70!black, very thick] (e2) -- (output);
+          \draw[arr, gray!40, thin] (en1) -- (output);
+          \draw[arr, red!70!black, very thick] (en) -- (output);
 
-          \node[font=\tiny, red!70!black, anchor=south] at (2.8, 2.05) {$\times g_2$};
-          \node[font=\tiny, red!70!black, anchor=south] at (2.8, 4.25) {$\times g_n$};
-
-          % Output
-          \node[font=\small] (output) at (3.8, 4.8) {Output $y$};
-          \draw[arr] (sum) -- (output);
+          % Annotations
+          \node[font=\scriptsize, text=red!70!black, anchor=west] at (3.2, 1.5) {selects top-$k$ experts};
+          \node[font=\scriptsize, text=gray, anchor=west] at (3.2, 3.3) {inactive experts (gray)};
         \end{tikzpicture}
       \end{center}
     \end{column}
     \begin{column}{0.42\textwidth}
-      \textbf{Placement in network}:
+      \textbf{Placement in the LM} (5 layers):
 
-      \vspace{0.2em}
+      \vspace{0.3em}
       \begin{center}
         \begin{tikzpicture}[
           scale=0.7, every node/.style={scale=0.7},
-          lstm/.style={draw, rounded corners, fill=blue!12, minimum width=1.6cm, minimum height=0.45cm, align=center, font=\small},
-          moe/.style={draw, rounded corners, fill=orange!15, minimum width=1.6cm, minimum height=0.45cm, align=center, font=\small},
+          layer/.style={draw, rounded corners, fill=gray!12, minimum width=2.3cm, minimum height=0.45cm, align=center, font=\small},
+          lstm/.style={draw, rounded corners, fill=blue!12, minimum width=2.3cm, minimum height=0.45cm, align=center, font=\small},
+          moe/.style={draw, rounded corners, fill=orange!18, minimum width=2.3cm, minimum height=0.45cm, align=center, font=\small},
           arr/.style={-Stealth, thick},
         ]
-          \node[lstm] (l1) at (0, 0) {LSTM};
-          \node[moe]  (m1) at (0, 0.8) {MoE};
-          \node[lstm] (l2) at (0, 1.6) {LSTM};
-          \node[moe]  (m2) at (0, 2.4) {MoE};
-          \node[lstm] (l3) at (0, 3.2) {LSTM};
-          \draw[arr] (l1) -- (m1);
-          \draw[arr] (m1) -- (l2);
-          \draw[arr] (l2) -- (m2);
-          \draw[arr] (m2) -- (l3);
-          \node[font=\scriptsize, gray, anchor=west] at (1.2, 1.2) {alternating};
+          \node[layer] (emb) at (0, 0)   {Embedding (512)};
+          \node[lstm]  (l1)  at (0, 0.9) {LSTM (512)};
+          \node[moe]   (m)   at (0, 1.8) {MoE layer};
+          \node[lstm]  (l2)  at (0, 2.7) {LSTM (512)};
+          \node[layer] (sm)  at (0, 3.6) {Softmax};
+          \draw[arr] (0, -0.7) -- (emb) node[midway, right, font=\scriptsize, gray] {word};
+          \draw[arr] (emb) -- (l1);
+          \draw[arr] (l1) -- (m);
+          \draw[arr] (m) -- (l2);
+          \draw[arr] (l2) -- (sm);
+          \draw[arr] (sm) -- ++(0, 0.7);
         \end{tikzpicture}
       \end{center}
 
       \vspace{0.2em}
       \begin{itemize}
-        \item MoE layers inserted \emph{between} stacked LSTM layers
-        \item Each MoE receives the preceding LSTM's output
-        \item LSTMs: sequential modeling
-        \item MoE: adds capacity without proportional compute
-        \item Up to 5 LSTM + MoE pairs
+        \item A \emph{single} MoE layer between two LSTM layers
+        \item Embedding, LSTM units, MoE input/output all dim \textbf{512}
+        \item Each expert: FFN $512 \to 1024 \to 512$ (ReLU), $\approx$\,\textbf{1M params}
       \end{itemize}
     \end{column}
   \end{columns}
@@ -353,30 +344,142 @@
 \end{frame}
 
 % -----------------------------------------------------------------------
+\begin{frame}{Sparsely-Gated MoE: Hierarchical Gating}
+
+  For very large $E$, a single softmax over all experts dominates the gating cost. \textbf{Hierarchical gating} factorizes routing into two levels.
+
+  \vspace{0.3em}
+  \begin{columns}
+    \begin{column}{0.4\textwidth}
+      \textbf{Flat}: one gate scores all $E$ experts,
+      {\small $G(x){=}\mathrm{softmax}(\mathrm{TopK}(xW_g, k))$}, with $W_g\in\mathbb{R}^{d\times E}$.
+
+      \vspace{0.3em}
+      \begin{center}
+        \begin{tikzpicture}[
+          scale=0.6, every node/.style={scale=0.6},
+          box/.style={draw, rounded corners, fill=blue!8, minimum width=1.0cm, minimum height=0.5cm, font=\small},
+          gate/.style={draw, rounded corners, fill=green!15, minimum width=1.6cm, minimum height=0.5cm, font=\small},
+          expert/.style={draw, rounded corners, fill=orange!15, minimum width=0.7cm, minimum height=0.45cm, font=\scriptsize},
+          arr/.style={-Stealth, thick},
+        ]
+          \node[box] (x) at (0,0) {$x$};
+          \node[gate] (g) at (0,1.1) {gate $W_g$};
+          \draw[arr] (x)--(g);
+          \node[expert, fill=gray!15] (e1) at (-2.1,2.6) {$E_1$};
+          \node[expert] (e2) at (-1.05,2.6) {$E_2$};
+          \node at (0,2.6) {$\cdots$};
+          \node[expert, fill=gray!15] (e3) at (1.15,2.6) {$E_{E\text{-}1}$};
+          \node[expert] (e4) at (2.3,2.6) {$E_E$};
+          \draw[arr,gray!40,thin] (g)--(e1);
+          \draw[arr,red!70!black,very thick] (g)--(e2);
+          \draw[arr,gray!40,thin] (g)--(e3);
+          \draw[arr,red!70!black,very thick] (g)--(e4);
+        \end{tikzpicture}
+      \end{center}
+
+      {\scriptsize Gating cost $O(E)$ per token.}
+    \end{column}
+    \begin{column}{0.6\textwidth}
+      \textbf{Hierarchical}: a primary gate picks a \emph{group}, a secondary gate picks experts \emph{within} it. Effective weight {\small $G(x)_{(i,j)} = G^{p}(x)_i\,G^{s,i}(x)_j$}.
+
+      \vspace{0.3em}
+      \begin{center}
+        \begin{tikzpicture}[
+          scale=0.6, every node/.style={scale=0.6},
+          box/.style={draw, rounded corners, fill=blue!8, minimum width=0.9cm, minimum height=0.5cm, font=\small},
+          pg/.style={draw, rounded corners, fill=green!15, minimum width=1.3cm, minimum height=0.6cm, font=\scriptsize, align=center},
+          grp/.style={draw, rounded corners, fill=green!8, minimum width=1.1cm, minimum height=0.45cm, font=\scriptsize},
+          expert/.style={draw, rounded corners, fill=orange!15, minimum width=0.85cm, minimum height=0.42cm, font=\scriptsize},
+          arr/.style={-Stealth, thick},
+        ]
+          \node[box] (x) at (0,0) {$x$};
+          \node[pg] (pg) at (1.7,0) {primary\\ gate};
+          \draw[arr] (x)--(pg);
+          % groups
+          \node[grp] (g1) at (3.6,1.3) {Grp $1$};
+          \node[grp, fill=orange!25] (g2) at (3.6,0.1) {Grp $i$};
+          \node at (3.6,-0.8) {$\vdots$};
+          \node[grp] (gb) at (3.6,-1.6) {Grp $b$};
+          \draw[arr,gray!40,thin] (pg)--(g1);
+          \draw[arr,red!70!black,very thick] (pg)--(g2);
+          \draw[arr,gray!40,thin] (pg)--(gb);
+          % experts within selected group
+          \node[expert] (a1) at (5.8,0.9) {$E_{i,1}$};
+          \node[expert, fill=gray!15] (a2) at (5.8,0.1) {$E_{i,2}$};
+          \node at (5.8,-0.6) {$\vdots$};
+          \node[expert] (ag) at (5.8,-1.3) {$E_{i,g}$};
+          \draw[arr,red!70!black,very thick] (g2)--(a1);
+          \draw[arr,gray!40,thin] (g2)--(a2);
+          \draw[arr,red!70!black,very thick] (g2)--(ag);
+          % labels
+          \node[font=\scriptsize, gray] at (3.6,-2.3) {$b$ groups};
+          \node[font=\scriptsize, gray] at (5.8,-2.0) {$g$ experts/group};
+          \node[font=\scriptsize, align=center] at (5.8,1.8) {secondary gate\\ within Grp $i$};
+        \end{tikzpicture}
+      \end{center}
+    \end{column}
+  \end{columns}
+
+  \vspace{0.2em}
+  \begin{block}{Cost and capacity}
+    $b$ groups $\times$ $g$ experts $= E$ total; top-2 at each level $\Rightarrow 2{\times}2 = 4$ active. Gating cost drops from $O(E)$ to $O(b{+}g)\approx O(\sqrt{E})$. \emph{Example} (100B News): $256 \times 512 = 131{,}072$ experts, yet the router scores only $256{+}512$.
+  \end{block}
+\end{frame}
+
+% -----------------------------------------------------------------------
+\begin{frame}{Sparsely-Gated MoE: Architecture \& Training Details}
+
+  \begin{columns}
+    \begin{column}{0.5\textwidth}
+      \textbf{Architecture} (language model) \cite{shazeer2017moe}:
+      \begin{description}
+        \item[Backbone] 5 layers: Embedding $\to$ LSTM $\to$ \textbf{MoE} $\to$ LSTM $\to$ Softmax
+        \item[Placement] a \emph{single} MoE layer between the two LSTM layers, applied at every timestep
+        \item[Model dim] $d{=}512$ (embedding, LSTM units, MoE input/output)
+        \item[Expert] FFN $512\!\to\!1024\!\to\!512$ with ReLU; $\approx$\,1M params each
+        \item[Experts/layer] flat 4--256; hierarchical 256--4096 (1B Word); up to \textbf{131{,}072} (100B News, $256{\times}512$ two-level)
+        \item[Gating] noisy top-$k$ softmax, $G(x){=}\mathrm{softmax}(\mathrm{TopK}(H(x),k))$
+        \item[Active/token] $k{=}4$ flat, or $k{=}2$ per level $\Rightarrow$ 4 experts, $\approx$\,8M ops/timestep
+      \end{description}
+    \end{column}
+    \begin{column}{0.5\textwidth}
+      \textbf{Training} (1B Word benchmark):
+      \begin{description}
+        \item[Optimizer] Adam; lr linear warmup 1k steps, then $\propto 1/\sqrt{\text{step}}$
+        \item[Batch] $\approx$\,300k words/batch (large, so each expert sees enough tokens)
+        \item[Schedule] 10 epochs ($\approx$\,27k steps)
+        \item[Hardware] 16$\times$ K40 GPUs, 12--16\,h/model; experts sharded across GPUs (data $+$ model parallel)
+        \item[Dropout] 0.3--0.4 (large models; up to 0.8--0.9 for tiny)
+        \item[Load balancing] importance $+$ load auxiliary losses, $w_{\text{imp}}{=}w_{\text{load}}{=}0.1$
+        \item[Inference] gating noise disabled $\Rightarrow$ deterministic routing
+      \end{description}
+    \end{column}
+  \end{columns}
+
+  \vspace{0.3em}
+  \begin{block}{Key design choice}
+    Per-token compute is held near constant ($\approx$\,4 active experts, $\approx$\,8M ops/timestep) while total parameters grow by $>$\,1000$\times$ across the expert sweep.
+  \end{block}
+\end{frame}
+
+% -----------------------------------------------------------------------
 \begin{frame}{Results: Scaling with Sparse MoE}
 
   \cite{shazeer2017moe} evaluated on language modeling and machine translation:
+  {\small (LM metric: test \textbf{perplexity} $=\exp(\text{cross-entropy loss})$; lower is better.)}
 
   \vspace{0.3em}
-  \begin{itemize}
-    \item \textbf{$>$1000$\times$ improvement in model capacity} with only minor losses in computational efficiency
-    \item \textbf{Language modeling} (100B word Google News corpus): scaled up to \textbf{65,536 experts} with $k{=}4$, reaching \textbf{68B total parameters}. Only a tiny fraction active per token
-    \item \textbf{Machine translation} (WMT'14): up to 2,048 experts per MoE layer, achieved state-of-the-art BLEU scores with $1/6$ of the training time of Google's production system
-    \item Performance improved up to 65,536 experts but degraded at 131,072, likely due to insufficient batch size per expert
-  \end{itemize}
+  \begin{description}
+    \item[Language modeling (1B Word)] MoE \emph{matches or beats} the previous dense state of the art while using only a small fraction of its per-step compute; with more compute it cuts perplexity from \textbf{34.7} (dense SOTA) to \textbf{28.0}.
+    \item[Language modeling (100B News)] Perplexity keeps improving with more experts, peaking at \textbf{65{,}536} experts ($\approx$\,$-39\%$ vs.\ baseline), then \emph{reverses} at 131{,}072 once experts become too sparse to each see enough data.
+    \item[Machine translation (WMT'14)] New state-of-the-art BLEU on En$\to$Fr and En$\to$De (\textbf{$+1.3$ BLEU} over GNMT) at $\approx$\,$\mathbf{1/6}$ the training time of the production system.
+  \end{description}
 
   \vspace{0.3em}
-  \begin{block}{Key Takeaway}
-    Sparse MoE enables \emph{conditional computation}: the model can store vastly more knowledge in its parameters without proportionally increasing the compute per example.
+  \begin{block}{Key takeaway}
+    Conditional computation buys $>$\,1000$\times$ model capacity at near-constant per-token compute. The binding constraint at the extreme is not capacity but \emph{per-expert batch size}: too many experts $\Rightarrow$ too little data each $\Rightarrow$ quality regresses.
   \end{block}
-
-  \vspace{0.3em}
-  \textbf{Challenges identified}:
-  \begin{itemize}
-    \item Load balancing is critical and non-trivial
-    \item Communication overhead when experts are distributed across devices
-    \item Batch size must be large enough so each expert sees sufficient tokens
-  \end{itemize}
 \end{frame}
 
 % =======================================================================
@@ -455,35 +558,18 @@
 % -----------------------------------------------------------------------
 \begin{frame}{Switch Transformer: Model Configurations}
 
-  All Switch models are \textbf{FLOP-matched} to their dense T5 counterparts. Extra parameters go into expert FFN layers, but only 1 expert is active per token.
+  All Switch models are \textbf{FLOP-matched} to their dense T5 counterparts: extra parameters go into expert FFN layers, but only 1 expert is active per token. Quality below is negative log perplexity at 500k steps (higher is better); at matched FLOPs \emph{every} Switch model beats its dense T5 twin.
+
+  \vspace{0.4em}
+  \begin{description}
+    \item[Switch-Base] 128 experts, \textbf{7.4B} params vs.\ T5-Base's 0.2B at \emph{identical} 124B FLOPs/seq ($37\times$ more params); $-1.306$ vs.\ $-1.556$, and reaches T5-Base quality in \textbf{7$\times$ fewer steps}.
+    \item[Switch-Large] 128 experts, \textbf{26B} params vs.\ T5-Large's 0.7B at 425B FLOPs/seq; $-1.177$ vs.\ $-1.350$.
+    \item[Switch-XXL] 64 experts, \textbf{395B} params vs.\ T5-XXL's 11B at 6.3T FLOPs/seq; $-1.008$ vs.\ $-1.095$.
+    \item[Switch-C] \textbf{1.6T} params, 2048 experts (expert parallelism only $\Rightarrow$ smaller $d_{\text{model}}$, fewer layers); $\sim$\textbf{4$\times$ faster} to T5-XXL quality.
+  \end{description}
 
   \vspace{0.3em}
-  \begin{center}
-  \scriptsize
-  \begin{tabular}{l c c c c c}
-    \toprule
-    \textbf{Model} & \textbf{Total Params} & \textbf{Experts} & \textbf{Layers} & $d_{\text{model}}$ & \textbf{FLOPs/seq} \\
-    \midrule
-    T5-Base        & 0.2B   & ---  & 12 & 768  & 124B \\
-    Switch-Base    & 7.4B   & 128  & 12 & 768  & 124B \\
-    \midrule
-    T5-Large       & 0.7B   & ---  & 24 & 1024 & 425B \\
-    Switch-Large   & 26B    & 128  & 24 & 1024 & 425B \\
-    \midrule
-    T5-XXL         & 11B    & ---  & 24 & 4096 & 6.3T \\
-    Switch-XXL     & 395B   & 64   & 24 & 4096 & 6.3T \\
-    \midrule
-    Switch-C       & 1,571B & 2048 & 15 & 2080 & 890B \\
-    \bottomrule
-  \end{tabular}
-  \end{center}
-
-  \vspace{0.3em}
-  \begin{itemize}
-    \item Switch-Base has \textbf{37$\times$} more parameters than T5-Base at \emph{identical} FLOPs
-    \item Switch-C: expert parallelism only (no model parallelism) $\Rightarrow$ smaller $d_{\text{model}}$, fewer layers, but 2048 experts
-    \item Training: 550k steps on C4~\cite{raffel2020t5}, batch size $2^{20}$ tokens, $\alpha_{\text{bal}} = 10^{-2}$
-  \end{itemize}
+  \textbf{Training}: 550k steps on C4~\cite{raffel2020t5}, batch size $2^{20}$ tokens, load-balancing coefficient $\alpha_{\text{bal}} = 10^{-2}$.
 \end{frame}
 
 % -----------------------------------------------------------------------
@@ -510,7 +596,7 @@
       \textbf{Training stability mitigations}:
       \begin{itemize}
         \item \textbf{Selective precision}: router computation in \texttt{float32}, rest in \texttt{bfloat16}. Pure \texttt{bfloat16} diverges; selective precision matches \texttt{float32} quality at \texttt{bfloat16} speed
-        \item \textbf{Reduced init scale}: $s = 0.1$ (10$\times$ smaller than default). With $s=1.0$: high variance, unstable
+        \item \textbf{Reduced init scale}: weights $W\sim\mathcal{N}(0,\,s/n)$ ($n=$ fan-in); $s = 0.1$ (10$\times$ smaller than default). With $s=1.0$: high variance, unstable
         \item \textbf{Expert dropout}: 0.4 at expert layers during fine-tuning (vs.\ 0.1 elsewhere)
       \end{itemize}
 
@@ -633,34 +719,35 @@
 \end{frame}
 
 % -----------------------------------------------------------------------
-\begin{frame}{DeepSeek-MoE: Model Configurations}
+\begin{frame}{DeepSeek-MoE: Architecture \& Training Details}
 
-  Fine-grained segmentation factor $m = 4$ throughout. Trained on 2T tokens.
+  \begin{columns}
+    \begin{column}{0.5\textwidth}
+      \textbf{Architecture} (16B; 145B in parens) \cite{dai2024deepseekmoe}:
+      \begin{description}
+        \item[Backbone] decoder-only Transformer, \textbf{28} (62) layers, $d_{\text{model}}{=}2048$ (4096), 16 (32) heads of dim 128; RoPE, RMSNorm, SwiGLU
+        \item[MoE placement] every FFN is an MoE layer \emph{except the first} (kept dense -- its load balance converges slowest)
+        \item[Experts/layer] \textbf{2 shared $+$ 64 routed} (4 $+$ 128), each $1/m$ of a standard FFN, $m{=}4$ ($m{=}8$)
+        \item[Routing] all shared $+$ top-\textbf{6} of 64 (top-12 of 128) $\Rightarrow$ 8 (16) active experts/token
+        \item[Size] 16.4B total / \textbf{2.8B active} (144.6B / 22.2B)
+      \end{description}
+    \end{column}
+    \begin{column}{0.5\textwidth}
+      \textbf{Training} (16B):
+      \begin{description}
+        \item[Data] \textbf{2T} tokens, sequence length 4096
+        \item[Optimizer] AdamW ($\beta_1{=}0.9,\beta_2{=}0.95$, wd $0.1$), grad-clip 1.0
+        \item[LR] max $4.2\times10^{-4}$; linear warmup 2k steps, then $\times0.316$ at 80\% and 90\% of steps (multi-step decay)
+        \item[Batch] 4.5k sequences $\approx$ \textbf{18M} tokens/batch
+        \item[Load balancing] expert-level balance loss ($\alpha{=}10^{-3}$); no device-level loss for 16B (145B adds device-level $0.05$)
+      \end{description}
+    \end{column}
+  \end{columns}
 
   \vspace{0.3em}
-  \begin{center}
-  \scriptsize
-  \begin{tabular}{l c c c c c c c c}
-    \toprule
-    \textbf{Model} & \textbf{Total} & \textbf{Active} & \textbf{Routed} & \textbf{Shared} & \textbf{Top-$k$} & \textbf{Layers} & $d_{\text{model}}$ & $d_{\text{expert}}$ \\
-    \midrule
-    DeepSeek-MoE 16B  & 16.4B  & 2.8B  & 64  & 2 & 6  & 28 & 2048 & 1408 \\
-    DeepSeek-MoE 145B & 144.6B & 22.2B & 128 & 4 & 12 & 62 & 4096 & 2048 \\
-    \midrule
-    \multicolumn{9}{l}{\textit{Dense baselines for comparison:}} \\
-    DeepSeek 7B       & 6.9B   & 6.9B  & --- & --- & --- & 30 & 4096 & --- \\
-    LLaMA-2 7B        & 6.7B   & 6.7B  & --- & --- & --- & 32 & 4096 & --- \\
-    DeepSeek 67B      & 67B    & 67B   & --- & --- & --- & 95 & 8192 & --- \\
-    \bottomrule
-  \end{tabular}
-  \end{center}
-
-  \vspace{0.3em}
-  \begin{itemize}
-    \item Active experts per token: $k$ routed + $K_s$ shared (e.g.\ $6 + 2 = 8$ for 16B)
-    \item Each fine-grained expert has $1/m$ the intermediate dim of a standard FFN
-    \item Context length 4096, AdamW optimizer, cosine LR schedule
-  \end{itemize}
+  \begin{block}{Key choice}
+    Always-on shared experts plus fine-grained routed experts ($m{=}4$) let \textbf{2.8B} active params match a $\sim$7B dense model.
+  \end{block}
 \end{frame}
 
 % -----------------------------------------------------------------------
@@ -776,35 +863,6 @@
       \end{block}
     \end{column}
   \end{columns}
-\end{frame}
-
-% -----------------------------------------------------------------------
-\begin{frame}{Comparison: Dense vs.\ MoE Approaches}
-
-  \vspace{0.3em}
-  \begin{center}
-  \small
-  \begin{tabular}{l c c c}
-    \toprule
-    \textbf{Model} & \textbf{Total Params} & \textbf{Active Params} & \textbf{MoE Design} \\
-    \midrule
-    LLaMA-3 405B & 405B & 405B & Dense \\
-    Mixtral 8$\times$7B & 47B & 13B & Top-2 of 8 \\
-    Mixtral 8$\times$22B & 141B & 39B & Top-2 of 8 \\
-    DeepSeek-V2 & 236B & 21B & Top-6 of 160 + shared \\
-    DeepSeek-V3 & 671B & 37B & Top-8 of 256 + shared \\
-    \bottomrule
-  \end{tabular}
-  \end{center}
-
-  \vspace{0.5em}
-  \textbf{Trends in MoE design}:
-  \begin{enumerate}
-    \item \textbf{More, smaller experts}: from 8 large $\to$ 256 fine-grained
-    \item \textbf{Higher top-$k$}: from top-1/2 $\to$ top-6/8 with smaller experts
-    \item \textbf{Shared experts}: reduce redundancy, capture common knowledge
-    \item \textbf{Better load balancing}: from auxiliary losses $\to$ bias-based methods
-  \end{enumerate}
 \end{frame}
 
 % =======================================================================

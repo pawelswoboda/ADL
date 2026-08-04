@@ -11,7 +11,7 @@
 
   Large language models understand text, but the world is \emph{multimodal}: images, video, audio, \ldots
 
-  \vspace{0.5em}
+  \vspace{0.4em}
   \begin{columns}
     \begin{column}{0.48\textwidth}
       \textbf{Key questions}:
@@ -24,38 +24,78 @@
     \begin{column}{0.48\textwidth}
       \textbf{Two paradigms}:
       \begin{description}[style=nextline]
-        \item[Contrastive alignment] Learn a shared embedding space for images and text (CLIP, SigLIP)
-        \item[Generative VLM] Feed visual features into a language model that \emph{generates} text (PaliGemma, LLaVA, \ldots)
+        \item[Contrastive alignment] Shared embedding space for images and text (CLIP, SigLIP)
+        \item[Generative VLM] Visual features fed into a language model that \emph{generates} text (PaliGemma, LLaVA)
       \end{description}
     \end{column}
   \end{columns}
 
-  \vspace{0.5em}
+  \vspace{0.3em}
   \begin{center}
     \begin{tikzpicture}[
-      scale=0.8, every node/.style={scale=0.8},
-      box/.style={draw, rounded corners, fill=blue!8, minimum width=2.2cm, minimum height=0.5cm, align=center, font=\small},
-      arr/.style={-Stealth, thick},
+      scale=0.92, every node/.style={scale=0.92},
+      box/.style={draw, rounded corners, minimum width=1.6cm, minimum height=0.5cm, align=center, font=\scriptsize},
+      capbox/.style={draw, rounded corners, fill=cyan!12, align=center, font=\scriptsize, inner sep=2pt},
+      arr/.style={-Stealth, semithick},
+      % a small illustrative photo (dog on grass, sun)
+      photo/.pic={
+        \begin{scope}
+          \clip (0,0) rectangle (1,0.8);
+          \fill[blue!22] (0,0) rectangle (1,0.8);
+          \fill[green!45!brown!35] (0,0) rectangle (1,0.30);
+          \fill[yellow!75!orange] (0.80,0.62) circle (0.10);
+          % dog
+          \fill[brown!55] (0.40,0.16) ellipse (0.13 and 0.065);
+          \fill[brown!55] (0.535,0.215) circle (0.058);
+          \fill[brown!45] (0.30,0.10) -- (0.27,0.04) -- (0.34,0.10) -- cycle;
+          \fill[brown!45] (0.49,0.105) -- (0.52,0.04) -- (0.55,0.11) -- cycle;
+        \end{scope}
+        \draw[thick] (0,0) rectangle (1,0.8);
+      },
     ]
-      % Contrastive
-      \node[box, fill=orange!15] (img1) at (-3.5, 0) {Image Encoder};
-      \node[box, fill=cyan!15] (txt1) at (-3.5, -1.2) {Text Encoder};
-      \node[font=\small] at (-3.5, 1.0) {\textbf{Contrastive (CLIP)}};
-      \node[draw, circle, inner sep=2pt, font=\small] (sim) at (-1.0, -0.6) {$\cos$};
-      \draw[arr] (img1) -- (sim);
-      \draw[arr] (txt1) -- (sim);
+      % ===================== LEFT : CONTRASTIVE =====================
+      \node[font=\small\bfseries, text=orange!60!black] at (-3.3,3.35) {Contrastive (CLIP / SigLIP)};
 
-      % Arrow between
-      \node[font=\Large] at (1.0, -0.4) {$\Rightarrow$};
+      \path (-5.15,1.95) pic {photo};
+      \node[capbox, text width=1.4cm] (lcap) at (-1.9,2.35) {``a dog on the grass''};
 
-      % Generative
-      \node[box, fill=orange!15] (img2) at (4.0, 0) {Image Encoder};
-      \node[box, fill=green!15] (proj) at (4.0, -1.2) {Projection};
-      \node[box, fill=cyan!15] (llm) at (6.5, -1.2) {LLM};
-      \node[font=\small] at (5.0, 1.0) {\textbf{Generative (PaliGemma)}};
-      \draw[arr] (img2) -- (proj);
-      \draw[arr] (proj) -- (llm);
-      \node[font=\scriptsize, anchor=west] at (7.5, -1.2) {$\to$ text};
+      \node[box, fill=orange!22] (lienc) at (-4.65,0.85) {Image\\Encoder};
+      \node[box, fill=cyan!25]   (ltenc) at (-1.9,0.85)  {Text\\Encoder};
+      \draw[arr] (-4.65,1.95) -- (lienc);
+      \draw[arr] (lcap) -- (ltenc);
+
+      % embedding vectors meeting
+      \node[draw, circle, fill=orange!12, inner sep=1.5pt, font=\scriptsize] (li) at (-4.0,-0.45) {$\mathbf{I}$};
+      \node[draw, circle, fill=cyan!15,  inner sep=1.5pt, font=\scriptsize] (lt) at (-2.55,-0.45) {$\mathbf{T}$};
+      \draw[arr] (lienc) -- (li);
+      \draw[arr] (ltenc) -- (lt);
+      \draw[<->, semithick, violet] (li) -- (lt);
+      \node[font=\scriptsize, text=violet!65!black, align=center] at (-3.3,-1.25)
+        {pull matching\\$\cos(\mathbf{I},\mathbf{T})$ together};
+
+      % divider
+      \draw[gray!40, dashed] (0,-1.6) -- (0,3.0);
+
+      % ===================== RIGHT : GENERATIVE =====================
+      \node[font=\small\bfseries, text=green!50!black] at (3.4,3.35) {Generative (PaliGemma / LLaVA)};
+
+      % image branch (vertical, x = 1.8)
+      \path (1.30,1.95) pic {photo};
+      \node[box, fill=orange!22] (rienc) at (1.8,1.05)  {Image Enc.};
+      \node[box, fill=green!18]  (rproj) at (1.8,-0.10) {Projection};
+      \draw[arr] (1.8,1.95) -- (rienc);
+      \draw[arr] (rienc) -- (rproj);
+
+      % prompt above LLM (vertical) ; LLM aligned with projection (horizontal)
+      \node[capbox] (rprompt) at (4.4,1.4) {``Describe.''};
+      \node[box, fill=blue!16, minimum width=1.7cm, minimum height=1.1cm] (rllm) at (4.4,-0.10) {LLM};
+      \draw[arr] (rproj.east) -- (rllm.west);
+      \draw[arr] (rprompt) -- (rllm);
+
+      % output below LLM (vertical)
+      \node[capbox, fill=green!20, text width=2.3cm] (rout) at (4.4,-1.4)
+        {``A dog sitting on the grass.''};
+      \draw[arr, green!45!black] (rllm) -- (rout);
     \end{tikzpicture}
   \end{center}
 \end{frame}
@@ -74,38 +114,73 @@
   \vspace{0.3em}
   \begin{center}
     \begin{tikzpicture}[
-      scale=0.85, every node/.style={scale=0.85},
-      enc/.style={draw, rounded corners, minimum width=2.0cm, minimum height=0.55cm, align=center, font=\small},
-      arr/.style={-Stealth, thick},
+      scale=0.92, every node/.style={scale=0.92},
+      enc/.style={draw, rounded corners, minimum width=1.7cm, minimum height=0.55cm, align=center, font=\scriptsize},
+      capbox/.style={draw, rounded corners, fill=cyan!12, align=center, font=\scriptsize, inner sep=2.5pt},
+      arr/.style={-Stealth, semithick},
+      photo/.pic={
+        \begin{scope}
+          \clip (0,0) rectangle (1,0.8);
+          \fill[blue!22] (0,0) rectangle (1,0.8);
+          \fill[green!45!brown!35] (0,0) rectangle (1,0.30);
+          \fill[yellow!75!orange] (0.80,0.62) circle (0.10);
+          \fill[brown!55] (0.40,0.16) ellipse (0.13 and 0.065);
+          \fill[brown!55] (0.535,0.215) circle (0.058);
+          \fill[brown!45] (0.30,0.10) -- (0.27,0.04) -- (0.34,0.10) -- cycle;
+          \fill[brown!45] (0.49,0.105) -- (0.52,0.04) -- (0.55,0.11) -- cycle;
+        \end{scope}
+        \draw[thick] (0,0) rectangle (1,0.8);
+      },
     ]
-      % Image side
-      \node[font=\scriptsize] (img) at (-3.0, 0) {Image};
-      \node[enc, fill=orange!20] (ienc) at (-3.0, 1.2) {Image Encoder};
-      \node[enc, fill=orange!10] (iproj) at (-3.0, 2.4) {Linear Proj.};
-      \node[draw, circle, fill=orange!8, inner sep=3pt, font=\small] (ie) at (-3.0, 3.6) {$\mathbf{I}_i$};
-      \draw[arr] (img) -- (ienc);
+      % ---- inputs ----
+      \path (-6.0,0.9) pic {photo};
+      \node[capbox, text width=1.7cm] at (-5.5,-1.3) {``a dog on the grass''};
+
+      % ---- encoders ----
+      \node[enc, fill=orange!22] (ienc) at (-3.3,1.3) {Image Encoder};
+      \node[font=\tiny, text=gray] at (-3.3,0.72) {ViT / ResNet};
+      \node[enc, fill=cyan!25]   (tenc) at (-3.3,-1.3) {Text Encoder};
+      \node[font=\tiny, text=gray] at (-3.3,-1.88) {Transformer};
+      \draw[arr] (-5.5,1.3) -- (ienc);
+      \draw[arr] (-5.5,-1.3) -- (tenc);
+
+      % ---- projections ----
+      \node[enc, fill=orange!12, minimum width=1.3cm] (iproj) at (-1.2,1.3) {Linear\\Proj.};
+      \node[enc, fill=cyan!12, minimum width=1.3cm]  (tproj) at (-1.2,-1.3) {Linear\\Proj.};
       \draw[arr] (ienc) -- (iproj);
-      \draw[arr] (iproj) -- (ie);
-
-      % Text side
-      \node[font=\scriptsize] (txt) at (3.0, 0) {Text};
-      \node[enc, fill=cyan!20] (tenc) at (3.0, 1.2) {Text Encoder};
-      \node[enc, fill=cyan!10] (tproj) at (3.0, 2.4) {Linear Proj.};
-      \node[draw, circle, fill=cyan!8, inner sep=3pt, font=\small] (te) at (3.0, 3.6) {$\mathbf{T}_j$};
-      \draw[arr] (txt) -- (tenc);
       \draw[arr] (tenc) -- (tproj);
-      \draw[arr] (tproj) -- (te);
 
-      % Similarity matrix
-      \draw[<->, thick, violet] (ie) -- (te) node[midway, above, font=\small] {$\cos(\mathbf{I}_i, \mathbf{T}_j) / \tau$};
+      % ---- shared embedding space panel ----
+      \def\ox{2.2}\def\oy{-0.65}          % origin of the vector plot
+      \draw[rounded corners, draw=violet!40, fill=violet!4]
+        (0.5,-1.7) rectangle (4.6,1.85);
+      \node[font=\scriptsize\bfseries, text=violet!60!black] at (2.55,1.6) {shared embedding space};
 
-      % Annotations
-      \node[font=\scriptsize, text=gray, anchor=east] at (-4.2, 1.2) {ViT or ResNet};
-      \node[font=\scriptsize, text=gray, anchor=west] at (4.2, 1.2) {Transformer};
+      % light axes
+      \draw[gray!45, -Stealth] (\ox,\oy) -- (\ox+2.0,\oy);
+      \draw[gray!45, -Stealth] (\ox,\oy) -- (\ox,\oy+2.0);
+
+      % the two feature vectors (small angle = high similarity)
+      \draw[-Stealth, very thick, orange!80!black] (\ox,\oy) -- ++(65:1.85)
+        node[above right=-2pt, font=\scriptsize, text=orange!70!black] {$\mathbf{I}$};
+      \draw[-Stealth, very thick, cyan!70!black] (\ox,\oy) -- ++(48:1.7)
+        node[right=0pt, font=\scriptsize, text=cyan!60!black] {$\mathbf{T}$};
+      % angle arc
+      \draw[violet, semithick] (\ox,\oy)+(48:0.65) arc (48:65:0.65);
+      \node[font=\tiny, text=violet] at (\ox+0.78,\oy+0.72) {$\theta$};
+
+      % feed projections into the panel
+      \draw[arr, orange!70!black] (iproj) to[out=0,in=150] (\ox-0.05,\oy+0.7);
+      \draw[arr, cyan!60!black]  (tproj) to[out=0,in=210] (\ox-0.05,\oy+0.1);
+
+      % similarity formula
+      \node[font=\scriptsize, align=center] at (2.55,-2.4)
+        {$\cos\theta=\dfrac{\mathbf{I}\cdot\mathbf{T}}{\lVert\mathbf{I}\rVert\,\lVert\mathbf{T}\rVert}$\quad
+         small angle $\Rightarrow$ high similarity};
     \end{tikzpicture}
   \end{center}
 
-  \vspace{0.2em}
+  \vspace{0.6em}
   \begin{itemize}
     \item \textbf{Dataset}: 400M image-text pairs from the web (WebImageText)
     \item \textbf{Encoders}: ViT (best: ViT-L/14) or ResNet for images; Transformer for text
@@ -114,11 +189,54 @@
 \end{frame}
 
 % -----------------------------------------------------------------------
+\begin{frame}{CLIP: Encoder Architectures}
+
+  Both towers are trained \textbf{from scratch} (no ImageNet / LM pretraining).
+
+  \vspace{0.3em}
+  \begin{columns}
+    \begin{column}{0.52\textwidth}
+      \textbf{Image encoder} (two families studied):
+      \begin{description}[style=nextline, leftmargin=0.6em]
+        \item[Modified ResNet]
+          \begin{itemize}
+            \item ResNet-D tweaks~\cite{he2019bagoftricks} + antialiased (blur) pooling
+            \item Global average pool replaced by \textbf{attention pooling} (one multi-head attention layer, query = pooled feature)
+            \item EfficientNet-style scaling: RN50, RN50x4, RN50x16, RN50x64
+          \end{itemize}
+        \item[Vision Transformer]
+          \begin{itemize}
+            \item ViT-B/32, ViT-B/16, ViT-L/14
+            \item Extra LayerNorm on patch + position embeddings
+            \item \textbf{Best}: ViT-L/14, then fine-tuned 1 epoch at \textbf{336px} (ViT-L/14@336px)
+          \end{itemize}
+      \end{description}
+    \end{column}
+    \begin{column}{0.46\textwidth}
+      \textbf{Text encoder}:
+      \begin{itemize}
+        \item Transformer (GPT-2 style), \textbf{causal} masked self-attention
+        \item 63M params: 12 layers, width 512, 8 heads
+        \item Lower-cased \textbf{BPE}, vocab 49{,}152; sequence capped at \textbf{76} tokens, bracketed by \texttt{[SOS]}/\texttt{[EOS]}
+        \item Feature = final-layer activation at \texttt{[EOS]} $\to$ LayerNorm
+      \end{itemize}
+
+      \vspace{0.4em}
+      \textbf{Projection head}:
+      \begin{itemize}
+        \item Each tower mapped to the shared space by a \textbf{single linear} projection
+        \item A non-linear projection head did \emph{not} help (unlike SimCLR)
+      \end{itemize}
+    \end{column}
+  \end{columns}
+\end{frame}
+
+% -----------------------------------------------------------------------
 \begin{frame}{CLIP: Contrastive Loss}
 
   Given a batch of $N$ image-text pairs, CLIP computes an $N \times N$ matrix of scaled cosine similarities:
   \[
-    \ell_{ij} = \frac{\mathbf{I}_i \cdot \mathbf{T}_j}{\tau}
+      \ell_{ij} = \frac{\mathbf{I}_i \cdot \mathbf{T}_j}{\norm{\mathbf{I}_i} \cdot \norm{\mathbf{T}_j} \cdot \tau}
   \]
   where $\tau$ is a \textbf{learnable temperature} parameter (log-parameterized, initialized to $\nicefrac{1}{0.07}$).
 
@@ -144,17 +262,60 @@
 \begin{frame}{CLIP: Contrastive Loss and Similarity Matrix}
 
   \begin{center}
-    \begin{tikzpicture}[scale=0.75, every node/.style={scale=0.75}]
+    \begin{tikzpicture}[scale=0.75, every node/.style={scale=0.75},
+      % ---- tiny scene icons, each drawn in a (0,0)-(1,0.8) box ----
+      icondog/.pic={
+        \fill[blue!15](0,0)rectangle(1,.8); \fill[green!50!brown!35](0,0)rectangle(1,.32);
+        \fill[brown!55](.38,.18)ellipse(.18 and .09); \fill[brown!55](.58,.26)circle(.085);
+        \fill[brown!45](.62,.31)--(.68,.42)--(.55,.36)--cycle;
+        \draw[brown!55,line width=1pt](.21,.15)--(.13,.07);
+        \draw[thick](0,0)rectangle(1,.8);},
+      iconcat/.pic={
+        \fill[blue!15](0,0)rectangle(1,.8); \fill[green!50!brown!35](0,0)rectangle(1,.32);
+        \fill[gray!55](.4,.17)ellipse(.17 and .085); \fill[gray!55](.6,.25)circle(.08);
+        \fill[gray!55](.54,.31)--(.56,.42)--(.61,.33)--cycle;
+        \fill[gray!55](.62,.32)--(.67,.43)--(.69,.32)--cycle;
+        \draw[gray!55,line width=1pt](.23,.17)to[out=110,in=200](.28,.32);
+        \draw[thick](0,0)rectangle(1,.8);},
+      iconcar/.pic={
+        \fill[blue!18](0,0)rectangle(1,.8); \fill[gray!40](0,0)rectangle(1,.2);
+        \fill[red!65](.18,.2)rectangle(.82,.4); \fill[red!65](.34,.4)rectangle(.66,.54);
+        \fill[black](.32,.2)circle(.075); \fill[black](.68,.2)circle(.075);
+        \draw[thick](0,0)rectangle(1,.8);},
+      iconplane/.pic={
+        \fill[blue!28](0,0)rectangle(1,.8);
+        \fill[gray!75](.2,.42)ellipse(.3 and .075);
+        \fill[gray!75](.46,.42)--(.58,.66)--(.64,.62)--(.54,.42)--cycle;
+        \fill[gray!75](.46,.42)--(.58,.18)--(.64,.22)--(.54,.42)--cycle;
+        \fill[gray!75](-.02,.42)--(.08,.56)--(.13,.46)--cycle;
+        \draw[thick](0,0)rectangle(1,.8);},
+      icontree/.pic={
+        \fill[blue!15](0,0)rectangle(1,.8); \fill[green!50!brown!35](0,0)rectangle(1,.28);
+        \fill[brown!60](.46,.1)rectangle(.54,.44); \fill[green!55!black](.5,.52)circle(.2);
+        \draw[thick](0,0)rectangle(1,.8);},
+      iconboat/.pic={
+        \fill[blue!30](0,0)rectangle(1,.8); \fill[blue!55](0,0)rectangle(1,.3);
+        \fill[brown!60](.25,.3)--(.75,.3)--(.66,.18)--(.34,.18)--cycle;
+        \fill[gray!50,line width=.8pt](.5,.3)rectangle(.515,.62);
+        \fill[red!60](.515,.34)--(.515,.6)--(.72,.42)--cycle;
+        \draw[thick](0,0)rectangle(1,.8);},
+    ]
       \def\n{6}
       \def\s{0.9}
+      \def\thsc{0.78}   % thumbnail scale
 
-      % Column labels (text)
-      \foreach \j in {1,...,\n} {
-        \node[font=\scriptsize, anchor=south] at ({(\j-0.5)*\s}, {\n*\s + 0.1}) {$\mathbf{T}_{\j}$};
+      % Column labels: realistic image captions
+      \foreach \j/\w in {1/{A dog on the beach},2/{A cat on a sofa},3/{A red car on the street},4/{An airplane in the sky},5/{A tree in autumn},6/{A sailboat on a lake}} {
+        \node[font=\tiny, text=cyan!55!black, rotate=42, anchor=south west]
+          at ({(\j-0.5)*\s-0.10}, {\n*\s + 0.12}) {``\w''};
+        \node[font=\tiny, text=cyan!55!black, anchor=south]
+          at ({(\j-0.5)*\s}, {\n*\s + 0.02}) {$\mathbf{T}_{\j}$};
       }
-      % Row labels (images)
-      \foreach \i in {1,...,\n} {
-        \node[font=\scriptsize, anchor=east] at (-0.15, {(\n - \i + 0.5)*\s}) {$\mathbf{I}_{\i}$};
+      % Row labels: tiny scene images
+      \foreach \i/\name in {1/icondog,2/iconcat,3/iconcar,4/iconplane,5/icontree,6/iconboat} {
+        \pgfmathsetmacro{\cy}{(\n - \i + 0.5)*\s}
+        \path ({-1.05 - \thsc*0.5}, {\cy - \thsc*0.4}) pic[scale=\thsc] {\name};
+        \node[font=\tiny, text=orange!60!black, anchor=east] at (-1.15-\thsc, \cy) {$\mathbf{I}_{\i}$};
       }
 
       % Grid with diagonal highlighted
@@ -194,52 +355,139 @@
 
   CLIP enables \textbf{zero-shot classification} without any task-specific training:
 
-  \vspace{0.3em}
+  \vspace{0.2em}
   \begin{center}
     \begin{tikzpicture}[
-      scale=0.8, every node/.style={scale=0.8},
-      enc/.style={draw, rounded corners, fill=orange!15, minimum width=1.8cm, minimum height=0.5cm, align=center, font=\small},
-      tenc/.style={draw, rounded corners, fill=cyan!15, minimum width=2.5cm, minimum height=0.4cm, align=center, font=\scriptsize},
-      arr/.style={-Stealth, thick},
+      scale=0.9, every node/.style={scale=0.9},
+      enc/.style={draw, rounded corners, fill=orange!18, minimum width=1.6cm, minimum height=0.55cm, align=center, font=\scriptsize},
+      prompt/.style={draw, rounded corners, fill=cyan!12, align=center, font=\tiny, inner sep=2pt, text width=1.9cm, minimum height=0.4cm},
+      arr/.style={-Stealth, semithick},
+      photo/.pic={
+        \begin{scope}
+          \clip (0,0) rectangle (1,0.8);
+          \fill[blue!22] (0,0) rectangle (1,0.8);
+          \fill[green!45!brown!35] (0,0) rectangle (1,0.30);
+          \fill[yellow!75!orange] (0.80,0.62) circle (0.10);
+          \fill[brown!55] (0.40,0.16) ellipse (0.13 and 0.065);
+          \fill[brown!55] (0.535,0.215) circle (0.058);
+          \fill[brown!45] (0.30,0.10) -- (0.27,0.04) -- (0.34,0.10) -- cycle;
+          \fill[brown!45] (0.49,0.105) -- (0.52,0.04) -- (0.55,0.11) -- cycle;
+        \end{scope}
+        \draw[thick] (0,0) rectangle (1,0.8);
+      },
     ]
-      % Image
-      \node[font=\scriptsize] (img) at (-4.0, 0) {Test image};
-      \node[enc] (ienc) at (-4.0, 1.5) {Image Encoder};
-      \node[draw, circle, fill=orange!8, inner sep=2pt, font=\small] (ie) at (-4.0, 3.0) {$\mathbf{I}$};
-      \draw[arr] (img) -- (ienc);
-      \draw[arr] (ienc) -- (ie);
+      % ---- image branch (top) ----
+      \path (-6.4,1.5) pic {photo};
+      \node[font=\tiny, text=gray, anchor=north] at (-5.9,1.45) {test image};
+      \node[enc, fill=orange!22] (ienc) at (-3.7,1.9) {Image Encoder};
+      \draw[arr] (-5.4,1.9) -- (ienc);
 
-      % Text prompts
-      \node[tenc] (t1) at (2.0, 3.8) {``A photo of a \textbf{dog}''};
-      \node[tenc] (t2) at (2.0, 3.0) {``A photo of a \textbf{cat}''};
-      \node[tenc] (t3) at (2.0, 2.2) {``A photo of a \textbf{car}''};
-      \node[font=\small] at (2.0, 1.4) {$\vdots$};
-      \node[tenc] (tn) at (2.0, 0.7) {``A photo of a \textbf{plane}''};
+      % ---- text branch (bottom): all prompts -> one text encoder ----
+      \node[prompt] (p1) at (-6.0,-0.1)  {``a photo of a \textbf{dog}''};
+      \node[prompt] (p2) at (-6.0,-0.8)  {``a photo of a \textbf{cat}''};
+      \node[prompt] (p3) at (-6.0,-1.5)  {``a photo of a \textbf{car}''};
+      \node[prompt] (p4) at (-6.0,-2.2)  {``a photo of a \textbf{plane}''};
+      \node[enc, fill=cyan!22, minimum height=2.1cm] (tenc) at (-3.7,-1.15) {Text\\Encoder};
+      \draw[arr] (p1.east) -- (tenc.west|-p1.east);
+      \draw[arr] (p2.east) -- (tenc.west|-p2.east);
+      \draw[arr] (p3.east) -- (tenc.west|-p3.east);
+      \draw[arr] (p4.east) -- (tenc.west|-p4.east);
 
-      % Text encoder label
-      \node[font=\scriptsize, text=gray, anchor=west] at (4.0, 3.0) {Text Encoder};
+      % ---- shared embedding space ----
+      \def\ox{0.8}\def\oy{-0.7}
+      \draw[rounded corners, draw=violet!40, fill=violet!4] (-1.0,-2.5) rectangle (5.0,2.3);
+      \node[font=\scriptsize\bfseries, text=violet!60!black, anchor=west] at (-0.85,2.0) {shared embedding space};
+      \draw[gray!40, -Stealth] (\ox,\oy) -- (\ox+0.0,\oy+2.6);
+      \draw[gray!40, -Stealth] (\ox,\oy) -- (\ox+3.6,\oy);
 
-      % Cosine similarities
-      \draw[arr, violet] (ie) -- (t1) node[midway, above, font=\scriptsize, violet] {$0.92$};
-      \draw[arr, gray!50] (ie) -- (t2);
-      \draw[arr, gray!50] (ie) -- (t3);
-      \draw[arr, gray!50] (ie) -- (tn);
+      % image feature
+      \draw[-Stealth, very thick, orange!80!black] (\ox,\oy) -- ++(58:2.5)
+        node[above left=-2pt, font=\scriptsize, text=orange!70!black] {$\mathbf{I}$ (image)};
+      % text features: dog closest to I
+      \draw[-Stealth, thick, green!55!black] (\ox,\oy) -- ++(52:2.35)
+        node[right=1pt, font=\tiny, text=green!45!black] {\textbf{dog}};
+      \draw[-Stealth, thick, cyan!65!black] (\ox,\oy) -- ++(33:2.1)
+        node[right=1pt, font=\tiny, text=cyan!55!black] {cat};
+      \draw[-Stealth, thick, cyan!65!black] (\ox,\oy) -- ++(15:2.1)
+        node[right=1pt, font=\tiny, text=cyan!55!black] {car};
+      \draw[-Stealth, thick, cyan!65!black] (\ox,\oy) -- ++(-2:2.1)
+        node[right=1pt, font=\tiny, text=cyan!55!black] {plane};
+      % small angle highlight between I and dog
+      \draw[violet, semithick] (\ox,\oy)+(52:0.7) arc (52:58:0.7);
 
-      % Prediction
-      \node[draw, rounded corners, fill=green!15, font=\small] at (2.0, 4.8) {Prediction: \textbf{dog}};
-      \draw[arr, green!50!black] (t1) -- (2.0, 4.5);
+      \node[draw, rounded corners, fill=green!18, font=\scriptsize, align=center] at (3.5,1.9)
+        {Prediction:\\$\arg\max_c \cos(\mathbf{I},\mathbf{T}_c)=$ \textbf{dog}};
+
+      % feed encoders into panel
+      \draw[arr, orange!70!black] (ienc) to[out=0,in=120] (\ox+0.2,\oy+1.6);
+      \draw[arr, cyan!60!black]  (tenc.east) to[out=0,in=200] (\ox-0.1,\oy+0.2);
     \end{tikzpicture}
   \end{center}
 
   \vspace{0.2em}
   \begin{enumerate}
     \item Construct text prompts for each class: \texttt{"A photo of a \{class\}."}
-    \item Encode all prompts with the text encoder $\to$ class embeddings
-    \item Encode the test image $\to$ image embedding
-    \item Predict the class with the highest cosine similarity
+    \item Encode all prompts with the text encoder, encode the test image
+    \item Predict the class whose text embedding has the highest cosine similarity to the image
   \end{enumerate}
 
-  \textbf{Prompt engineering}: Ensembling multiple templates (e.g.\ ``A photo of a big \{class\}'', ``A bright photo of a \{class\}'') improves accuracy by $\sim$3--5\%.
+  \textbf{Prompt engineering}: Ensembling multiple templates (e.g.\ ``A photo of a big \{class\}'') improves accuracy by $\sim$3--5\%.
+\end{frame}
+
+% -----------------------------------------------------------------------
+\begin{frame}{CLIP: Training Setup and Hyperparameters}
+
+  \begin{columns}
+    \begin{column}{0.50\textwidth}
+      \textbf{Data: WebImageText (WIT)}
+      \begin{itemize}
+        \item \textbf{400M} (image, text) pairs from the public internet
+        \item Built from $\sim$500K queries, up to $\sim$20K pairs per query (broad visual concept coverage)
+        \item Only augmentation: \textbf{random square crop} from resized images
+      \end{itemize}
+
+      \vspace{0.4em}
+      \textbf{Systems / efficiency}:
+      \begin{itemize}
+        \item Mixed precision (fp16), gradient checkpointing, half-precision Adam statistics
+        \item Similarity matrix \textbf{sharded across GPUs} (each device computes only its sub-block)
+      \end{itemize}
+
+      \vspace{0.4em}
+      \textbf{Compute}:
+      \begin{itemize}
+        \item ViT-L/14: \textbf{12 days} on 256 V100 GPUs
+        \item RN50x64: \textbf{18 days} on 592 V100 GPUs
+      \end{itemize}
+    \end{column}
+    \begin{column}{0.48\textwidth}
+      \textbf{Optimization hyperparameters}:
+      \vspace{0.2em}
+      \begin{center}
+      \small
+      \begin{tabular}{l l}
+        \toprule
+        \textbf{Hyperparameter} & \textbf{Value} \\
+        \midrule
+        Batch size       & \textbf{32{,}768} \\
+        Epochs           & 32 \\
+        Optimizer        & AdamW (decoupled wd) \\
+        Weight decay     & 0.2 (not on gains/biases) \\
+        Adam $\beta_1,\beta_2,\epsilon$ & $0.9,\ 0.98,\ 10^{-6}$ \\
+        LR schedule      & cosine decay + warmup \\
+        Temperature $\tau$ & learnable, init $0.07$ \\
+        \quad logit scale $1/\tau$ & clipped to $\leq 100$ \\
+        \bottomrule
+      \end{tabular}
+      \end{center}
+
+      \vspace{0.3em}
+      \begin{itemize}
+        \item \textbf{Large batch is essential}: $N{=}32$K gives $N{-}1$ negatives per image in the softmax
+        \item Hyperparameters tuned on a 1-epoch ResNet-50 baseline, then reused at scale
+      \end{itemize}
+    \end{column}
+  \end{columns}
 \end{frame}
 
 % -----------------------------------------------------------------------
@@ -281,47 +529,95 @@
 \subsection{SigLIP}
 
 % -----------------------------------------------------------------------
-\begin{frame}{SigLIP: Sigmoid Loss for Language-Image Pre-training}
+\begin{frame}{SigLIP: From Global Softmax to Independent Sigmoids}
 
-  \cite{zhai2023siglip} replaces CLIP's softmax contrastive loss with a \textbf{sigmoid loss} that decomposes into independent per-pair terms.
-
-  \vspace{0.3em}
-  For each pair $(i, j)$ in a batch of $N$ image-text pairs, compute the logit:
-  \[
-    z_{ij} = \tau \cdot \mathbf{I}_i \cdot \mathbf{T}_j + b
-  \]
-  where $\tau > 0$ is a learnable temperature (parameterized as $\tau = e^{t}$ to stay positive) and $b$ is a learnable bias (initialized to $-10$ to counteract the imbalance between the many negatives and few positives).
-
-  \[
-    y_{ij} =
-    \begin{cases}
-      +1 & \text{if } i = j \text{ (matching pair)} \\
-      -1 & \text{if } i \neq j \text{ (non-matching)}
-    \end{cases}
-  \]
-
-  \[
-    \mathcal{L}_{\text{SigLIP}} = -\frac{1}{N} \sum_{i=1}^{N} \sum_{j=1}^{N} \log \sigma\!\big(y_{ij} \cdot z_{ij}\big)
-  \]
-  Note: the sum is over all $N^2$ pairs but divided by $N$, so each image contributes $1$ positive and $N{-}1$ negative terms.
+  \cite{zhai2023siglip} keep CLIP's two-tower setup but \textbf{change the loss}: instead of a softmax over the whole batch, score every pair \emph{independently}.
 
   \vspace{0.3em}
   \begin{columns}
-    \begin{column}{0.48\textwidth}
-      \textbf{CLIP (softmax)}:
+    \begin{column}{0.56\textwidth}
+      \textbf{CLIP (softmax) couples the batch}:
       \begin{itemize}
-        \item Global normalization over full batch
-        \item Requires all-gather across GPUs
-        \item $N$-way classification per row/column
+        \item Each row/column is an $N$-way softmax: the normalizer $\sum_j \exp(\cdot)$ ties \emph{all} pairs together
+        \item Needs an \textbf{all-gather} of every embedding across GPUs to form the denominator
+        \item The loss for one pair depends on the whole batch composition
+      \end{itemize}
+
+      \vspace{0.3em}
+      \textbf{SigLIP (sigmoid) decouples it}:
+      \begin{itemize}
+        \item Read the $N\times N$ matrix as $N^2$ \textbf{independent binary} problems: ``is this a true pair?''
+        \item Label $+1$ on the diagonal (matches), $-1$ off-diagonal
+        \item Apply a \textbf{logistic (sigmoid) loss per cell}, no coupling, no global normalizer
+      \end{itemize}
+    \end{column}
+    \begin{column}{0.42\textwidth}
+      \begin{center}
+        \begin{tikzpicture}[scale=0.52, every node/.style={scale=0.52}]
+          \def\m{5}
+          \foreach \i in {1,...,\m} {
+            \foreach \j in {1,...,\m} {
+              \pgfmathtruncatemacro{\d}{\i==\j ? 1 : 0}
+              \ifnum\d=1
+                \fill[green!40] ({(\j-1)}, {(\m-\i)}) rectangle ++(1,1);
+                \node[font=\footnotesize] at ({\j-0.5},{\m-\i+0.5}) {$+1$};
+              \else
+                \fill[red!12] ({(\j-1)}, {(\m-\i)}) rectangle ++(1,1);
+                \node[font=\scriptsize, gray] at ({\j-0.5},{\m-\i+0.5}) {$-1$};
+              \fi
+              \draw[gray!50] ({(\j-1)}, {(\m-\i)}) rectangle ++(1,1);
+            }
+          }
+          \node[font=\scriptsize, anchor=south] at (\m/2, \m+0.15) {images $\times$ texts};
+          \node[font=\scriptsize, align=center] at (\m/2,-0.9)
+            {each cell: $\sigma(y_{ij}z_{ij})$ \\ independent binary label};
+        \end{tikzpicture}
+      \end{center}
+    \end{column}
+  \end{columns}
+
+  \vspace{0.3em}
+  \textbf{Consequences}: no cross-device all-gather (only block-wise dot products, easy to \emph{chunk} for memory); the objective is \emph{decoupled from batch size}, so it stays stable even at small batches. Catch: huge class imbalance ($N$ positives vs.\ $N^2{-}N$ negatives) needs a learnable bias (next slide).
+\end{frame}
+
+% -----------------------------------------------------------------------
+\begin{frame}{SigLIP: The Sigmoid Loss}
+
+  \begin{columns}
+    \begin{column}{0.50\textwidth}
+      For each pair $(i,j)$ in a batch of $N$ pairs, the logit and label are
+      \[ z_{ij} = \tau\,\mathbf{I}_i\cdot\mathbf{T}_j + b, \qquad
+         y_{ij} = \begin{cases} +1 & i=j \\ -1 & i\neq j \end{cases} \]
+      \[ \mathcal{L}_{\text{SigLIP}} = -\frac{1}{N}\sum_{i=1}^{N}\sum_{j=1}^{N}
+         \log \sigma\!\big(y_{ij}\,z_{ij}\big) \]
+
+      \begin{itemize}
+        \item $\tau=e^{t}$ and $b$ are \emph{single global} scalars; init $\tau{=}10$, $b{=}{-}10$
+        \item The $\pm1$ label multiplies the \emph{whole} logit, so the one shared $b$ shifts positives and negatives in \emph{opposite} directions: a learned threshold encoding the prior ``most pairs are negative''
+        \item At init $b{=}{-}10$ makes $\sigma\!\approx\!0$ everywhere, matching that prior, so the many negatives cause no huge initial gradient
+        \item \textbf{No reweighting}: all $N^2$ terms count equally (sum $/N$); the bias, not a class weight, offsets the imbalance
       \end{itemize}
     \end{column}
     \begin{column}{0.48\textwidth}
-      \textbf{SigLIP (sigmoid)}:
-      \begin{itemize}
-        \item Independent binary classification per pair
-        \item No global normalization needed
-        \item Scales better to very large batches and distributed training
-      \end{itemize}
+      \begin{center}
+        \begin{tikzpicture}[scale=0.85]
+          \clip (-3.4,-0.6) rectangle (3.6,3.5);
+          % axes
+          \draw[-Stealth] (-3.2,0) -- (3.4,0) node[right, font=\scriptsize] {$z_{ij}$};
+          \draw[-Stealth] (0,-0.3) -- (0,3.4) node[above, font=\scriptsize] {$-\log\sigma(y z)$};
+          % positive pair: y=+1 -> loss = ln(1+e^{-z}); wants z large
+          \draw[very thick, green!55!black, domain=-3:3, samples=80, smooth]
+            plot (\x, {0.62*ln(1+exp(-2*\x))});
+          % negative pair: y=-1 -> loss = ln(1+e^{z}); wants z small
+          \draw[very thick, red!65, domain=-3:3, samples=80, smooth]
+            plot (\x, {0.62*ln(1+exp(2*\x))});
+          \node[green!45!black, font=\scriptsize, anchor=east] at (-0.3,2.9) {positive ($y{=}{+}1$)};
+          \node[red!70!black, font=\scriptsize, anchor=west] at (0.3,2.9) {negative ($y{=}{-}1$)};
+          \node[green!45!black, font=\tiny, anchor=west] at (1.4,0.55) {push $z\uparrow$};
+          \node[red!70!black, font=\tiny, anchor=east] at (-1.4,0.55) {push $z\downarrow$};
+        \end{tikzpicture}
+      \end{center}
+      {\scriptsize Per-pair logistic loss: matches are pushed to high $z$, mismatches to low $z$. The shared bias $b$ shifts both curves horizontally (a learned decision threshold), starting them where almost everything is classified negative.}
     \end{column}
   \end{columns}
 \end{frame}
@@ -384,7 +680,7 @@
         ResNet-50 (supervised) & 25M & 76.1\% \\
         CLIP ViT-L/14@336 & 428M & 76.2\% \\
         \midrule
-        SigLIP B/16@256 & 86M & 76.6\% \\
+        SigLIP B/16@256 & 86M & 76.7\% \\
         SigLIP L/16@256 & 307M & 80.5\% \\
         SigLIP L/16@384 & 307M & 82.1\% \\
         SigLIP So400m/14@224 & 428M & 82.2\% \\
@@ -392,6 +688,7 @@
         \bottomrule
       \end{tabular}
       \end{center}
+      {\scriptsize Publicly released checkpoints (trained far longer than the paper's batch-size ablations); numbers as tabulated in \cite{tschannen2025siglip2}.}
     \end{column}
     \begin{column}{0.48\textwidth}
       \begin{itemize}
@@ -399,42 +696,62 @@
         \item Shape-optimized So400m/14 pushes to \textbf{83.2\%} zero-shot
         \item Higher resolution at fine-tuning consistently helps (+1--2\%)
       \end{itemize}
+
+      \vspace{0.3em}
+      \begin{block}{From the paper itself}
+        \footnotesize
+        The original paper's headline is \emph{efficiency}: from-scratch SigLIP B/16 reaches \textbf{73.4\%} (batch 32K, 5 days on 32 TPUv4); SigLiT (locked image tower) hits \textbf{84.5\%} in 2 days on 4 chips.
+      \end{block}
     \end{column}
   \end{columns}
 \end{frame}
 
 % -----------------------------------------------------------------------
-\begin{frame}{SigLIP: Sigmoid vs.\ Softmax at Different Batch Sizes}
+\begin{frame}{SigLIP: Effect of Batch Size (Sigmoid vs.\ Softmax)}
 
-  \textbf{ViT-B/16} on WebLI, zero-shot ImageNet accuracy (\%). Same architecture, same data, only the loss changes.
-
-  \vspace{0.3em}
-  \begin{center}
-  \small
-  \begin{tabular}{r c c c c c c}
-    \toprule
-    & \multicolumn{2}{c}{\textbf{3B examples seen}} & & \multicolumn{2}{c}{\textbf{9B examples seen}} \\
-    \cmidrule{2-3} \cmidrule{5-6}
-    \textbf{Batch size} & Sigmoid & Softmax & & Sigmoid & Softmax \\
-    \midrule
-    512   & 51.5 & 47.7 & & --- & --- \\
-    1K    & 57.3 & 53.2 & & --- & --- \\
-    4K    & 65.3 & 63.8 & & 68.4 & 66.6 \\
-    8K    & 68.6 & 66.6 & & 70.6 & 69.4 \\
-    16K   & ---  & ---  & & 72.3 & 71.7 \\
-    32K   & 69.9 & 69.9 & & \textbf{73.4} & 72.9 \\
-    98K   & 69.5 & 69.7 & & 73.0 & \textbf{73.2} \\
-    \bottomrule
-  \end{tabular}
-  \end{center}
-
-  \vspace{0.3em}
-  \begin{itemize}
-    \item \textbf{Small batches}: sigmoid clearly better (e.g.\ +4.1\% at batch 1K)
-    \item \textbf{Medium batches}: sigmoid peaks earlier (32K vs.\ 98K for softmax)
-    \item \textbf{Large batches}: both losses converge; softmax slightly better at 98K with long training
-    \item Sigmoid does not require cross-device all-gather for the normalizing denominator
-  \end{itemize}
+  \vspace{0.2em}
+  \begin{columns}
+    \begin{column}{0.52\textwidth}
+      \begin{center}
+        \begin{tikzpicture}[scale=0.95]
+          % axes
+          \draw[-Stealth] (-0.3,0) -- (6.0,0);
+          \draw[-Stealth] (0,-0.2) -- (0,3.5);
+          \node[font=\scriptsize, rotate=90, anchor=south] at (-0.55,1.7) {ImageNet 0-shot};
+          \node[font=\scriptsize, anchor=north] at (3.0,-0.55) {batch size (log scale)};
+          % x ticks
+          \foreach \x/\lab in {0/4K,1/8K,2/16K,3/32K,4/98K,5/307K} {
+            \draw[gray!50] (\x,0) -- (\x,-0.08);
+            \node[font=\tiny, anchor=north] at (\x,-0.1) {\lab};
+          }
+          % sweet-spot marker
+          \draw[gray!55, dashed] (3,0) -- (3,3.2);
+          \node[font=\tiny, text=gray!50!black, anchor=south] at (3,3.2) {sweet spot};
+          % sigmoid curve (green)
+          \draw[very thick, green!55!black, smooth] plot coordinates
+            {(0,1.45) (1,2.05) (2,2.55) (3,2.9) (4,2.78) (5,2.3)};
+          % softmax curve (red)
+          \draw[very thick, red!65, smooth] plot coordinates
+            {(0,0.72) (1,1.45) (2,2.12) (3,2.58) (4,2.72) (5,2.12)};
+          % legend
+          \draw[very thick, green!55!black] (3.6,1.15) -- (4.0,1.15);
+          \node[font=\tiny, anchor=west] at (4.05,1.15) {sigmoid (SigLIP)};
+          \draw[very thick, red!65] (3.6,0.75) -- (4.0,0.75);
+          \node[font=\tiny, anchor=west] at (4.05,0.75) {softmax (CLIP)};
+        \end{tikzpicture}
+      \end{center}
+      {\scriptsize Schematic redrawn from Fig.~2 (SigLIP, 9B examples); axes are qualitative.}
+    \end{column}
+    \begin{column}{0.46\textwidth}
+      \begin{itemize}
+        \item For batch $<16$K, sigmoid beats softmax by a \textbf{large margin}
+        \item The gap closes as batch grows: \textbf{SigLIP peaks at 32K}; softmax needs 98K for its optimum and still does not surpass sigmoid
+        \item Pushing further (307K, up to \textbf{1M} for SigLiT) \emph{hurts} both $\Rightarrow$ 32K is a practical sweet spot
+        \item Same saturation for multilingual mSigLIP (Table~2: $\approx$73.2\% across 32K--128K)
+        \item No all-gather / global denominator $\Rightarrow$ memory-efficient ``chunked'' loss enables batches up to 1M on few chips
+      \end{itemize}
+    \end{column}
+  \end{columns}
 \end{frame}
 
 % =======================================================================
@@ -839,7 +1156,6 @@
   \begin{itemize}
     \item 3B model outperforms LLaVA-1.5-13B on most benchmarks
     \item \textbf{Resolution is critical}: DocVQA jumps from 43.7 (224px) to 84.8 (896px)
-    \item ScienceQA at 95.9\% --- remarkable for a 3B model
   \end{itemize}
 \end{frame}
 
